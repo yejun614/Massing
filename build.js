@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Bundle the app into one self-contained `dist/app.html`.
+ * Bundle the app into one self-contained `dist/index.html`.
  *
  * Node built-ins only -- no bundler, no npm dependencies. The whole job is:
  * walk the ES module graph from `src/main.js`, strip the import/export
@@ -13,7 +13,7 @@
  * side effects at import time beyond defining things. `checkModule` below
  * enforces those assumptions rather than trusting them.
  *
- *   node build.js                    -> dist/app.html
+ *   node build.js                    -> dist/index.html
  *   node build.js --doc example.json -> the same, with a diagram baked in
  *   node build.js --font Pretendard.woff2 -> inline the font, no network at all
  *   node build.js --skill            -> regenerate the Claude skill from prompt.js
@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const ENTRY = resolve(ROOT, 'src/main.js');
-const OUT = resolve(ROOT, 'dist/app.html');
+const OUT = resolve(ROOT, 'dist/index.html');
 
 // ---------------------------------------------------------------------------
 // Module graph

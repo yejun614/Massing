@@ -28,7 +28,7 @@ Nothing to install. `npm run dev` does the same thing if you prefer.
 
 ```sh
 node test/run.mjs                 # geometry + document suite (136 checks)
-node build.js                     # → dist/app.html, plus the Claude skill
+node build.js                     # → dist/index.html, plus the Claude skill
 node build.js --doc my.arch.json   # the same, with a diagram baked in
 node build.js --font Pretendard.woff2   # inline the font: no network at all
 ```
@@ -183,7 +183,7 @@ it to a model alongside the editor.
 Everywhere else it falls back to a normal download:
 
 - **Firefox and Safari** have no File System Access API.
-- **The bundled `dist/app.html` opened from `file://`.** Chrome exposes the
+- **The bundled `dist/index.html` opened from `file://`.** Chrome exposes the
   picker there and it opens, but the origin is opaque, so the write is refused
   — so that path is skipped up front rather than failing after you have already
   chosen a filename.
@@ -314,7 +314,7 @@ For a bundle that must work with no network at all, inline the font:
 node build.js --font path/to/PretendardJPVariable.woff2
 ```
 
-That drops the CDN import and embeds the face: `dist/app.html` goes from about
+That drops the CDN import and embeds the face: `dist/index.html` goes from about
 200 kB to 7.2 MB and makes no network requests at all. Without it the bundle
 stays small and falls back to system fonts when offline.
 

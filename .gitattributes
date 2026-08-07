@@ -1,0 +1,5 @@
+# Normalise line endings on commit. The repository always stores LF; each
+# working copy gets its platform's native endings, so Windows checkouts are
+# CRLF and everyone else's are LF. Without this the endings of whichever OS a
+# contributor happens to use leak into the diff.
+* text=auto

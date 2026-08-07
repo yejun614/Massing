@@ -248,7 +248,7 @@ Defaults are omitted on write, so an unstyled note stays a three-line object.
 
 `build.js` walks the ES module graph from `src/main.js`, strips import/export
 statements, concatenates in dependency order, and inlines the stylesheets into
-one `dist/app.html` that opens from `file://` with no network requests.
+one `dist/index.html` that opens from `file://` with no network requests.
 
 Flat concatenation works only because the project's own rules hold: named
 imports and exports only, no cycles, no import-time side effects. `build.js`
