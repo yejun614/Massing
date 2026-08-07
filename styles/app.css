@@ -112,12 +112,35 @@ html, body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   z-index: 3;
+  /*
+   * A narrow window must not put a button out of reach. The row scrolls rather
+   * than clipping, and the bar is hidden because the toolbar is one line tall
+   * and a scrollbar inside it would eat the icons it is there to reveal.
+   */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.toolbar::-webkit-scrollbar { display: none; }
 
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 3px;
+  flex: none; /* groups keep their size; the row scrolls instead */
+}
+
+/*
+ * Both ends of the row stay put while the middle scrolls under them: the panel
+ * toggles because on a narrow window they are how a hidden panel comes back,
+ * and the title because which document this is — and whether it has unsaved
+ * work — should never be a thing you have to scroll a toolbar to find out.
+ */
+.toolbar-panels { position: sticky; left: 0; }
+.toolbar-doc { position: sticky; right: 0; padding-left: 6px; }
+.toolbar-panels,
+.toolbar-doc {
+  z-index: 1;
+  background: var(--surface);
 }
 
 .toolbar-group:not(:empty):not(.toolbar-brand)::before {
@@ -129,6 +152,20 @@ html, body {
 }
 
 .toolbar-spacer { flex: 1; }
+
+/*
+ * Reclaim toolbar width before the row has to scroll for it. The wordmark goes
+ * first, since the mark beside it still says which app this is; then the title
+ * field gives up width, though the unsaved dot next to it stays — knowing there
+ * is unsaved work matters more on a small screen, not less.
+ */
+@media (max-width: 1180px) {
+  .brand-name { display: none; }
+  .doc-title { min-width: 0; width: 120px; }
+}
+@media (max-width: 900px) {
+  .doc-title { width: 92px; }
+}
 
 .brand-mark {
   width: 15px;
@@ -172,6 +209,9 @@ button {
 .btn:active:not(:disabled) { background: var(--accent-soft); }
 .btn:disabled { opacity: 0.38; cursor: default; }
 .btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+/* A toggle whose thing is currently switched off, e.g. a folded-away panel. */
+.btn.is-off { opacity: 0.45; }
+.btn.is-off:hover:not(:disabled) { opacity: 1; }
 .btn-icon { padding: 0; width: 28px; justify-content: center; }
 .btn svg { width: 15px; height: 15px; display: block; }
 
@@ -246,6 +286,15 @@ body.is-resizing .resizer::after { opacity: 1; }
 }
 .panel-left { grid-area: left; border-right: 1px solid var(--border); }
 .panel-right { grid-area: right; border-left: 1px solid var(--border); }
+
+/*
+ * A folded panel leaves the layout rather than shrinking inside it. Its grid
+ * column is already at zero (the width variable is set to 0), so anything left
+ * on screen would spill over the canvas; the divider goes with it, because a
+ * handle for a panel that is not there has nothing to resize.
+ */
+.panel.is-collapsed,
+.resizer.is-collapsed { display: none; }
 
 .panel-empty {
   padding: 22px 14px;

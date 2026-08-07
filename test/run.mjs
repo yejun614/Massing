@@ -8,6 +8,14 @@
 import { readFileSync } from 'node:fs';
 import { runCases } from './cases.js';
 import { COMPONENTS, GROUP_KINDS } from '../src/data/components.js';
+import { normalizeDoc, serializeDoc } from '../src/core/schema.js';
+import { THREE_TIER } from '../src/data/samples.js';
+import {
+  encodeShareText,
+  decodeShareText,
+  shareUrlFrom,
+  sharePayloadFrom,
+} from '../src/core/share.js';
 
 let passed = 0;
 const failures = [];
@@ -67,6 +75,47 @@ for (const cls of ['.block-label', '.zone-label', '.text-body']) {
       : 'a stylesheet font-size overrides the attribute the renderer writes'
   );
 }
+
+/*
+ * Share links. Asynchronous, because the compression runs through a stream, so
+ * these live here rather than in the suite `runCases` drives synchronously.
+ *
+ * The round trip is the whole contract: whatever a link carries has to come
+ * back byte-identical, or a shared diagram silently differs from the one that
+ * was shared.
+ */
+const shared = serializeDoc(normalizeDoc(THREE_TIER).doc);
+const payload = await encodeShareText(shared);
+
+check('a share payload decodes back to the same document', (await decodeShareText(payload)) === shared);
+check(
+  'a share payload is URL-safe',
+  /^[A-Za-z0-9\-_]+$/.test(payload),
+  `payload contained characters that need escaping: ${payload.slice(0, 40)}…`
+);
+check(
+  'compression earns its place',
+  payload.length < shared.length * 0.5,
+  `${shared.length} chars of JSON became ${payload.length} of payload`
+);
+check(
+  'an uncompressed payload still opens',
+  // What a browser without CompressionStream would have written. Both forms
+  // have to keep working, or links stop being portable between browsers.
+  (await decodeShareText(Buffer.from(shared, 'utf8').toString('base64url'))) === shared
+);
+check('a fragment round-trips through the URL', sharePayloadFrom(
+  new URL(shareUrlFrom(payload, 'https://example.com/app')).hash
+) === payload);
+check('a hash with no diagram in it reads as none', sharePayloadFrom('#somethingelse') === null);
+
+let rejected = false;
+try {
+  await decodeShareText('H4sIAAAAAAAA_wrJyCxWAAAAAP__');
+} catch {
+  rejected = true;
+}
+check('a truncated payload fails loudly rather than opening as junk', rejected);
 
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`${passed} passed, ${failures.length} failed`);

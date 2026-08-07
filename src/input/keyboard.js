@@ -30,10 +30,11 @@ export const SHORTCUTS = [
   ['2', 'Toggle 2D / 3D'],
   ['0', 'Zoom to fit'],
   ['Space + drag', 'Pan'],
+  ['[ / ]', 'Show or hide the left / right panel'],
   ['Drag a panel edge', 'Resize the side panels (double-click to reset)'],
 ];
 
-export function attachKeyboard({ store, commands, io }) {
+export function attachKeyboard({ store, commands, io, panels }) {
   function onKeyDown(e) {
     if (isTextTarget(e.target)) return;
     const mod = e.ctrlKey || e.metaKey;
@@ -133,6 +134,12 @@ export function attachKeyboard({ store, commands, io }) {
         break;
       case '-':
         commands.zoomOut();
+        break;
+      case '[':
+        panels?.toggle('left');
+        break;
+      case ']':
+        panels?.toggle('right');
         break;
       default:
         break;

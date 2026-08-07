@@ -1,5 +1,5 @@
 /**
- * Draggable dividers for the two side panels.
+ * The two side panels: draggable dividers, and folding them away.
  *
  * The dividers are not grid columns. They sit absolutely over the inner edge
  * of each panel, so the layout stays a plain three-column grid and the handle
@@ -9,6 +9,12 @@
  * guaranteed a minimum. Without that second clamp, dragging on a narrow window
  * can squeeze the drawing area to nothing — a state the user then has to drag
  * their way back out of.
+ *
+ * Folding a panel away is the same idea taken to its end: the column goes to
+ * zero and the panel and its divider leave the layout entirely. A narrow window
+ * does it on its own, because 320px of canvas between two 232px panels is not a
+ * drawing area. What the viewport decides and what the user decides are kept
+ * apart — see `setCollapsed`.
  */
 
 const PANELS_KEY = 'massing:panels';
@@ -20,29 +26,51 @@ const STEP = 16; // keyboard nudge
 const DEFAULTS = { left: 232, right: 232 };
 const VARS = { left: '--panel-left-w', right: '--panel-right-w' };
 
-export function createPanels({ root = document, onResize } = {}) {
-  const widths = { ...DEFAULTS, ...readWidths() };
-  apply('left');
-  apply('right');
+/**
+ * Below these widths a panel folds itself away. The inspector goes first: it is
+ * only useful once something is selected, whereas the palette is how blocks get
+ * onto the canvas at all.
+ */
+const AUTO_HIDE = { right: 1180, left: 900 };
+
+export function createPanels({ root = document, onResize, onChange } = {}) {
+  const saved = readState();
+  const widths = { ...DEFAULTS, ...saved.widths };
+
+  // `pref` is what the user last chose at a comfortable width and is persisted.
+  // `collapsed` is what is on screen now. `forced` records that the viewport,
+  // not the user, is the reason a panel is away — so widening the window can
+  // put it back without the user having asked twice.
+  const pref = { left: false, right: false, ...saved.collapsed };
+  const collapsed = { ...pref };
+  const forced = { left: false, right: false };
 
   for (const side of ['left', 'right']) {
     const handle = root.querySelector(`[data-region="resize-${side}"]`);
     if (handle) attach(handle, side);
+    watchViewport(side);
+    apply(side);
   }
 
   function apply(side) {
-    document.documentElement.style.setProperty(VARS[side], `${widths[side]}px`);
+    const width = collapsed[side] ? 0 : widths[side];
+    document.documentElement.style.setProperty(VARS[side], `${width}px`);
+
+    const panel = root.querySelector(`.panel-${side}`);
     const handle = root.querySelector(`[data-region="resize-${side}"]`);
-    handle?.setAttribute('aria-valuenow', String(widths[side]));
+    panel?.classList.toggle('is-collapsed', collapsed[side]);
+    handle?.classList.toggle('is-collapsed', collapsed[side]);
+    handle?.setAttribute('aria-valuenow', String(width));
   }
 
   /**
    * Clamp against both the panel's own bounds and the space left for the
    * canvas, measuring the *other* panel so the two cannot conspire to close
-   * the drawing area between them.
+   * the drawing area between them. A folded panel measures zero.
    */
   function clamp(side, value) {
-    const other = widths[side === 'left' ? 'right' : 'left'];
+    const otherSide = side === 'left' ? 'right' : 'left';
+    const other = collapsed[otherSide] ? 0 : widths[otherSide];
     const room = window.innerWidth - other - MIN_CANVAS;
     return Math.round(Math.max(MIN, Math.min(value, MAX, Math.max(MIN, room))));
   }
@@ -52,8 +80,44 @@ export function createPanels({ root = document, onResize } = {}) {
     if (next === widths[side]) return;
     widths[side] = next;
     apply(side);
-    saveWidths(widths);
+    saveState();
     onResize?.();
+  }
+
+  /**
+   * `remember` is what separates a choice from a consequence. The user pressing
+   * the toggle is a choice and is stored; the window crossing a breakpoint is
+   * not, or resizing a window would quietly rewrite what the user asked for.
+   * Opening a panel while the viewport is holding it shut is honoured for as
+   * long as that viewport lasts, but is not remembered either — it was made
+   * under duress.
+   */
+  function setCollapsed(side, value, { remember = true } = {}) {
+    if (remember && !forced[side] && pref[side] !== value) {
+      pref[side] = value;
+      saveState();
+    }
+    if (collapsed[side] === value) return;
+    collapsed[side] = value;
+    apply(side);
+    onChange?.();
+    onResize?.();
+  }
+
+  /** Fold the panel away below its breakpoint, restore the preference above. */
+  function watchViewport(side) {
+    const query = window.matchMedia(`(max-width: ${AUTO_HIDE[side] - 1}px)`);
+    query.addEventListener('change', () => {
+      forced[side] = query.matches;
+      setCollapsed(side, query.matches ? true : pref[side], { remember: false });
+    });
+
+    // The opening state is set directly rather than through `setCollapsed`.
+    // Going through it would fire `onChange` from inside this constructor, i.e.
+    // call back into a caller that has not finished building itself yet, and
+    // the constructor's own `apply` puts the result on screen a moment later.
+    forced[side] = query.matches;
+    if (query.matches) collapsed[side] = true;
   }
 
   function attach(handle, side) {
@@ -107,6 +171,10 @@ export function createPanels({ root = document, onResize } = {}) {
     handle.addEventListener('dblclick', () => set(side, DEFAULTS[side]));
   }
 
+  function saveState() {
+    writeState({ ...widths, collapsed: { ...pref } });
+  }
+
   // A window that shrinks can invalidate a width that was fine when it was set.
   window.addEventListener('resize', () => {
     set('left', widths.left);
@@ -117,30 +185,43 @@ export function createPanels({ root = document, onResize } = {}) {
     get widths() {
       return { ...widths };
     },
+    isCollapsed(side) {
+      return collapsed[side];
+    },
+    toggle(side) {
+      setCollapsed(side, !collapsed[side]);
+    },
+    show(side) {
+      setCollapsed(side, false);
+    },
     reset() {
       set('left', DEFAULTS.left);
       set('right', DEFAULTS.right);
+      setCollapsed('left', false);
+      setCollapsed('right', false);
     },
   };
 }
 
-function readWidths() {
+function readState() {
   try {
     const raw = JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}');
-    const clean = {};
+    const widths = {};
+    const collapsed = {};
     for (const side of ['left', 'right']) {
-      if (Number.isFinite(raw[side])) clean[side] = raw[side];
+      if (Number.isFinite(raw[side])) widths[side] = raw[side];
+      if (typeof raw.collapsed?.[side] === 'boolean') collapsed[side] = raw.collapsed[side];
     }
-    return clean;
+    return { widths, collapsed };
   } catch {
-    return {};
+    return { widths: {}, collapsed: {} };
   }
 }
 
-function saveWidths(widths) {
+function writeState(state) {
   try {
-    localStorage.setItem(PANELS_KEY, JSON.stringify(widths));
+    localStorage.setItem(PANELS_KEY, JSON.stringify(state));
   } catch {
-    // Storage disabled; the widths simply will not survive a reload.
+    // Storage disabled; the layout simply will not survive a reload.
   }
 }

@@ -7,7 +7,14 @@
  */
 
 import { createStore } from './core/store.js';
-import { normalizeDoc } from './core/schema.js';
+import { normalizeDoc, serializeDoc } from './core/schema.js';
+import {
+  encodeShareText,
+  decodeShareText,
+  shareUrlFrom,
+  sharePayloadFrom,
+  SHARE_WARN_LENGTH,
+} from './core/share.js';
 import { createCommands } from './core/commands.js';
 import { createIO } from './core/io.js';
 import { createExporter } from './core/export.js';
@@ -37,6 +44,11 @@ const region = (name) => document.querySelector(`[data-region="${name}"]`);
 const canvasEl = region('canvas');
 const toaster = createToaster(region('toasts'));
 
+// Declared up here, not beside the render loop below: `scheduleRender` is
+// hoisted and subsystems may call it while they are still being wired, and a
+// `let` further down the file would be in its temporal dead zone when they do.
+let frame = 0;
+
 installCrashReporting();
 
 const store = createStore(startingDocument());
@@ -59,7 +71,10 @@ function startingDocument() {
 }
 
 const scene = createScene(canvasEl, { onResize: () => scheduleRender() });
-createPanels({ onResize: () => scheduleRender() });
+const panels = createPanels({
+  onResize: () => scheduleRender(),
+  onChange: () => scheduleRender(),
+});
 const overlay = createOverlay(scene.overlay);
 const commands = createCommands({ store, scene, toaster });
 const io = createIO({ store, toaster });
@@ -76,13 +91,15 @@ const toolbar = createToolbar({
   onHelp: () => shortcuts.open(),
   onCopyPrompt: copyPrompt,
   onAddImage: () => io.pickImage(store.state.hover ?? { x: 0, y: 0 }),
+  onCopyLink: copyShareLink,
   theme,
+  panels,
 });
 const palette = createPalette({ root: region('palette'), store, commands });
 const inspector = createInspector({ root: region('inspector'), store, commands });
 
 const pointer = attachPointer({ canvas: canvasEl, store, scene, overlay, toaster });
-attachKeyboard({ store, commands, io });
+attachKeyboard({ store, commands, io, panels });
 
 io.attachDropZone(canvasEl, (e) => {
   const r = canvasEl.getBoundingClientRect();
@@ -106,7 +123,6 @@ io.startAutosave();
 
 // --- render loop -----------------------------------------------------------
 
-let frame = 0;
 function scheduleRender() {
   if (frame) return;
   frame = requestAnimationFrame(() => {
@@ -129,7 +145,12 @@ scene.render(store.state);
 commands.zoomFit();
 store.markSaved();
 scheduleRender();
-offerRecovery();
+
+// A shared link is an explicit request for one particular diagram, so it wins
+// over the autosaved draft. Offering both would put two competing documents on
+// screen with no obvious answer; the draft is still in storage either way.
+if (sharePayloadFrom()) openSharedDiagram();
+else offerRecovery();
 
 /**
  * Surface an autosaved draft without hijacking the session: the sample stays
@@ -147,6 +168,55 @@ function offerRecovery() {
     commands.zoomFit();
     el.remove();
   });
+}
+
+/**
+ * Open the diagram carried by the address bar.
+ *
+ * Decoding is asynchronous, so this runs after the first paint rather than
+ * feeding `startingDocument`. The sample is on screen for a frame or two first,
+ * which is a better failure mode than a blank page if the payload is corrupt.
+ */
+async function openSharedDiagram() {
+  const payload = sharePayloadFrom();
+  if (!payload) return;
+  try {
+    io.loadText(await decodeShareText(payload), 'shared link');
+    commands.zoomFit();
+  } catch (err) {
+    toaster.error('That shared link could not be read.', {
+      detail: [describeError(err), '', describeEnvironment()].join('\n'),
+    });
+  }
+}
+
+/**
+ * Put the whole diagram in a URL and hand it to the clipboard.
+ *
+ * The payload rides in the fragment, so it never reaches a server -- see
+ * `core/share.js`. What it cannot do is stay short once pictures are embedded,
+ * so the length is reported rather than silently producing a link that some
+ * chat client will truncate into a broken one.
+ */
+async function copyShareLink() {
+  try {
+    const url = shareUrlFrom(await encodeShareText(serializeDoc(store.state.doc)));
+    if (!(await copyText(url))) {
+      toaster.error('Could not reach the clipboard.', { detail: url });
+      return;
+    }
+    if (url.length > SHARE_WARN_LENGTH) {
+      toaster.warn(
+        `Link copied, but it is ${(url.length / 1000).toFixed(1)} kB long. Chat apps and ` +
+          'mail clients often truncate links past a few thousand characters — embedded ' +
+          'pictures are usually the reason.'
+      );
+    } else {
+      toaster.info('Link copied. The whole diagram travels inside the URL.');
+    }
+  } catch (err) {
+    toaster.error('Could not build a shareable link.', { detail: describeError(err) });
+  }
 }
 
 /**

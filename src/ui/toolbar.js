@@ -8,7 +8,7 @@ import { UI_ICONS } from './icons-ui.js';
 
 const REPO_URL = 'https://github.com/yejun614/Massing';
 
-export function createToolbar({ root, store, commands, io, exporter, onHelp, onCopyPrompt, onAddImage, theme }) {
+export function createToolbar({ root, store, commands, io, exporter, onHelp, onCopyPrompt, onAddImage, onCopyLink, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
 
   const btn = (icon, title, onClick, extra = {}) =>
@@ -42,6 +42,11 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
   const openBtn = btn('open', 'Open… (Ctrl+O)', () => io.open());
   const saveBtn = btn('save', 'Save (Ctrl+S)', () => io.save());
   const copyBtn = btn('clipboard', 'Copy diagram JSON to clipboard', () => io.copyDocumentJson());
+  const shareBtn = btn(
+    'share',
+    'Copy a shareable link — the whole diagram travels inside the URL',
+    () => onCopyLink?.()
+  );
   const promptBtn = btn(
     'sparkle',
     'Copy the LLM prompt — paste it into a chat, then ask for a diagram',
@@ -54,7 +59,7 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
   );
   const pngBtn = btn('image', 'Export as PNG', () => exporter.png());
   const svgBtn = btn('vector', 'Export as SVG', () => exporter.svg());
-  clear(region('file')).append(newBtn, openBtn, saveBtn, imageBtn, copyBtn, promptBtn, pngBtn, svgBtn);
+  clear(region('file')).append(newBtn, openBtn, saveBtn, imageBtn, copyBtn, shareBtn, promptBtn, pngBtn, svgBtn);
 
   // --- edit ----------------------------------------------------------------
   const undoBtn = btn('undo', 'Undo (Ctrl+Z)', () => commands.undo());
@@ -85,8 +90,28 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
   const themeBtn = btn('themeSystem', 'Theme', () => {
     paintTheme(theme.cycle());
   });
+  const leftPanelBtn = btn('panelLeft', 'Show or hide the component panel ([)', () =>
+    panels?.toggle('left')
+  );
+  const rightPanelBtn = btn('panelRight', 'Show or hide the properties panel (])', () =>
+    panels?.toggle('right')
+  );
   const helpBtn = btn('help', 'Keyboard shortcuts', () => onHelp?.());
   const repoLink = link('github', 'Source on GitHub (opens in a new tab)', REPO_URL);
+
+  /**
+   * A folded panel dims its button rather than lighting it up. `is-active` in
+   * this toolbar already means "this tool is the current one", and reusing it
+   * for "this panel is gone" would read as the opposite of what it shows.
+   */
+  function paintPanels() {
+    if (!panels) return;
+    for (const [button, side] of [[leftPanelBtn, 'left'], [rightPanelBtn, 'right']]) {
+      const hidden = panels.isCollapsed(side);
+      setClass(button, 'is-off', hidden);
+      setAttrs(button, { 'aria-pressed': String(!hidden) });
+    }
+  }
 
   /** Show which of the three theme states is active, not merely light/dark. */
   function paintTheme(state) {
@@ -101,6 +126,9 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
     zoomOut, zoomIn, fitBtn,
     modeBtn, themeBtn, helpBtn, repoLink
   );
+
+  clear(region('panels')).append(leftPanelBtn, rightPanelBtn);
+  paintPanels();
 
   // --- document ------------------------------------------------------------
   const dirtyDot = h('span', { class: 'dirty-dot', title: 'Unsaved changes' });
@@ -133,6 +161,7 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
       title: state.camera.mode === 'flat' ? 'Switch to 3D (2)' : 'Switch to 2D (2)',
     });
 
+    paintPanels();
     setClass(dirtyDot, 'is-on', state.dirty);
     if (document.activeElement !== title && title.value !== state.doc.meta.title) {
       title.value = state.doc.meta.title;

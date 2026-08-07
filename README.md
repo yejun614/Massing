@@ -27,7 +27,7 @@ python -m http.server 8123        # or any static server
 Nothing to install. `npm run dev` does the same thing if you prefer.
 
 ```sh
-node test/run.mjs                 # geometry + document suite (136 checks)
+node test/run.mjs                 # geometry + document suite (143 checks)
 node build.js                     # → dist/index.html, plus the Claude skill
 node build.js --doc my.arch.json   # the same, with a diagram baked in
 node build.js --font Pretendard.woff2   # inline the font: no network at all
@@ -54,6 +54,8 @@ the modules load unbundled.
 | Find a component | The search box at the top of the left panel |
 | Light / dark | The theme button cycles system → light → dark |
 | Resize the panels | Drag either panel edge; double-click to reset, arrow keys when focused |
+| Hide a panel | `[` / `]`, or the two buttons beside the logo. A narrow window folds them away on its own |
+| Share a diagram | The share button copies a link with the whole diagram inside it |
 | Everything else | The `?` button in the toolbar |
 
 Blocks belong to a zone by **geometry**: a block inside a VPC's rectangle is in
@@ -200,6 +202,32 @@ trying, so the first refusal costs one extra dialog; after it the editor stops
 using handles for the rest of the session and every later open and save takes
 the working path directly.
 
+## Sharing a link
+
+The share button copies a URL with the entire diagram inside it. Opening that
+URL anywhere loads the diagram — no account, no upload, nothing stored.
+
+The payload rides in the fragment (`#d=…`), and that is the point rather than an
+implementation detail: **a fragment is never sent to the server.** The bytes go
+from your clipboard to the other person's browser without passing through any
+host, which is the promise the rest of the editor makes, extended to sharing.
+Whatever is serving the page never sees what is on it.
+
+Diagram JSON is extremely repetitive — the same dozen key names once per node —
+so it is gzipped before encoding, through the browser's own `CompressionStream`.
+A two-block diagram comes to about 400 characters. The encoding is
+self-describing: gzip's magic bytes are checked on the way back in, so a link
+written by a browser that could not compress still opens in one that can.
+
+What a link cannot do is stay short once **pictures** are embedded, because those
+are already-compressed data URLs that gzip cannot help with. Past about 8000
+characters the editor says so as it copies — browsers cope with far more than
+chat clients and issue trackers do.
+
+A shared link wins over the recovered-draft prompt on startup: it is an explicit
+request for one particular diagram, and offering both would put two competing
+documents on screen with no obvious answer. The draft stays in storage.
+
 ## When something goes wrong
 
 Errors appear as a toast that stays until you dismiss it, with a **Copy**
@@ -227,6 +255,23 @@ living in the grid — a divider *inside* a scrolling panel would slide away wit
 a long palette. Width is clamped twice: each panel has its own bounds, and the
 canvas is guaranteed 320px, so the two panels cannot conspire to close the
 drawing area on a narrow window and leave you with nothing to drag back.
+
+Either panel folds away entirely with `[` or `]`, or with the two buttons beside
+the logo. A narrow window does it unprompted: the inspector goes below 1180px
+and the palette below 900px, because 320px of canvas between two 232px panels
+is not a drawing area.
+
+What the viewport decides and what you decide are kept apart. Closing a panel
+yourself is remembered; the window crossing a breakpoint is not, so resizing a
+window never quietly rewrites your preference, and widening it again puts back
+whatever you actually chose. Opening a panel while a narrow window is holding it
+shut is honoured for as long as that window lasts — that choice was made under
+duress, so it is not stored.
+
+The toolbar answers to the same pressure. Both of its ends are pinned while the
+middle scrolls under them: the panel toggles, because on a narrow window they
+are the way a hidden panel comes back, and the document title, because whether
+there is unsaved work should never be something you scroll a toolbar to find.
 
 ## Themes
 
@@ -266,6 +311,7 @@ src/
   geom/plane.js        placing flat content on isometric planes
   core/arrange.js      tidy + flow layout, the de-occlusion rule
   core/images.js       import, downscale, embed
+  core/share.js        the diagram as a URL fragment
   core/{io,export,commands}.js
   render/             scene, camera, block, group, edge, grid, overlay
   input/              pointer, keyboard

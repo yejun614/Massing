@@ -35,6 +35,9 @@ export const UI_ICONS = {
   link: wrap('<path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/>'),
   zone: wrap('<rect x="1.8" y="4" width="12.4" height="8" rx="1.2" stroke-dasharray="2.6 2"/>'),
   help: wrap('<circle cx="8" cy="8" r="6"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4"/><path d="M8 11.6h.01"/>'),
+  panelLeft: wrap('<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.4"/><path d="M6.4 2.8v10.4"/>'),
+  panelRight: wrap('<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.4"/><path d="M9.6 2.8v10.4"/>'),
+  share: wrap('<circle cx="11.8" cy="3.6" r="1.9"/><circle cx="11.8" cy="12.4" r="1.9"/><circle cx="4.2" cy="8" r="1.9"/><path d="m5.9 7.1 4.2-2.5M5.9 8.9l4.2 2.5"/>'),
   // GitHub's own mark, from Octicons (MIT, © GitHub, Inc.). Kept as the real
   // mark rather than a redrawing: it labels a link to GitHub, which is the use
   // their brand guidelines allow, and a home-made octocat helps nobody.

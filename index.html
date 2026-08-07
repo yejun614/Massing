@@ -17,13 +17,17 @@
       <span class="brand-name">Massing</span>
     </div>
 
+    <!-- Leading, and never allowed to overflow: on a narrow window these are
+         what brings an auto-hidden panel back. -->
+    <div class="toolbar-group toolbar-panels" data-region="panels"></div>
+
     <div class="toolbar-group" data-region="file"></div>
     <div class="toolbar-group" data-region="edit"></div>
     <div class="toolbar-group" data-region="view"></div>
 
     <div class="toolbar-spacer"></div>
 
-    <div class="toolbar-group" data-region="doc"></div>
+    <div class="toolbar-group toolbar-doc" data-region="doc"></div>
   </header>
 
   <aside class="panel panel-left" data-region="palette">
