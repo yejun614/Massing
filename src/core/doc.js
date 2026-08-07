@@ -16,6 +16,7 @@ import {
   DEFAULT_ZONE_LABEL_PLANE,
   DEFAULT_LABEL_SIZE,
   DEFAULT_LABEL_ALIGN,
+  DEFAULT_EDGE_ROUTE,
 } from './schema.js';
 
 export function nodeById(doc, id) {
@@ -88,6 +89,25 @@ export function nodeBox(node) {
 export function groupBox(group) {
   const [x, y, w, h] = group.rect;
   return { x, y, w, h, z: 0, ht: 0 };
+}
+
+/**
+ * Anything a connection can attach to, as a ground box, or null.
+ *
+ * A block and a zone are both rectangles on the grid, so routing a connection
+ * never has to care which of the two it found -- only where the edges of it
+ * are, and how far off the ground to start.
+ */
+export function endpointBox(doc, id) {
+  const node = nodeById(doc, id);
+  if (node) return { ...nodeBox(node) };
+  const group = groupById(doc, id);
+  if (group) return { ...groupBox(group) };
+  return null;
+}
+
+export function canConnect(doc, id) {
+  return endpointBox(doc, id) !== null;
 }
 
 /** Re-anchor a box for the current camera rotation. */
@@ -267,6 +287,8 @@ export function makeEdge(doc, from, to, overrides = {}) {
     id: uniqueId(overrides.id ?? `${from}-${to}`, allIds(doc)),
     from,
     to,
+    route: DEFAULT_EDGE_ROUTE,
+    bend: null,
     label: '',
     style: 'solid',
     arrow: 'end',

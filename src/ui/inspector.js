@@ -526,6 +526,22 @@ function buildEdge(root, store, id) {
 
   fields.push(
     selectField(section, store, {
+      label: 'Route',
+      options: [['auto', 'Automatic'], ['x', 'Turn along X'], ['y', 'Turn along Y']],
+      get: (s) => edgeById(s.doc, id)?.route ?? 'auto',
+      set: (value) =>
+        withEdge((e) => {
+          // The crossover is a coordinate on one particular axis, so it means
+          // nothing on the other one — and automatic owns the crossover too.
+          // Either way, changing this is the way back to a clean route.
+          if (e.route !== value) e.bend = null;
+          e.route = value;
+        }),
+    })
+  );
+
+  fields.push(
+    selectField(section, store, {
       label: 'Label on',
       options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
       get: (s) => edgeById(s.doc, id)?.labelPlane ?? DEFAULT_PLANE,

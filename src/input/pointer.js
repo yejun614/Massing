@@ -21,16 +21,20 @@ import {
   projectionOf,
 } from '../render/camera.js';
 import { resizeFootprint } from '../render/handles.js';
+import { edgeRoute, EDGE_Z } from '../render/edge.js';
 import { rotatePoint, rotateRect, CELL } from '../geom/iso.js';
 import { planeAxes, planeVector } from '../geom/plane.js';
 import { MAX_SPAN } from '../core/schema.js';
-import { clampInt } from '../util/num.js';
+import { clamp, clampInt } from '../util/num.js';
 import {
   nodeById,
   groupById,
+  edgeById,
   textById,
   imageById,
   planarById,
+  endpointBox,
+  canConnect,
   nodeBox,
   groupBox,
   boxContains,
@@ -167,12 +171,11 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
       store.select(id);
     }
 
-    if (store.state.tool === 'connect') {
-      const node = nodeById(store.state.doc, id);
-      if (node) {
-        drag = { mode: 'connect', fromId: id, origin: pt, current: pt };
-        return;
-      }
+    // A zone is as connectable as a block: "this subnet talks to that one" is
+    // a relationship people draw.
+    if (store.state.tool === 'connect' && canConnect(store.state.doc, id)) {
+      drag = { mode: 'connect', fromId: id, origin: pt, current: pt };
+      return;
     }
 
     const targets = captureMoveTargets(store.state.doc, store.state.selection);
@@ -261,7 +264,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
         const risen = (drag.origin.y - pt.y) / (CELL * store.state.camera.zoom);
         const height = clampInt(drag.startHeight + risen, 0, MAX_HEIGHT, node.height);
         if (height === node.height) break;
-        openResize(drag);
+        openGesture(drag, 'Resize');
         store.commit('Resize', (doc) => {
           const n = nodeById(doc, drag.id);
           if (n) n.height = height;
@@ -274,10 +277,28 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
         if (!image) break;
         const size = pictureSize(store.state.camera, image, drag, pt);
         if (size[0] === image.size[0] && size[1] === image.size[1]) break;
-        openResize(drag);
+        openGesture(drag, 'Resize');
         store.commit('Resize', (doc) => {
           const im = imageById(doc, drag.id);
           if (im) im.size = size;
+        });
+        break;
+      }
+
+      case 'reroute': {
+        const edge = edgeById(store.state.doc, drag.id);
+        if (!edge) break;
+        // The route is worked out in document grid space, so unprojecting the
+        // pointer onto the plane the line sits on gives the crossover directly.
+        const g = screenToGrid(store.state.camera, pt.x, pt.y, EDGE_Z);
+        const bend = halfCell(drag.axis === 'x' ? g.x : g.y);
+        if (edge.route === drag.axis && edge.bend === bend) break;
+        openGesture(drag, 'Reroute');
+        store.commit('Reroute', (doc) => {
+          const e = edgeById(doc, drag.id);
+          if (!e) return;
+          e.route = drag.axis;
+          e.bend = bend;
         });
         break;
       }
@@ -290,13 +311,13 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
 
       case 'connect': {
         drag.current = pt;
-        const from = nodeById(store.state.doc, drag.fromId);
+        const from = endpointBox(store.state.doc, drag.fromId);
         if (!from) break;
         const anchor = gridToScreen(
           store.state.camera,
-          from.pos[0] + from.size[0] / 2,
-          from.pos[1] + from.size[1] / 2,
-          from.height
+          from.x + from.w / 2,
+          from.y + from.h / 2,
+          from.ht
         );
         overlay.link(store.state.camera, [anchor, pt]);
         store.setUI({ hoverId: hitId(e) });
@@ -328,6 +349,8 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
         if (node) reassignGroups(doc, [node]);
         else if (groupById(doc, active.id)) reassignGroups(doc, doc.nodes);
       });
+      store.endGesture();
+    } else if (active.mode === 'reroute' && active.moved) {
       store.endGesture();
     } else if (active.mode === 'connect') {
       connect(active.fromId, hitId(e));
@@ -439,7 +462,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   function connect(fromId, toId) {
     if (!toId || toId === fromId) return;
     const doc = store.state.doc;
-    if (!nodeById(doc, fromId) || !nodeById(doc, toId)) return;
+    if (!canConnect(doc, fromId) || !canConnect(doc, toId)) return;
     const exists = doc.edges.some(
       (e) =>
         (e.from === fromId && e.to === toId) || (e.from === toId && e.to === fromId)
@@ -491,6 +514,15 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
       };
     }
 
+    if (grip.role === 'bend') {
+      const edge = edgeById(doc, grip.id);
+      const route = edge && edgeRoute(doc, edge);
+      if (!route) return null;
+      // Fixed for the duration of the drag: re-deciding the axis mid-gesture
+      // would make the line jump out from under the pointer.
+      return { mode: 'reroute', id: grip.id, axis: route.dragAxis, moved: false };
+    }
+
     const node = nodeById(doc, grip.id);
     const group = groupById(doc, grip.id);
     const rect = node ? [...node.pos, ...node.size] : group?.rect;
@@ -510,12 +542,15 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
     };
   }
 
-  /** Open the undo gesture for a resize, once, at the first real change. */
-  function openResize(drag) {
+  /** Open the undo gesture once, at the first change that actually happens. */
+  function openGesture(drag, label) {
     if (drag.moved) return;
-    store.beginGesture('Resize');
+    store.beginGesture(label);
     drag.moved = true;
   }
+
+  /** The half-cell grid a dragged crossover snaps to. */
+  const halfCell = (v) => clamp(Math.round(v * 2) / 2, -MAX_SPAN, MAX_SPAN);
 
   function applyResize(drag, rect) {
     const doc = store.state.doc;
@@ -524,7 +559,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
     const current = node ? [...node.pos, ...node.size] : group?.rect;
     if (!current || current.every((v, i) => v === rect[i])) return;
 
-    openResize(drag);
+    openGesture(drag, 'Resize');
     store.commit('Resize', (d) => {
       const n = nodeById(d, drag.id);
       if (n) {

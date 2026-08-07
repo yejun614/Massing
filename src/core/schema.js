@@ -27,6 +27,17 @@ export const MAX_SPAN = 400;
 const EDGE_STYLES = new Set(['solid', 'dashed', 'dotted']);
 const EDGE_ARROWS = new Set(['none', 'end', 'start', 'both']);
 
+/**
+ * How a connection turns the corner between its two ends.
+ *
+ * `auto` lets the router pick the elbow that passes through fewest blocks.
+ * `x` and `y` pin it to one of the two orthogonal families, and `bend` then
+ * says where along that axis the run crosses over -- which is the single
+ * number a drag on the connection's grip writes.
+ */
+const EDGE_ROUTES = new Set(['auto', 'x', 'y']);
+export const DEFAULT_EDGE_ROUTE = 'auto';
+
 export function createEmptyDoc(title = 'Untitled diagram') {
   return {
     version: FORMAT_VERSION,
@@ -212,7 +223,10 @@ export function normalizeDoc(raw) {
     if (!e || typeof e !== 'object') continue;
     const from = str(e.from) ?? str(e.source);
     const to = str(e.to) ?? str(e.target);
-    if (!nodeIndex.has(from) || !nodeIndex.has(to)) {
+    // Either end may be a block or a zone: both are rectangles on the grid,
+    // and "this whole subnet talks to that one" is a real thing to draw.
+    const connectable = (id) => nodeIndex.has(id) || groupIndex.has(id);
+    if (!connectable(from) || !connectable(to)) {
       warnings.push(`Dropped edge ${from || '?'} -> ${to || '?'}: endpoint does not exist.`);
       continue;
     }
@@ -221,10 +235,16 @@ export function normalizeDoc(raw) {
       continue;
     }
     const id = takeId(e.id, `${from}-${to}`, usedIds, warnings, 'Edge');
+    const route = EDGE_ROUTES.has(e.route) ? e.route : DEFAULT_EDGE_ROUTE;
     doc.edges.push({
       id,
       from,
       to,
+      route,
+      // The crossover only means anything once an axis has been chosen, so an
+      // automatic route never carries one -- otherwise a stale number from an
+      // earlier drag would silently come back the next time the axis was set.
+      bend: route === DEFAULT_EDGE_ROUTE ? null : halfCell(e.bend),
       label: str(e.label) || '',
       style: EDGE_STYLES.has(e.style) ? e.style : 'solid',
       arrow: EDGE_ARROWS.has(e.arrow) ? e.arrow : 'end',
@@ -344,6 +364,8 @@ export function serializeDoc(doc) {
       label: e.label || null,
       style: e.style,
       arrow: e.arrow,
+      route: e.route === DEFAULT_EDGE_ROUTE ? null : e.route,
+      bend: e.bend,
       color: e.color,
       labelPlane: e.labelPlane === DEFAULT_PLANE ? null : e.labelPlane,
       labelSize: e.labelSize === DEFAULT_LABEL_SIZE ? null : e.labelSize,
@@ -494,6 +516,20 @@ function readPair(v, fallback, min = -MAX_SPAN) {
     clampInt(v[0], min, MAX_SPAN, fallback[0]),
     clampInt(v[1], min, MAX_SPAN, fallback[1]),
   ];
+}
+
+/**
+ * A coordinate on the half-cell grid, or null.
+ *
+ * Half rather than whole cells because a connection runs between block
+ * *centres*, and a block of even width has its centre on a half cell -- snap a
+ * dragged crossover to integers and it can never line up with the run it came
+ * from.
+ */
+function halfCell(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return clamp(Math.round(n * 2) / 2, -MAX_SPAN, MAX_SPAN);
 }
 
 function readRect(v) {

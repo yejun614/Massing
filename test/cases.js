@@ -36,6 +36,7 @@ import {
   normaliseSpin,
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
+import { edgeRoute } from '../src/render/edge.js';
 import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from '../src/data/components.js';
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
@@ -53,6 +54,7 @@ export function runCases(check) {
   textCases(check);
   arrangeCases(check);
   planarCases(check);
+  edgeCases(check);
   handleCases(check);
   registryCases(check);
   textMetricCases(check);
@@ -740,6 +742,150 @@ function arrangeCases(check) {
       ],
       edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'a' }],
     }).doc;
+    autoLayout(doc, { rot: 0 });
+    return doc.nodes.every((n) => Number.isFinite(n.pos[0]) && Number.isFinite(n.pos[1]));
+  })());
+}
+
+function edgeCases(check) {
+  const build = (edges) => normalizeDoc({
+    groups: [
+      { id: 'vpc', kind: 'vpc', rect: [10, 0, 8, 8] },
+      { id: 'lan', kind: 'lan', rect: [10, 12, 8, 6] },
+    ],
+    nodes: [
+      { id: 'api', type: 'ec2', pos: [0, 0], size: [2, 2] },
+      { id: 'db', type: 'rds', pos: [0, 12], size: [2, 2] },
+    ],
+    edges,
+  });
+
+  // --- what a connection may attach to --------------------------------------
+
+  check('a connection can hang off a zone at either end', (() => {
+    const { doc, warnings } = build([
+      { id: 'n2n', from: 'api', to: 'db' },
+      { id: 'n2z', from: 'api', to: 'vpc' },
+      { id: 'z2n', from: 'vpc', to: 'db' },
+      { id: 'z2z', from: 'vpc', to: 'lan' },
+    ]);
+    return doc.edges.length === 4 && warnings.length === 0 &&
+      doc.edges.every((e) => edgeRoute(doc, e) !== null);
+  })());
+
+  check('an endpoint that is neither a block nor a zone is still dropped', (() => {
+    const { doc, warnings } = build([{ from: 'api', to: 'nowhere' }]);
+    return doc.edges.length === 0 && warnings.length === 1;
+  })());
+
+  check('a zone connection survives a save and a reload', (() => {
+    const doc = build([{ id: 'z2z', from: 'vpc', to: 'lan', label: 'peering' }]).doc;
+    const saved = serializeDoc(doc);
+    const back = parseDoc(saved);
+    return back.warnings.length === 0 && back.doc.edges[0].from === 'vpc' &&
+      back.doc.edges[0].to === 'lan' && serializeDoc(back.doc) === saved;
+  })());
+
+  // --- the route, and the one number a drag writes --------------------------
+
+  const pathOf = (doc, edge) => edgeRoute(doc, edge).points.map((p) => `${p.x},${p.y}`).join(' ');
+
+  check('an untouched connection routes exactly as it always did', (() => {
+    // The three-segment path collapses to the plain elbow at the default
+    // crossover, so adding a bend parameter changed no existing drawing.
+    const doc = build([{ id: 'e', from: 'api', to: 'db' }]).doc;
+    const route = edgeRoute(doc, doc.edges[0]);
+    // api centre (1,1) -> db centre (1,13): they line up on x, so it is a
+    // straight run and there is nothing to turn.
+    return route.points.length === 2 && route.axis === 'y';
+  })());
+
+  check('a bend moves the run it names, and nothing else', (() => {
+    const doc = build([{ id: 'e', from: 'api', to: 'vpc' }]).doc;
+    const edge = doc.edges[0];
+    const before = pathOf(doc, edge);
+    edge.route = 'x';
+    edge.bend = 6;
+    const after = pathOf(doc, edge);
+    const route = edgeRoute(doc, edge);
+    // Every corner sits on the crossover, and the ends are where they were.
+    return after !== before &&
+      route.points.some((p) => near(p.x, 6, 1e-9)) &&
+      near(route.points[0].y, 1, 1e-9);
+  })());
+
+  check('the grip always sits on the line as drawn', (() => {
+    const doc = build([
+      { id: 'a', from: 'api', to: 'vpc' },
+      { id: 'b', from: 'vpc', to: 'lan' },
+      { id: 'c', from: 'api', to: 'db' },
+    ]).doc;
+    const onSegment = (p, q, g) => {
+      const cross = (q.x - p.x) * (g.y - p.y) - (q.y - p.y) * (g.x - p.x);
+      if (Math.abs(cross) > 1e-6) return false;
+      const dot = (g.x - p.x) * (q.x - p.x) + (g.y - p.y) * (q.y - p.y);
+      const len = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+      return dot >= -1e-6 && dot <= len + 1e-6;
+    };
+    for (const edge of doc.edges) {
+      for (const bend of [null, 4, 7, 20]) {
+        edge.route = bend === null ? 'auto' : 'x';
+        edge.bend = bend;
+        const r = edgeRoute(doc, edge);
+        let hit = false;
+        for (let i = 1; i < r.points.length; i++) {
+          if (onSegment(r.points[i - 1], r.points[i], r.grip)) hit = true;
+        }
+        if (!hit) return false;
+      }
+    }
+    return true;
+  })());
+
+  check('two ends that line up offer the axis that can actually bend them', (() => {
+    const doc = build([
+      { id: 'v', from: 'api', to: 'db' }, // same x: a vertical run
+      { id: 'd', from: 'api', to: 'vpc' }, // neither: a real elbow
+    ]).doc;
+    const [vertical, diagonal] = doc.edges.map((e) => edgeRoute(doc, e));
+    return vertical.axis === 'y' && vertical.dragAxis === 'x' &&
+      diagonal.dragAxis === diagonal.axis;
+  })());
+
+  check('dragging a straight connection bends it into a detour', (() => {
+    const doc = build([{ id: 'e', from: 'api', to: 'db' }]).doc;
+    const edge = doc.edges[0];
+    const straight = edgeRoute(doc, edge);
+    edge.route = straight.dragAxis;
+    edge.bend = -6;
+    const bent = edgeRoute(doc, edge);
+    return straight.points.length === 2 && bent.points.length === 4 &&
+      bent.points.some((p) => near(p.x, -6, 1e-9));
+  })());
+
+  check('a route that is automatic never carries a stale crossover', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ id: 'a', type: 'ec2', pos: [0, 0] }, { id: 'b', type: 'rds', pos: [8, 6] }],
+      edges: [{ from: 'a', to: 'b', bend: 3 }], // no route: bend means nothing
+    }).doc;
+    return doc.edges[0].route === 'auto' && doc.edges[0].bend === null &&
+      !serializeDoc(doc).includes('bend');
+  })());
+
+  check('a dragged crossover round-trips on the half-cell grid', (() => {
+    const doc = build([{ id: 'e', from: 'api', to: 'vpc', route: 'x', bend: 6.37 }]).doc;
+    const saved = serializeDoc(doc);
+    return doc.edges[0].bend === 6.5 && parseDoc(saved).doc.edges[0].bend === 6.5 &&
+      serializeDoc(parseDoc(saved).doc) === saved;
+  })());
+
+  check('auto layout ignores connections that touch a zone', (() => {
+    // Ranking is about blocks; a zone has no rank, and feeding one in would
+    // put an undefined into the arithmetic.
+    const doc = build([
+      { id: 'n2n', from: 'api', to: 'db' },
+      { id: 'n2z', from: 'api', to: 'vpc' },
+    ]).doc;
     autoLayout(doc, { rot: 0 });
     return doc.nodes.every((n) => Number.isFinite(n.pos[0]) && Number.isFinite(n.pos[1]));
   })());

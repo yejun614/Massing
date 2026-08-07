@@ -13,12 +13,13 @@
 
 import { svg, setAttr, setText, setClass } from '../util/dom.js';
 import { rotatePoint, unrotatePoint } from '../geom/iso.js';
-import { nodeById } from '../core/doc.js';
+import { endpointBox } from '../core/doc.js';
 import { round2 } from '../util/num.js';
 import { planeTransform, effectivePlane } from '../geom/plane.js';
 import { textAnchorFor } from '../util/text.js';
 
-const EDGE_Z = 0.14; // lift off the ground plane to avoid z-fighting with the grid
+/** Lift off the ground plane to avoid z-fighting with the grid. */
+export const EDGE_Z = 0.14;
 const CLEARANCE = 0.2; // cells of daylight between a block and the line
 const ARROW_LEN = 10;
 const ARROW_HALF = 4.5;
@@ -41,15 +42,10 @@ export function createEdgeView() {
  */
 export function updateEdgeView(view, edge, ctx) {
   const { doc, proj, rot } = ctx;
-  const from = nodeById(doc, edge.from);
-  const to = nodeById(doc, edge.to);
-  if (!from || !to) return false;
+  const route = edgeRoute(doc, edge);
+  if (!route) return false;
 
-  const obstacles = doc.nodes
-    .filter((n) => n !== from && n !== to)
-    .map((n) => ({ x: n.pos[0], y: n.pos[1], w: n.size[0], h: n.size[1] }));
-  const grid = routeInGrid(from, to, obstacles);
-  const rotated = grid.map((p) => rotatePoint(p.x, p.y, rot));
+  const rotated = route.points.map((p) => rotatePoint(p.x, p.y, rot));
   const screen = rotated.map((p) => proj.project(p.x, p.y, EDGE_Z));
   const points = screen.map((p) => `${round2(p.x)},${round2(p.y)}`).join(' ');
 
@@ -132,35 +128,111 @@ function placeEdgeLabel(view, edge, ctx, rotated, screen) {
 // ---------------------------------------------------------------------------
 
 /**
- * An elbow has two possible shapes -- along x first, or along y first -- and
- * they are rarely equally good. Picking the one that passes through fewer
- * blocks is nearly free and is what stops a connection from vanishing under
- * the middle of the diagram.
+ * Where a connection runs, in document grid coordinates.
+ *
+ * Exported because the input layer needs the very same geometry to put a grip
+ * on the run the user can drag. Routing it twice, in two files, is how a grip
+ * ends up somewhere the line is not.
+ *
+ * Both ends resolve through `endpointBox`, so a block and a zone are equally
+ * valid: each is a rectangle, and the route only ever asks where its edges are.
+ *
+ * @returns {{points: Array<{x,y}>, axis: 'x'|'y', dragAxis: 'x'|'y',
+ *            bend: number, grip: {x,y}} | null} null when an endpoint has gone
  */
-function routeInGrid(from, to, obstacles) {
+export function edgeRoute(doc, edge) {
+  const from = endpointBox(doc, edge.from);
+  const to = endpointBox(doc, edge.to);
+  if (!from || !to) return null;
+
   const a = centreOf(from);
   const b = centreOf(to);
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
+  // Only blocks obstruct. A zone is a floor marking that connections are meant
+  // to cross -- routing around every VPC would tie the diagram in knots.
+  const obstacles = doc.nodes
+    .filter((n) => n.id !== edge.from && n.id !== edge.to)
+    .map((n) => ({ x: n.pos[0], y: n.pos[1], w: n.size[0], h: n.size[1] }));
 
-  let points;
-  if (Math.abs(dx) < 1e-6 || Math.abs(dy) < 1e-6) {
-    points = [a, b];
-  } else {
-    const alongX = [a, { x: b.x, y: a.y }, b];
-    const alongY = [a, { x: a.x, y: b.y }, b];
-    const costX = blocksCrossed(alongX, obstacles);
-    const costY = blocksCrossed(alongY, obstacles);
-    // Equal cost keeps the old behaviour: turn on the dominant axis.
-    if (costX < costY) points = alongX;
-    else if (costY < costX) points = alongY;
-    else points = Math.abs(dx) >= Math.abs(dy) ? alongX : alongY;
-  }
+  const axis = edge.route && edge.route !== 'auto' ? edge.route : pickAxis(a, b, obstacles);
+  const bend = edge.bend ?? (axis === 'x' ? b.x : b.y);
 
-  points = trimStart(points, inflate(rectOf(from), CLEARANCE));
-  points = trimStart(points.slice().reverse(), inflate(rectOf(to), CLEARANCE)).reverse();
-  return points;
+  let points = pathAlong(axis, a, b, bend);
+  points = trimStart(points, inflate(from, CLEARANCE));
+  points = trimStart(points.slice().reverse(), inflate(to, CLEARANCE)).reverse();
+
+  // Which axis a drag on the grip should move.
+  //
+  // Crossing over "between the two ends" cannot bend a line whose ends already
+  // agree on that axis -- every point of it would share the same coordinate.
+  // Stepping sideways on the *other* axis can, and turns a straight run into a
+  // detour, so that is the one the grip offers.
+  const dragAxis = same(a.x, b.x) ? 'x' : same(a.y, b.y) ? 'y' : axis;
+
+  return { points, axis, dragAxis, bend, grip: gripOn(axis, bend, points) };
 }
+
+/**
+ * An elbow has two possible shapes -- turning along x, or along y -- and they
+ * are rarely equally good. Picking the one that passes through fewer blocks is
+ * nearly free and is what stops a connection from vanishing under the middle
+ * of the diagram.
+ */
+function pickAxis(a, b, obstacles) {
+  const dx = Math.abs(b.x - a.x);
+  const dy = Math.abs(b.y - a.y);
+  const costX = blocksCrossed(pathAlong('x', a, b, b.x), obstacles);
+  const costY = blocksCrossed(pathAlong('y', a, b, b.y), obstacles);
+  if (costX !== costY) return costX < costY ? 'x' : 'y';
+  // Equal cost keeps the old behaviour: turn on the dominant axis.
+  return dx >= dy ? 'x' : 'y';
+}
+
+/**
+ * The three-segment orthogonal path that crosses over at `m`.
+ *
+ * At the default crossover the middle run lands exactly on an endpoint and the
+ * duplicate collapses, which is why this reproduces the plain two-segment
+ * elbow rather than replacing it -- an untouched connection is drawn today
+ * exactly as it was before there was anything to drag.
+ */
+function pathAlong(axis, a, b, m) {
+  const points = axis === 'x'
+    ? [a, { x: m, y: a.y }, { x: m, y: b.y }, b]
+    : [a, { x: a.x, y: m }, { x: b.x, y: m }, b];
+  return dedupe(points);
+}
+
+function dedupe(points) {
+  const out = [];
+  for (const p of points) {
+    const last = out.at(-1);
+    if (last && same(last.x, p.x) && same(last.y, p.y)) continue;
+    out.push(p);
+  }
+  return out.length > 1 ? out : [points[0], points.at(-1)];
+}
+
+/**
+ * A point on the run the bend controls, for the grip to sit on.
+ *
+ * Taken from the trimmed polyline so the grip is always on the line as drawn,
+ * not on the ideal route that a block may have swallowed half of.
+ */
+function gripOn(axis, m, points) {
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i - 1];
+    const q = points[i];
+    const onRun = axis === 'x'
+      ? same(p.x, m) && same(q.x, m) && !same(p.y, q.y)
+      : same(p.y, m) && same(q.y, m) && !same(p.x, q.x);
+    if (onRun) return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+  }
+  // Trimmed away entirely -- overlapping endpoints, say. The grip still has to
+  // be somewhere the user can reach, so it falls back to the middle of the run.
+  return midpoint(points);
+}
+
+const same = (p, q) => Math.abs(p - q) < 1e-6;
 
 /** How many obstacle footprints a polyline passes through. */
 function blocksCrossed(points, obstacles) {
@@ -190,12 +262,8 @@ function segmentHitsRect(p, q, rect) {
   return x0 < rect.x + rect.w && rect.x < x1 && y0 < rect.y + rect.h && rect.y < y1;
 }
 
-function centreOf(node) {
-  return { x: node.pos[0] + node.size[0] / 2, y: node.pos[1] + node.size[1] / 2 };
-}
-
-function rectOf(node) {
-  return { x: node.pos[0], y: node.pos[1], w: node.size[0], h: node.size[1] };
+function centreOf(box) {
+  return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
 }
 
 function inflate(rect, by) {

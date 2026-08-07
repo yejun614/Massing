@@ -551,11 +551,11 @@
         },
         "from": {
           "type": "string",
-          "description": "Source node id. An edge naming a missing node is dropped on load."
+          "description": "Id of the source block or zone. An edge naming something that does not exist is dropped on load."
         },
         "to": {
           "type": "string",
-          "description": "Target node id."
+          "description": "Id of the target block or zone."
         },
         "label": {
           "type": "string",
@@ -577,6 +577,20 @@
             "start",
             "both"
           ]
+        },
+        "route": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "x",
+            "y"
+          ],
+          "default": "auto",
+          "description": "Which orthogonal family the elbow uses. \"auto\" picks whichever passes through fewer blocks."
+        },
+        "bend": {
+          "type": "number",
+          "description": "Where the run crosses over, as an x coordinate when route is \"x\" and a y coordinate when it is \"y\". Half-cell steps. Ignored unless route is set; omit it to keep the default corner."
         },
         "color": {
           "$ref": "#/$defs/color"

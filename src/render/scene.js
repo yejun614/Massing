@@ -23,7 +23,7 @@ import { createBlockView, updateBlockView } from './block.js';
 import { createTextView, updateTextView } from './text.js';
 import { createImageView, updateImageView } from './image.js';
 import { sortForPaint } from '../geom/depth.js';
-import { nodeBox, rotatedBox, groupsInPaintOrder, nodeById } from '../core/doc.js';
+import { nodeBox, rotatedBox, groupsInPaintOrder, endpointBox } from '../core/doc.js';
 import { luminance } from '../util/color.js';
 
 export function createScene(container, { onResize } = {}) {
@@ -107,7 +107,7 @@ export function createScene(container, { onResize } = {}) {
 
     // --- edges -------------------------------------------------------------
     const liveEdges = doc.edges.filter(
-      (e) => nodeById(doc, e.from) && nodeById(doc, e.to)
+      (e) => endpointBox(doc, e.from) && endpointBox(doc, e.to)
     );
     diff(edges, liveEdges, edgeViews, createEdgeView, (view, edge) =>
       updateEdgeView(view, edge, {

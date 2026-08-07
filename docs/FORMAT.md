@@ -116,6 +116,43 @@ enclose the node is not.
 Zones must be large enough to hold their contents. A `[2, 2]` block at
 `[11, 2]` needs a zone covering at least `x` 11–13 and `y` 2–4.
 
+## Connections
+
+`from` and `to` name **a block or a zone** — the two are interchangeable, so
+"this subnet peers with that one" and "this gateway reaches that LAN" are both
+one edge. A connection to a zone starts at the zone's boundary rather than its
+middle, the same way it does for a block.
+
+```json
+{ "from": "api", "to": "db" }
+{ "from": "gateway", "to": "office-lan" }
+{ "from": "prod-vpc", "to": "dr-vpc", "label": "peering", "style": "dashed" }
+```
+
+Routing is an elbow in grid space, so a connection keeps its shape when the
+camera rotates. Two fields override it:
+
+| Field | Meaning |
+|---|---|
+| `route` | `auto` (default) picks whichever elbow passes through fewer blocks; `x` or `y` pins it to one |
+| `bend` | Where the run crosses over — an x coordinate under `route: "x"`, a y coordinate under `route: "y"`. Half-cell steps |
+
+```json
+{ "from": "api", "to": "db", "route": "x", "bend": 6.5 }
+```
+
+`bend` means nothing without `route`, and is dropped on load when `route` is
+`auto` — so a stale number cannot come back the next time an axis is chosen. In
+the editor these are what dragging a selected connection's grip writes; setting
+**Route** back to Automatic in the inspector clears both.
+
+Only blocks push a route around. A zone is a floor marking that connections are
+meant to cross, so routing ignores them — otherwise every line would tie itself
+in knots getting around a VPC.
+
+Auto layout ranks **blocks** from the connections between blocks; a connection
+that touches a zone is left out of that calculation and simply drawn.
+
 ## Text annotations
 
 `texts` are free-form notes for commentary — captions, callouts, explanations.

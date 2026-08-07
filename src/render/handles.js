@@ -14,9 +14,10 @@
 
 import { svg, setAttr } from '../util/dom.js';
 import { rotateRect, CELL } from '../geom/iso.js';
-import { projectionOf, sceneToScreen } from './camera.js';
+import { projectionOf, sceneToScreen, gridToScreen } from './camera.js';
+import { edgeRoute, EDGE_Z } from './edge.js';
 import { planeAxes } from '../geom/plane.js';
-import { nodeById, groupById, imageById } from '../core/doc.js';
+import { nodeById, groupById, imageById, edgeById } from '../core/doc.js';
 import { clampInt, round2 } from '../util/num.js';
 import { MAX_SPAN } from '../core/schema.js';
 
@@ -56,7 +57,33 @@ export function handlesFor(state) {
   if (group) return footprintHandles(id, group.rect, 0, camera);
   const image = imageById(doc, id);
   if (image) return pictureHandles(image, camera);
+  const edge = edgeById(doc, id);
+  if (edge) return edgeHandles(doc, edge, camera);
   return [];
+}
+
+/**
+ * The one grip a connection has: the run it turns on.
+ *
+ * A connection is not a shape with corners to pull, it is a path with one
+ * degree of freedom -- where it crosses over between its two ends. Dragging
+ * that run sideways is how a line is moved out from under whatever it happened
+ * to be crossing.
+ */
+function edgeHandles(doc, edge, cam) {
+  const route = edgeRoute(doc, edge);
+  if (!route) return [];
+  const p = gridToScreen(cam, route.grip.x, route.grip.y, EDGE_Z);
+  return [{
+    key: 'bend',
+    role: 'bend',
+    target: edge.id,
+    // The run moves along one grid axis, which projects to a skewed screen
+    // direction, so none of the four resize cursors would be telling the truth.
+    cursor: 'move',
+    x: p.x,
+    y: p.y,
+  }];
 }
 
 function blockHandles(node, cam) {

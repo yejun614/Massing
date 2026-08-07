@@ -109,13 +109,16 @@ export function createCommands({ store, scene, toaster, io }) {
     if (!nodes.length && !groups.length && !texts.length && !images.length) return null;
 
     const groupIds = new Set(groups.map((g) => g.id));
+    // A connection can hang off a zone as readily as off a block, so both
+    // count when deciding whether a copied fragment carries it along.
+    const endpoints = new Set([...nodeSet, ...groupIds]);
     return {
       version: 1,
       meta: { title: doc.meta.title },
       canvas: { ...doc.canvas },
       groups: groups.map((g) => ({ ...g, parent: groupIds.has(g.parent) ? g.parent : null })),
       nodes: nodes.map((n) => ({ ...n, group: groupIds.has(n.group) ? n.group : null })),
-      edges: doc.edges.filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to)),
+      edges: doc.edges.filter((e) => endpoints.has(e.from) && endpoints.has(e.to)),
       texts,
       images,
     };

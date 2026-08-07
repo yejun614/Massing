@@ -195,6 +195,26 @@ One SVG, seven stacked layers, and a keyed diff:
 grid → behind → zones → edges → blocks → texts → overlay
 ```
 
+The edge layer routes in **document grid space**, not screen space, so a
+connection keeps its shape when the camera turns. Both ends resolve through
+`endpointBox`, which answers for a block and a zone alike — each is a rectangle,
+and routing only ever asks where its edges are, so connecting zones needed no
+second code path. Only blocks obstruct: a zone is a floor marking connections
+are meant to cross, and routing around every VPC would tie a diagram in knots.
+
+The route has exactly one degree of freedom, which is what makes it draggable.
+The path is three orthogonal segments crossing over at `bend`; at the default
+crossover the middle run lands on an endpoint and the duplicate point collapses,
+reproducing the plain two-segment elbow. So the parameter was added without
+redrawing a single existing diagram. `edgeRoute` is exported because the grip
+has to sit on the line — routing it twice, in two files, is how a grip ends up
+somewhere the line is not.
+
+One case needs care: ends that already agree on an axis draw a straight run,
+and crossing over *between* them cannot bend it, since every point shares that
+coordinate. Stepping sideways on the other axis can, so `dragAxis` reports the
+one a drag should move, which is not always the one the route turns on.
+
 Resize grips are the exception, and deliberately so: they hang *outside* the
 camera transform, in a layer of their own above everything. A grip is a control,
 not scenery — it has to stay the same size on screen at every zoom, and putting

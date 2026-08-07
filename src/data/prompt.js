@@ -75,6 +75,15 @@ row starts at x 7 to leave a one-cell gap.
 \`groups\`, \`edges\`, \`texts\`, \`size\`, \`height\` and \`color\` are all optional.
 Omitted fields take the component type's defaults.
 
+An edge's \`from\` and \`to\` may name a **zone** as readily as a block, so
+"this subnet peers with that one" is one edge:
+\`{ "from": "prod-vpc", "to": "dr-vpc", "label": "peering", "style": "dashed" }\`
+
+Routing is automatic and usually right; leave it alone. Only when two lines
+would land on top of each other, pin one aside with \`route\` (\`x\` or \`y\`, the
+axis it turns on) and \`bend\` (where it crosses over, in half cells):
+\`{ "from": "api", "to": "db", "route": "x", "bend": 6.5 }\`
+
 ## Component types
 
 ${typeCatalogue()}
