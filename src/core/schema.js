@@ -128,12 +128,13 @@ export function normalizeDoc(raw) {
     if (g.kind && kindDef.kind !== g.kind) {
       warnings.push(`Group kind "${g.kind}" is unknown; used "group".`);
     }
-    const id = takeId(g.id, str(g.label) || kindDef.kind, usedIds, warnings, 'Group');
+    const label = readLabel(g.label, kindDef.label);
+    const id = takeId(g.id, label || kindDef.kind, usedIds, warnings, 'Group');
     const rect = readRect(g.rect ?? [g.x, g.y, g.w, g.h]);
     const group = {
       id,
       kind: kindDef.kind,
-      label: str(g.label) || kindDef.label,
+      label,
       rect,
       color: color(g.color) || kindDef.color,
       // A zone's caption is a flat rectangle too, so it hangs on a plane just
@@ -165,7 +166,9 @@ export function normalizeDoc(raw) {
       type = FALLBACK_TYPE;
     }
     const def = componentFor(type);
-    const label = str(n.label) ?? str(n.name) ?? '';
+    // `?? n.name` and not `|| n.name`: an explicit empty label is an answer,
+    // and must not fall through to the alias.
+    const label = readLabel(n.label ?? n.name, def.label);
     const id = takeId(n.id, label || type, usedIds, warnings, 'Node');
     const pos = readPair(n.pos ?? [n.x, n.y], [0, 0]);
     const size = readPair(n.size ?? [n.w, n.h], def.size, 1);
@@ -173,7 +176,7 @@ export function normalizeDoc(raw) {
     const node = {
       id,
       type,
-      label: label || def.label,
+      label,
       pos,
       size,
       height: clampInt(n.height, 0, 40, def.height),
@@ -448,6 +451,19 @@ function array(v) {
 
 function str(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+/**
+ * A caption that is allowed to be empty.
+ *
+ * An absent field and an empty one say different things: "nothing was
+ * specified, name it after its type" versus "draw no caption here". `str`
+ * collapses the two, which is why a label the user deleted used to grow back
+ * the next time the file was opened. Blocks and zones are the only fields that
+ * carry a non-empty default, so they are the only ones that needed this.
+ */
+function readLabel(raw, fallback) {
+  return typeof raw === 'string' ? raw.trim() : fallback;
 }
 
 function color(v) {

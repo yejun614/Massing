@@ -35,7 +35,7 @@ import {
   normaliseSpin,
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
-import { COMPONENTS, GROUP_KINDS, componentFor, isKnownType } from '../src/data/components.js';
+import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from '../src/data/components.js';
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
 import { THREE_TIER } from '../src/data/samples.js';
@@ -244,6 +244,74 @@ function documentCases(check) {
     JSON.stringify(normalizeDoc(sample).doc) === JSON.stringify(sample)
   );
   check('reloading a saved file produces no warnings', parseDoc(once).warnings.length === 0);
+
+  // --- captions may be deliberately empty -----------------------------------
+  // Absent and empty are different answers. Reading them as the same is what
+  // made a deleted label grow back the next time the file was opened.
+
+  check('a label that was deleted stays deleted', (() => {
+    const doc = normalizeDoc({
+      groups: [{ id: 'vpc', kind: 'vpc', label: 'Production', rect: [0, 0, 10, 10] }],
+      nodes: [{ id: 'api', type: 'ec2', label: 'API', pos: [1, 1] }],
+    }).doc;
+    doc.groups[0].label = '';
+    doc.nodes[0].label = '';
+
+    const saved = serializeDoc(doc);
+    const back = parseDoc(saved).doc;
+    return back.groups[0].label === '' && back.nodes[0].label === '' &&
+      // ...and survives a second trip, which is where a re-defaulted label
+      // would show up as a file that changes every time it is opened.
+      serializeDoc(back) === saved;
+  })());
+
+  check('an absent label still falls back to the type name', (() => {
+    const doc = normalizeDoc({
+      groups: [{ id: 'g', kind: 'vpc', rect: [0, 0, 4, 4] }],
+      nodes: [{ id: 'n', type: 'ec2', pos: [0, 0] }],
+    }).doc;
+    return doc.groups[0].label === groupKindFor('vpc').label &&
+      doc.nodes[0].label === componentFor('ec2').label;
+  })());
+
+  check('an empty label does not fall through to the name alias', (() => {
+    const doc = normalizeDoc({
+      nodes: [
+        { id: 'a', type: 'ec2', name: 'From the alias', pos: [0, 0] },
+        { id: 'b', type: 'ec2', label: '', name: 'Ignored', pos: [2, 0] },
+      ],
+    }).doc;
+    return doc.nodes[0].label === 'From the alias' && doc.nodes[1].label === '';
+  })());
+
+  check('a whitespace-only label counts as empty', (() => {
+    const doc = normalizeDoc({
+      groups: [{ id: 'g', kind: 'vpc', label: '  ', rect: [0, 0, 4, 4] }],
+      nodes: [{ id: 'n', type: 'ec2', label: '\t\n', pos: [0, 0] }],
+    }).doc;
+    return doc.groups[0].label === '' && doc.nodes[0].label === '';
+  })());
+
+  check('an unlabelled entity still gets a readable id', (() => {
+    const doc = normalizeDoc({
+      groups: [{ kind: 'vpc', label: '', rect: [0, 0, 4, 4] }],
+      nodes: [{ type: 'ec2', label: '', pos: [0, 0] }],
+    }).doc;
+    // Not "item": the slug falls back to what the thing *is*.
+    return doc.groups[0].id === 'vpc' && doc.nodes[0].id === 'ec2';
+  })());
+
+  check('clearing every caption produces no warnings', (() => {
+    const doc = normalizeDoc(THREE_TIER).doc;
+    doc.nodes.forEach((n) => (n.label = ''));
+    doc.groups.forEach((g) => (g.label = ''));
+    doc.edges.forEach((e) => (e.label = ''));
+    doc.images.forEach((im) => (im.label = ''));
+    const round = parseDoc(serializeDoc(doc));
+    return round.warnings.length === 0 &&
+      round.doc.nodes.every((n) => n.label === '') &&
+      round.doc.groups.every((g) => g.label === '');
+  })());
   check('short numeric arrays stay on one line', once.includes('"pos": ['), 'pos should be inline');
   check('no array element sits alone on its own line', !/\[\n\s+-?\d+,\n/.test(once));
   check('serialised output ends with a newline', once.endsWith('\n'));

@@ -177,6 +177,23 @@ only decides which way it is offset from the line. `floor` lays it alongside,
 
 `labelSize` sets the caption size in pixels on any of them, 6–96, default 12.
 
+### No caption at all
+
+Leave `label` out and a block or a zone is named after what it is — an `ec2`
+becomes "EC2 Instance", a `vpc` becomes "VPC". Set it to `""` and nothing is
+drawn:
+
+```json
+{ "id": "worker-1", "type": "ec2", "label": "", "pos": [0, 0] }
+```
+
+Absent and empty are deliberately different answers, so clearing a caption in
+the editor survives being saved and opened again. That is also why an empty
+label is one of the few things written out rather than omitted: dropping the
+key would be indistinguishable from never having set it. `""` is a normal value
+on connections and pictures too, which have no name of their own to fall back
+on.
+
 Text, pictures, block captions and connection captions default to `floor` —
 lying on the ground is what reads as part of the isometric scene rather than
 stuck on top of it. Zone

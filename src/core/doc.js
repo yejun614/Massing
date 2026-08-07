@@ -191,7 +191,9 @@ export function makeNode(doc, type, x, y, overrides = {}) {
   const def = componentFor(type);
   const label = overrides.label ?? def.label;
   return {
-    id: uniqueId(overrides.id ?? label, allIds(doc)),
+    // An empty label is allowed, but it makes a useless id, so the type's own
+    // name stands in for the slug and only for the slug.
+    id: uniqueId(overrides.id || label || def.label, allIds(doc)),
     type: def.type,
     label,
     pos: [x, y],
@@ -210,7 +212,7 @@ export function makeGroup(doc, kind, rect, overrides = {}) {
   const def = groupKindFor(kind);
   const label = overrides.label ?? def.label;
   return {
-    id: uniqueId(overrides.id ?? label, allIds(doc)),
+    id: uniqueId(overrides.id || label || def.label, allIds(doc)),
     kind: def.kind,
     label,
     rect: [...rect],

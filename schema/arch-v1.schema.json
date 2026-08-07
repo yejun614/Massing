@@ -239,7 +239,7 @@
         },
         "label": {
           "type": "string",
-          "description": "Caption under the block. Defaults to the type's name."
+          "description": "Caption under the block. Omit it to use the type's name; set it to \"\" for no caption at all."
         },
         "pos": {
           "type": "array",
@@ -331,7 +331,8 @@
           "description": "Controls the default colour and border style. Default \"group\"."
         },
         "label": {
-          "type": "string"
+          "type": "string",
+          "description": "Caption for the zone. Omit it to use the kind's name; set it to \"\" for no caption at all."
         },
         "rect": {
           "type": "array",
