@@ -11,6 +11,7 @@ export const UI_ICONS = {
   file: wrap('<path d="M9 1.5H4.2a1.2 1.2 0 0 0-1.2 1.2v10.6a1.2 1.2 0 0 0 1.2 1.2h7.6a1.2 1.2 0 0 0 1.2-1.2V5.5Z"/><path d="M9 1.5V5.5H13"/>'),
   open: wrap('<path d="M1.8 12.8V4.2A1.2 1.2 0 0 1 3 3h3.3l1.4 1.8H13a1.2 1.2 0 0 1 1.2 1.2v6.8A1.2 1.2 0 0 1 13 14H3a1.2 1.2 0 0 1-1.2-1.2Z"/>'),
   save: wrap('<path d="M2.6 3.8A1.2 1.2 0 0 1 3.8 2.6h6.6L13.4 5.6v6.6a1.2 1.2 0 0 1-1.2 1.2H3.8a1.2 1.2 0 0 1-1.2-1.2Z"/><path d="M5.2 2.6v3.6h5.2V2.6M5.2 13.4V9.6h5.6v3.8"/>'),
+  refresh: wrap('<path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"/><path d="M13.6 2.2v3.9h-3.9"/>'),
   clipboard: wrap('<rect x="4.2" y="2.6" width="7.6" height="11" rx="1.2"/><path d="M6.4 2.6V1.8h3.2v.8"/><path d="M6.6 6.6h2.8M6.6 9.2h2.8"/>'),
   image: wrap('<rect x="2" y="3" width="12" height="10" rx="1.4"/><circle cx="5.8" cy="6.4" r="1.1"/><path d="m2.6 11.6 3.2-3.1 2.4 2.2 2.4-2.4 3 3"/>'),
   vector: wrap('<path d="M4.6 4.6h6.8v6.8H4.6z"/><rect x="2.2" y="2.2" width="2.4" height="2.4" rx=".5"/><rect x="11.4" y="2.2" width="2.4" height="2.4" rx=".5"/><rect x="2.2" y="11.4" width="2.4" height="2.4" rx=".5"/><rect x="11.4" y="11.4" width="2.4" height="2.4" rx=".5"/>'),

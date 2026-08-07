@@ -56,6 +56,7 @@ the modules load unbundled.
 | Light / dark | The theme button cycles system → light → dark |
 | Resize the panels | Drag either panel edge; double-click to reset, arrow keys when focused |
 | Hide a panel | `[` / `]`, or the two buttons beside the logo. A narrow window folds them away on its own |
+| Reload from disk | `R`, or the refresh button — re-reads the open file after something else edited it |
 | Share a diagram | The share button copies a link with the whole diagram inside it |
 | Everything else | The `?` button in the toolbar |
 
@@ -80,6 +81,30 @@ The same text is published as a Claude skill at
 file and the skill cannot drift apart. There is also
 [`docs/FORMAT.md`](docs/FORMAT.md) for humans and the formal
 [`schema/arch-v1.schema.json`](schema/arch-v1.schema.json).
+
+### Watching the file change
+
+If the model is editing the `.arch.json` on disk rather than handing you JSON in
+a chat, press `R` (or the refresh button) to read it again. The camera stays
+exactly where it is and the selection survives if its ids do, so you can keep
+watching one corner of a diagram while it is rewritten underneath you.
+
+Reloading is undoable like any other change, and pressing it when the file has
+not actually changed does nothing at all — no undo entry, no lost selection — so
+it is safe to lean on while waiting for a model to finish writing. If you had
+unsaved edits, it says so and one click puts them back.
+
+How well the button can see the file depends on where the page is running:
+
+| | |
+|---|---|
+| Chrome or Edge, served over http (`npm run dev`) | Reads through the file handle. Works every time |
+| Firefox | Re-reads the file you picked. Works every time |
+| Chrome or Edge, opened from `file://` | Chrome invalidates its reference once the bytes change, so the button says so and offers to re-pick the file in one click |
+
+The last row is a browser rule, not a choice: on a `file://` page the origin is
+opaque and the File System Access API refuses to serve it at all. Serving the
+folder is what makes the round trip seamless.
 
 Loading is deliberately forgiving: unknown component types become plain blocks,
 duplicate ids are renamed, edges pointing at missing nodes are dropped. Each

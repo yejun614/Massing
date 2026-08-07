@@ -40,6 +40,7 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
   // --- file ----------------------------------------------------------------
   const newBtn = btn('file', 'New diagram (Ctrl+N)', () => commands.newDoc());
   const openBtn = btn('open', 'Open… (Ctrl+O)', () => io.open());
+  const reloadBtn = btn('refresh', 'Reload from disk (R)', () => io.reload());
   const saveBtn = btn('save', 'Save (Ctrl+S)', () => io.save());
   const copyBtn = btn('clipboard', 'Copy diagram JSON to clipboard', () => io.copyDocumentJson());
   const shareBtn = btn(
@@ -59,7 +60,22 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
   );
   const pngBtn = btn('image', 'Export as PNG', () => exporter.png());
   const svgBtn = btn('vector', 'Export as SVG', () => exporter.svg());
-  clear(region('file')).append(newBtn, openBtn, saveBtn, imageBtn, copyBtn, shareBtn, promptBtn, pngBtn, svgBtn);
+  clear(region('file')).append(newBtn, openBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn, promptBtn, pngBtn, svgBtn);
+
+  /**
+   * Name the file the button will actually read. Which file a reload picks up
+   * is the only thing about it worth being unsure of, and a tooltip that says
+   * so costs nothing; disabled with no explanation would just look broken.
+   */
+  function paintReload() {
+    const name = io.sourceName;
+    reloadBtn.disabled = !name;
+    setAttrs(reloadBtn, {
+      title: name
+        ? `Reload ${name} from disk (R) — picks up edits made outside this page`
+        : 'Reload from disk (R) — open a diagram file first',
+    });
+  }
 
   // --- edit ----------------------------------------------------------------
   const undoBtn = btn('undo', 'Undo (Ctrl+Z)', () => commands.undo());
@@ -166,6 +182,7 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
     });
 
     paintPanels();
+    paintReload();
     setClass(dirtyDot, 'is-on', state.dirty);
     if (document.activeElement !== title && title.value !== state.doc.meta.title) {
       title.value = state.doc.meta.title;

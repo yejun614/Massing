@@ -31,7 +31,7 @@ import { tidy, autoLayout, countOccluded } from './arrange.js';
 
 const PASTE_OFFSET = 2; // cells, so a paste is visibly not the original
 
-export function createCommands({ store, scene, toaster }) {
+export function createCommands({ store, scene, toaster, io }) {
   let localClipboard = null; // fallback when the system clipboard is unavailable
 
   // --- selection ---------------------------------------------------------
@@ -307,6 +307,9 @@ export function createCommands({ store, scene, toaster }) {
 
   function newDoc() {
     store.replaceDoc(createEmptyDoc(), 'New diagram');
+    // A blank diagram did not come from the file that was open, so reloading
+    // it would silently throw the blank one away.
+    io?.forget();
     zoomFit();
   }
 

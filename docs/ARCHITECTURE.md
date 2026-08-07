@@ -254,6 +254,23 @@ cycles are broken, out-of-range numbers are clamped. Each produces a warning,
 never an exception. A document that is 95% correct opens and tells its author
 about the other 5%. The only fatal error is text that is not JSON.
 
+### The file is a shared document
+
+Two programs are expected to have the same `.arch.json` open — this editor and
+whatever is writing it. So `io.js` tracks two different questions separately:
+`handle` is where a **save** goes, `source` is where a **reload** reads from.
+They usually name the same file, but not always — a document opened through the
+plain file input has a source and no handle, and a Save As moves the handle to a
+file the document was never read from. Collapsing them into one variable means a
+reload eventually reads a file the user is not looking at.
+
+Reload leaves the camera alone and prunes the selection rather than dropping it,
+because a reload is the same diagram a moment later. It also compares the
+incoming document against the current one in canonical form and does nothing
+when they match: it is a button people press repeatedly while waiting for a
+model to finish writing, and spending an undo entry per press would make the
+history useless exactly when it is needed.
+
 **Writing is deterministic.** Fixed key order, two-space indent, short numeric
 arrays kept on one line by a small custom serialiser (`JSON.stringify` would
 spread `"pos": [2, 2]` over five lines). Save → load → save is byte-identical,

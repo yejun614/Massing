@@ -76,8 +76,10 @@ const panels = createPanels({
   onChange: () => scheduleRender(),
 });
 const overlay = createOverlay(scene.overlay);
-const commands = createCommands({ store, scene, toaster });
+// io first: `newDoc` has to tell it to forget which file is open, and io
+// itself depends only on the store.
 const io = createIO({ store, toaster });
+const commands = createCommands({ store, scene, toaster, io });
 const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);

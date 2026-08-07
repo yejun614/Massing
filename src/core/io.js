@@ -7,6 +7,11 @@
  * a language model working on the same `.arch.json`. Elsewhere we fall back to
  * a download plus a file input.
  *
+ * That loop only closes if it runs both ways, so we also remember where the
+ * open document was *read* from and `reload()` reads it again. Without it,
+ * seeing what a model just wrote means picking the same file out of a dialog
+ * over and over.
+ *
  * A debounced copy also goes to localStorage, purely so an accidental refresh
  * is not a data loss event. It is a safety net, never the source of truth.
  */
@@ -55,6 +60,19 @@ export function createIO({ store, toaster }) {
   let fsAvailable = canWriteToDisk();
   let handle = null;
   let autosaveTimer = 0;
+
+  /**
+   * Where `reload()` re-reads from, or null when the document did not come
+   * from a file at all -- a new diagram, a shared link, a recovered draft.
+   *
+   * Deliberately separate from `handle`, which answers a different question:
+   * where a *save* goes. The two usually agree, but a document opened through
+   * the plain file input has a source and no handle, and after a Save As the
+   * handle changes to a file the document was never read from.
+   */
+  let source = null; // { handle } | { file }
+
+  const sourceName = () => source?.handle?.name ?? source?.file?.name ?? null;
 
   function fileName() {
     return slugify(store.state.doc.meta.title || 'diagram') + FILE_EXTENSION;
@@ -105,6 +123,10 @@ export function createIO({ store, toaster }) {
       await writable.write(text);
       await writable.close();
       store.markSaved();
+      // The file on disk now holds this document, so it is also the file a
+      // reload should read -- which matters after a Save As, where the handle
+      // has just moved to somewhere the document was never opened from.
+      source = { handle };
       toaster?.info(`Saved ${handle.name}`);
       return 'saved';
     } catch (err) {
@@ -136,12 +158,14 @@ export function createIO({ store, toaster }) {
    * is already yes, and `requestPermission` would need the user activation the
    * picker has just consumed.
    */
-  async function ensureWritePermission(target) {
+  async function ensurePermission(target, mode) {
     if (typeof target.queryPermission !== 'function') return true;
-    const options = { mode: 'readwrite' };
+    const options = { mode };
     if ((await target.queryPermission(options)) === 'granted') return true;
     return (await target.requestPermission(options)) === 'granted';
   }
+
+  const ensureWritePermission = (target) => ensurePermission(target, 'readwrite');
 
   // --- reading -------------------------------------------------------------
 
@@ -183,7 +207,7 @@ export function createIO({ store, toaster }) {
       // no reason and send us into a second dialog.
       const file = await picked.getFile();
       handle = picked;
-      await loadFile(file);
+      await loadFile(file, { handle: picked });
       return 'opened';
     } catch (err) {
       handle = null; // unreadable through this handle means unwritable too
@@ -221,29 +245,141 @@ export function createIO({ store, toaster }) {
     input.click();
   }
 
-  async function loadFile(file) {
+  /**
+   * Read a file into the document and remember where it came from.
+   *
+   * The binding is set *after* the load, because `loadText` clears it: text
+   * arriving from anywhere else -- a link, a draft, a drop of raw JSON -- must
+   * not leave a reload button pointing at whatever file was open before.
+   */
+  async function loadFile(file, { handle: bound = null } = {}) {
     try {
-      loadText(await file.text(), file.name);
+      if (!loadText(await file.text(), file.name)) return false;
+      source = bound ? { handle: bound } : { file };
+      return true;
     } catch (err) {
       toaster?.error(`Could not read ${file.name}: ${err.message}`, { detail: describeError(err) });
+      return false;
+    }
+  }
+
+  /** Parse, reporting failure the way the rest of the app expects. Null if bad. */
+  function parseOrReport(text, label) {
+    try {
+      return parseDoc(text);
+    } catch (err) {
+      toaster?.error(`${label} is not valid JSON: ${err.message}`, {
+        detail: describeParseFailure(label, err, text),
+      });
+      return null;
     }
   }
 
   /** Replace the document from raw text. Returns false on unparseable JSON. */
-  function loadText(text, sourceName = 'document') {
-    let result;
-    try {
-      result = parseDoc(text);
-    } catch (err) {
-      toaster?.error(`${sourceName} is not valid JSON: ${err.message}`, {
-        detail: describeParseFailure(sourceName, err, text),
-      });
-      return false;
-    }
+  function loadText(text, label = 'document') {
+    const result = parseOrReport(text, label);
+    if (!result) return false;
+    source = null;
     store.replaceDoc(result.doc, 'Open', { markSaved: true });
     toaster?.warnings(result.warnings);
-    if (!result.warnings.length) toaster?.info(`Opened ${sourceName}`);
+    if (!result.warnings.length) toaster?.info(`Opened ${label}`);
     return true;
+  }
+
+  /**
+   * Read the open file again, picking up whatever was written to it since.
+   *
+   * The camera is left exactly where it is and the selection survives if its
+   * ids do, because the whole point is to watch one diagram change while
+   * looking at one part of it. Reloading is undoable like any other document
+   * change, which is what makes it safe to offer as a single click.
+   */
+  async function reload() {
+    if (!source) {
+      toaster?.info('Nothing to reload — open a diagram file first.');
+      return false;
+    }
+
+    const name = sourceName();
+    let text;
+    try {
+      text = await readSource();
+    } catch (err) {
+      offerReopen(name, err);
+      return false;
+    }
+
+    const result = parseOrReport(text, name);
+    if (!result) return false;
+
+    // Reloading an unchanged file would still cost an undo entry and disturb
+    // the selection, and this is a button people press repeatedly while
+    // waiting for a model to finish writing. Both sides are compared in their
+    // canonical form, so a difference in whitespace does not read as a change.
+    if (serializeDoc(result.doc) === serializeDoc(store.state.doc)) {
+      toaster?.info(`${name} has not changed.`);
+      return false;
+    }
+
+    const hadUnsaved = store.state.dirty;
+    const bound = source;
+    store.replaceDoc(result.doc, 'Reload', { markSaved: true, keepSelection: true });
+    source = bound; // replaceDoc goes through the store, not through loadText
+
+    toaster?.warnings(result.warnings);
+    if (hadUnsaved) offerUndo(name);
+    else if (!result.warnings.length) toaster?.info(`Reloaded ${name}.`);
+    return true;
+  }
+
+  function readSource() {
+    if (!source.handle) return source.file.text();
+    // Only ever asked of a stored handle, which is the case `requestPermission`
+    // exists for -- Chrome grants read implicitly when the picker returns and
+    // drops it again later.
+    return ensurePermission(source.handle, 'read').then((ok) => {
+      if (!ok) throw new DOMException('Read access was declined.', 'NotAllowedError');
+      return source.handle.getFile().then((file) => file.text());
+    });
+  }
+
+  /**
+   * Losing the file is the normal end of a `File` kept from the plain input:
+   * the browser holds a snapshot, and an editor that writes by replacing the
+   * file invalidates it. Saying so is not much use on its own, so the toast is
+   * the way back -- one click re-picks the file and rebinds the button.
+   */
+  function offerReopen(name, err) {
+    const el = toaster?.error(
+      `Could not re-read ${name} — the browser's link to it went stale. Click here to pick it again.`,
+      { detail: describeError(err) }
+    );
+    if (!el) return;
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.toast-btn')) return; // Copy and Dismiss are not this
+      el.remove();
+      open();
+    });
+  }
+
+  /** A reload over unsaved work is one undo away, so say so rather than ask. */
+  function offerUndo(name) {
+    const el = toaster?.warn(
+      `Reloaded ${name}, replacing edits you had not saved. Click here to put them back.`
+    );
+    if (!el) return;
+    el.style.pointerEvents = 'auto';
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      store.undo();
+      el.remove();
+    });
+  }
+
+  /** Forget the file binding — the document on screen is no longer from it. */
+  function forget() {
+    source = null;
   }
 
   // --- pictures ------------------------------------------------------------
@@ -315,7 +451,7 @@ export function createIO({ store, toaster }) {
           return;
         }
         handle = null; // a dropped file has no writable handle
-        loadFile(file);
+        loadFile(file); // ...but it is still re-readable, so it binds reload
         return;
       }
       const text = e.dataTransfer?.getData('text/plain');
@@ -373,6 +509,8 @@ export function createIO({ store, toaster }) {
     pickImage,
     save,
     open,
+    reload,
+    forget,
     loadFile,
     loadText,
     attachDropZone,
@@ -383,6 +521,10 @@ export function createIO({ store, toaster }) {
     fileName,
     get hasHandle() {
       return handle !== null;
+    },
+    /** Name of the file a reload would read, or null when nothing is bound. */
+    get sourceName() {
+      return sourceName();
     },
   };
 }

@@ -112,11 +112,18 @@ export function createStore(doc = createEmptyDoc()) {
       notify('history');
     },
 
-    /** Swap in a whole new document (file load, new diagram, paste-over). */
-    replaceDoc(next, label = 'Load', { markSaved = false } = {}) {
+    /**
+     * Swap in a whole new document (file load, new diagram, paste-over).
+     *
+     * `keepSelection` is for a reload: that is the same diagram a moment later,
+     * so whatever was selected should still be selected if it still exists.
+     * Opening a different file clears it, because carrying a selection across
+     * would be arbitrary.
+     */
+    replaceDoc(next, label = 'Load', { markSaved = false, keepSelection = false } = {}) {
       pushUndo(label);
       state.doc = next;
-      state.selection = [];
+      state.selection = keepSelection ? pruneSelection(state.selection, next) : [];
       state.revision = ++revision;
       state.dirty = !markSaved;
       notify('doc');

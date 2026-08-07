@@ -13,6 +13,7 @@ import { serializeDoc } from '../core/schema.js';
 export const SHORTCUTS = [
   ['Ctrl/Cmd + S', 'Save'],
   ['Ctrl/Cmd + O', 'Open'],
+  ['R', 'Reload the open file from disk'],
   ['Ctrl/Cmd + Z', 'Undo'],
   ['Ctrl/Cmd + Shift + Z', 'Redo'],
   ['Ctrl/Cmd + C / X / V', 'Copy / cut / paste as JSON'],
@@ -113,6 +114,11 @@ export function attachKeyboard({ store, commands, io, panels }) {
         break;
       case 'h':
         commands.setTool('pan');
+        break;
+      // Plain R, because Ctrl+R belongs to the browser -- and reloading the
+      // page instead of the diagram is exactly the mistake to design out.
+      case 'r':
+        io?.reload();
         break;
       case 'g':
         commands.setTool('group');
