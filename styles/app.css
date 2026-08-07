@@ -651,6 +651,79 @@ kbd {
 .btn-primary:active:not(:disabled) { filter: brightness(0.94); }
 .btn-primary:disabled { opacity: 0.5; }
 
+/* --- tooltips ------------------------------------------------------------- */
+
+/*
+ * A popover, so it renders in the top layer. The toolbar is a horizontal
+ * scroll box on a narrow window, and a bubble positioned inside it would be
+ * clipped at the edge of that box exactly when it is most needed.
+ *
+ * The UA gives popovers `inset: 0` and `margin: auto` to centre them; both are
+ * undone here because the position is written from the anchor's own rectangle.
+ */
+.tooltip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 7px 10px;
+  max-width: 264px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 0.18);
+  overflow: visible;
+  /* Never take the pointer: the control underneath is the point. */
+  pointer-events: none;
+  animation: tip-in 0.12s ease-out;
+}
+.tooltip:not(.is-open) { display: none; }
+
+.tooltip-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tooltip-head { font-weight: 600; }
+.tooltip-key {
+  /* Slightly tighter than the shortcut sheet's caps, which stand alone. */
+  padding: 1px 5px;
+  border-bottom-width: 1px;
+  font-size: 11px;
+}
+.tooltip-body {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+.tooltip-key[hidden], .tooltip-body[hidden] { display: none; }
+
+/* Two triangles: the outer one is the border, the inner one covers it. */
+.tooltip::before,
+.tooltip::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--tip-arrow, 50%);
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top: 0;
+  border-bottom-color: var(--border);
+}
+.tooltip::after {
+  top: -5px;
+  border-bottom-color: var(--surface);
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip { animation: none; }
+}
+
 .copy-area {
   width: 100%;
   margin-top: 12px;

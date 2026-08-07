@@ -371,6 +371,7 @@ development. What replaces them:
 | Undo | Whole-document snapshots |
 | Panels | Built once per selection *shape*, then values synced in place — otherwise typing rebuilds the panel and steals focus |
 | Templating | `h()` and `svg()` in `util/dom.js`, about forty lines |
+| Tooltips | One popover moved between controls; `title` harvested on hover, so the toolbar keeps writing plain titles |
 
 The inspector's rebuild rule is the one that bites if forgotten: rebuild on
 selection change, sync otherwise, and never write to a focused input.
@@ -394,7 +395,7 @@ src/
   render/           scene, camera, block, group, edge, text, image, grid, overlay, handles
   input/            pointer, keyboard
   ui/               toolbar, palette, inspector, theme, toasts, shortcuts,
-                    export dialog
+                    export dialog, tooltips
   data/             component registry, icons, prompt, samples
 ```
 

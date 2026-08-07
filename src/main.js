@@ -32,6 +32,7 @@ import { createToolbar } from './ui/toolbar.js';
 import { createPalette } from './ui/palette.js';
 import { createInspector } from './ui/inspector.js';
 import { createShortcutsDialog } from './ui/shortcuts.js';
+import { createTooltips } from './ui/tooltip.js';
 import { createExportDialog } from './ui/export-dialog.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
@@ -99,6 +100,10 @@ const toolbar = createToolbar({
   theme,
   panels,
 });
+// After the toolbar has filled itself in, though the listeners are delegated
+// so the order is a matter of reading rather than of correctness.
+createTooltips(document.querySelector('.toolbar'));
+
 const palette = createPalette({ root: region('palette'), store, commands });
 const inspector = createInspector({ root: region('inspector'), store, commands });
 

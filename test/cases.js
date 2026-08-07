@@ -38,6 +38,7 @@ import {
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
 import { edgeRoute } from '../src/render/edge.js';
 import { encodeGif } from '../src/core/gif.js';
+import { splitTitle } from '../src/ui/tooltip.js';
 import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from '../src/data/components.js';
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
@@ -58,6 +59,7 @@ export function runCases(check) {
   edgeCases(check);
   handleCases(check);
   gifCases(check);
+  tooltipCases(check);
   registryCases(check);
   textMetricCases(check);
 }
@@ -1226,6 +1228,58 @@ function gifCases(check) {
     } catch (err) {
       return /65535/.test(err.message);
     }
+  })());
+}
+
+function tooltipCases(check) {
+  const at = (text) => {
+    const t = splitTitle(text);
+    return `${t.head}|${t.key ?? ''}|${t.body}`;
+  };
+
+  check('a name, a shortcut and an explanation come apart', () => true &&
+    at('Tidy (A) — nudge blocks apart until nothing is hidden') ===
+      'Tidy|A|nudge blocks apart until nothing is hidden');
+
+  check('a shortcut with no explanation still reads as a shortcut',
+    at('Open… (Ctrl+O)') === 'Open…|Ctrl+O|');
+
+  check('a plain title stays whole', at('Copy diagram JSON to clipboard') ===
+    'Copy diagram JSON to clipboard||');
+
+  check('an explanation with no shortcut keeps its em dash intact',
+    at('Copy a shareable link — the whole diagram travels inside the URL') ===
+      'Copy a shareable link||the whole diagram travels inside the URL');
+
+  check('an aside in brackets is not mistaken for a key', (() =>
+    // The one case that tells the two apart: a shortcut has no spaces.
+    at('Source on GitHub (opens in a new tab)') === 'Source on GitHub (opens in a new tab)||')());
+
+  check('punctuation keys survive', at('Show or hide the component panel ([)') ===
+    'Show or hide the component panel|[|');
+
+  check('a second em dash belongs to the explanation, not to the split',
+    at('Pan tool (H) — Space + drag — from any tool') ===
+      'Pan tool|H|Space + drag — from any tool');
+
+  check('every toolbar title this app writes parses to something usable', (() => {
+    // Titles the toolbar actually sets, so a reworded button cannot quietly
+    // start rendering its shortcut as part of the name.
+    const titles = [
+      ['New diagram (Ctrl+N)', 'New diagram', 'Ctrl+N'],
+      ['Save (Ctrl+S)', 'Save', 'Ctrl+S'],
+      ['Reload demo.arch.json from disk (R) — picks up edits made outside this page',
+        'Reload demo.arch.json from disk', 'R'],
+      ['Export an image (Ctrl+E) — format, projection, grid and size', 'Export an image', 'Ctrl+E'],
+      ['Auto layout (Shift+A) — re-flow the diagram from its connections', 'Auto layout', 'Shift+A'],
+      ['Toggle 2D / 3D (2)', 'Toggle 2D / 3D', '2'],
+      ['Zoom out (-)', 'Zoom out', '-'],
+      ['Keyboard shortcuts', 'Keyboard shortcuts', null],
+    ];
+    return titles.every(([text, head, key]) => {
+      const t = splitTitle(text);
+      return t.head === head && t.key === key;
+    });
   })());
 }
 

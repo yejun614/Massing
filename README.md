@@ -345,7 +345,7 @@ src/
   render/             scene, camera, block, group, edge, grid, overlay, handles
   input/              pointer, keyboard
   ui/                 toolbar, palette, inspector, theme, toasts, shortcuts,
-                      export dialog
+                      export dialog, tooltips
   data/               component registry, icons, samples
 ```
 
