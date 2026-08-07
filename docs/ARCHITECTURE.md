@@ -397,15 +397,24 @@ That check has already earned its place: it caught nine duplicated helpers
 Analytics is a build switch, `MASSING_ANALYTICS`, and it is off unless asked
 for. That is not caution for its own sake: the bundle's headline property is
 that it opens from a file with no network traffic, and a runtime flag would put
-the burden of trusting it on everyone who clones the repo. A build either has
-the script in it or it does not, and `grep` settles the question.
+the burden of trusting it on everyone who clones the repo. `grep _vercel` over
+the output settles the question, which is why the URL lives in `build.js` and
+not in the app code.
+
+What the switch injects is a `<meta>` **naming** the script, never a `<script>`
+tag. `ui/consent.js` reads that name, asks, and adds the element only if the
+answer is yes — consent that arrives after the request has gone out is not
+consent, it is a notification. Both answers are stored, because re-asking
+someone who declined is the behaviour that earns these banners their
+reputation. Storage that throws is a real configuration, so the store falls
+back to memory: asking once per visit is worse than asking once and better than
+breaking the page.
 
 `build()` is exported and the command line is guarded by a main-module check,
 so the tests assemble both builds in-process and diff them — the enabled one
-must differ from the plain one by exactly the snippet and nothing else. The
-switch is deliberately deaf to anything but an explicit yes, because the
-failure that matters is shipping the script by accident, never leaving it out
-by accident.
+must differ from the plain one by exactly that tag and nothing else. The switch
+is deliberately deaf to anything but an explicit yes, because the failure that
+matters is shipping the script by accident, never leaving it out by accident.
 
 ---
 
@@ -446,7 +455,7 @@ src/
   render/           scene, camera, block, group, edge, text, image, grid, overlay, handles
   input/            pointer, keyboard
   ui/               toolbar, palette, inspector, theme, toasts, shortcuts,
-                    export dialog, tooltips
+                    export dialog, tooltips, analytics consent
   data/             component registry, icons, prompt, samples
 ```
 

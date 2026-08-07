@@ -130,8 +130,7 @@ function assertNoCollisions(modules) {
 // ---------------------------------------------------------------------------
 
 /**
- * Vercel Web Analytics, in the form Vercel documents for a page with no
- * framework behind it.
+ * Vercel Web Analytics.
  *
  * Off unless asked for, and asked for at build time rather than at runtime,
  * because this is the one thing in the project that phones home. Anyone who
@@ -139,19 +138,18 @@ function assertNoCollisions(modules) {
  * build with none of this in it, and does not have to trust a runtime flag to
  * stay switched off.
  *
+ * What goes in is a *name*, not a `<script>` tag. The page must not fetch it
+ * until someone has agreed, so `ui/consent.js` reads this and loads the script
+ * itself — consent that arrives after the request has gone out is not consent.
+ * Keeping the URL here rather than in the app code also means `_vercel` appears
+ * in a build if and only if that build carries analytics, so grepping the
+ * output still settles the question.
+ *
  * `/_vercel/insights/script.js` is served by the deployment itself, so it
  * resolves on Vercel and nowhere else: from a file, or from any other host,
- * the request fails and the page carries on. The first line is Vercel's queue
- * shim, which holds calls made before the script lands.
- *
- * It is cookieless and records page views rather than people — but it is still
- * a request to a third party, and it costs the bundle the one property it
- * advertises most loudly: that it opens with no network traffic at all.
+ * the request fails and the page carries on.
  */
-const VERCEL_ANALYTICS = `<script>
-window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-</script>
-<script defer src="/_vercel/insights/script.js"></script>`;
+const VERCEL_ANALYTICS = '<meta name="massing-analytics" content="/_vercel/insights/script.js">';
 
 export function build({ docPath, fontPath, analytics = false } = {}) {
   const modules = collect(ENTRY);
@@ -200,7 +198,7 @@ export function build({ docPath, fontPath, analytics = false } = {}) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massing — Isometric architecture diagrams</title>
-${favicon}
+${favicon}${analytics ? `\n${VERCEL_ANALYTICS}` : ''}
 <style>
 ${appCss}
 </style>
@@ -217,7 +215,7 @@ ${embedded}
 <script type="module">
 ${script}
 </script>
-${analytics ? `${VERCEL_ANALYTICS}\n` : ''}</body>
+</body>
 </html>
 `;
 }

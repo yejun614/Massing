@@ -444,6 +444,25 @@ deliberate yes — unset, empty, `0`, `false`, `off` — means off, and the buil
 prints `with Vercel Analytics` when it is on, so a build that started phoning
 home says so. The tests pin both halves.
 
+### Nothing is fetched until someone agrees
+
+A build with analytics does not contain a `<script>` tag for it. It contains
+the script's *name*, and the page asks before loading anything:
+
+> **Count this visit?** Page views only, no cookies and nothing that identifies
+> you. The script is not loaded unless you say yes.
+>
+> `No thanks`  `Allow`
+
+Consent that arrives after the request has already gone out is not consent, so
+the request waits for the answer. **Both** answers are remembered in
+`localStorage`, and the question is asked once — re-asking someone who already
+said no is the behaviour that makes these banners hated. It is not modal: the
+diagram stays usable behind it.
+
+A build without analytics never shows it, because there is nothing to consent
+to.
+
 Two things worth knowing before switching it on:
 
 - **It only works on Vercel.** The script is served from

@@ -18,6 +18,7 @@ import {
 } from '../src/core/share.js';
 
 import { build, analyticsWanted } from '../build.js';
+import { readConsent, writeConsent, analyticsSource } from '../src/ui/consent.js';
 
 let passed = 0;
 const failures = [];
@@ -141,27 +142,29 @@ check(
 );
 
 const measured = build({ analytics: true });
+const TAG = '<meta name="massing-analytics" content="/_vercel/insights/script.js">';
 check(
-  'asking for analytics puts the Vercel snippet in',
-  measured.includes('<script defer src="/_vercel/insights/script.js"></script>') &&
-    measured.includes('window.vaq'),
-  'the snippet did not make it into the page'
+  'asking for analytics names the script in the head',
+  measured.includes(TAG) && measured.indexOf(TAG) < measured.indexOf('</head>'),
+  'the tag did not make it into the head'
 );
 check(
-  'the snippet goes inside the body, after the app',
-  measured.indexOf('_vercel') > measured.indexOf('<script type="module">') &&
-    measured.indexOf('_vercel') < measured.indexOf('</body>'),
-  'the tag landed somewhere the browser will not run it as expected'
+  'the script is named but never fetched by the page itself',
+  // A <script src> here would load before anyone could be asked, which would
+  // make the consent banner decorative. ui/consent.js adds the element, and
+  // only once somebody has said yes.
+  !measured.includes('<script defer src="/_vercel'),
+  'the build fetches analytics without waiting for consent'
 );
 check(
   'analytics is the only difference between the two builds',
   (() => {
-    // Cut out exactly the block that was added and the two builds must be the
-    // same file. Anything else the switch touched shows up here.
-    const from = measured.indexOf('<script>\nwindow.va');
-    const to = measured.indexOf('</body>');
-    if (from < 0 || to < from) return false;
-    return measured.slice(0, from) + measured.slice(to) === plain;
+    // Cut out exactly what was added and the two builds must be the same file.
+    // Anything else the switch touched shows up here.
+    const from = measured.indexOf(TAG);
+    if (from < 0) return false;
+    // The tag arrives on a line of its own, so its newline goes with it.
+    return measured.slice(0, from - 1) + measured.slice(from + TAG.length) === plain;
   })(),
   'enabling analytics changed something else as well'
 );
@@ -181,6 +184,46 @@ for (const value of ['', '0', 'false', 'no', 'off', 'maybe', undefined]) {
 }
 check('no variable at all leaves it off', !analyticsWanted({}));
 check('the --analytics flag is the same switch', analyticsWanted({}, ['--analytics']));
+
+/*
+ * Consent. The banner is only worth anything if the answer sticks, so the
+ * store is exercised directly against a stand-in for localStorage -- including
+ * the case where storage throws, which is a real configuration and must not
+ * take the page down with it.
+ */
+const fakeStorage = (initial = {}) => {
+  const map = new Map(Object.entries(initial));
+  return { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
+};
+const brokenStorage = {
+  getItem() { throw new Error('blocked'); },
+  setItem() { throw new Error('blocked'); },
+};
+
+check('nobody asked yet reads as no answer', readConsent(fakeStorage()) === null);
+for (const answer of ['granted', 'denied']) {
+  const store = fakeStorage();
+  writeConsent(store, answer);
+  check(`"${answer}" is remembered`, readConsent(store) === answer);
+}
+check(
+  'a value nobody wrote is not treated as an answer',
+  readConsent(fakeStorage({ 'massing:analytics-consent': 'maybe' })) === null,
+  'a junk value would let a stale or tampered entry stand in for consent'
+);
+check('storage that throws reads as no answer', readConsent(brokenStorage) === null);
+check('storage that throws does not throw on write', writeConsent(brokenStorage, 'granted') === false);
+
+/*
+ * The meta tag is what tells the app there is anything to ask about, so a build
+ * without analytics has to be silent: no banner, nothing to consent to.
+ */
+const fakeDoc = (present) => ({
+  querySelector: () => (present ? { getAttribute: () => '/_vercel/insights/script.js' } : null),
+});
+check('a plain build offers nothing to consent to', analyticsSource(fakeDoc(false)) === null);
+check('an analytics build names its script',
+  analyticsSource(fakeDoc(true)) === '/_vercel/insights/script.js');
 
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`${passed} passed, ${failures.length} failed`);

@@ -33,6 +33,7 @@ import { createPalette } from './ui/palette.js';
 import { createInspector } from './ui/inspector.js';
 import { createShortcutsDialog } from './ui/shortcuts.js';
 import { createTooltips } from './ui/tooltip.js';
+import { createConsent } from './ui/consent.js';
 import { createExportDialog } from './ui/export-dialog.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
@@ -137,6 +138,10 @@ window.addEventListener('paste', (e) => {
   io.insertImage(file, store.state.hover ?? { x: 0, y: 0 });
 }, true);
 io.startAutosave();
+
+// Does nothing at all unless this build was made with analytics in it, which
+// is every build except one made deliberately with MASSING_ANALYTICS=1.
+createConsent();
 
 // --- render loop -----------------------------------------------------------
 

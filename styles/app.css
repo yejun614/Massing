@@ -789,6 +789,55 @@ kbd {
   .panel, .panel-scrim { transition: none; }
 }
 
+/* --- analytics consent ---------------------------------------------------- */
+
+/*
+ * Bottom right, because the toasts own the bottom centre and the tooltips the
+ * top. Above both, since it is asked once and answered once; below nothing,
+ * since it is not modal and the diagram stays usable behind it.
+ */
+.consent {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right, 0));
+  bottom: max(18px, env(safe-area-inset-bottom, 0));
+  z-index: 12;
+  width: min(340px, calc(100vw - 36px));
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 14px 40px rgb(15 23 42 / 0.22);
+  animation: consent-in 0.22s ease-out;
+}
+
+.consent-text { margin: 0 0 12px; line-height: 1.5; }
+.consent-detail { color: var(--ink-muted); }
+
+.consent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.consent-actions .btn { border-color: var(--border); }
+.consent-actions .btn-primary { border-color: var(--accent); }
+
+@keyframes consent-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+/* A phone has no corner to spare: it spans the width instead. */
+@media (max-width: 559px) {
+  .consent {
+    left: max(12px, env(safe-area-inset-left, 0));
+    right: max(12px, env(safe-area-inset-right, 0));
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .consent { animation: none; }
+}
+
 /* --- tooltips ------------------------------------------------------------- */
 
 /*
