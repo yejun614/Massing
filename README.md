@@ -58,6 +58,7 @@ the modules load unbundled.
 | Resize the panels | Drag either panel edge; double-click to reset, arrow keys when focused |
 | Hide a panel | `[` / `]`, or the two buttons beside the logo. A narrow window folds them away on its own |
 | Reload from disk | `R`, or the refresh button — re-reads the open file after something else edited it |
+| Export an image | `Ctrl+E` — SVG, PNG, JPG, WebP or GIF, with or without the grid, isometric or 2D, at 1× to 4× |
 | Share a diagram | The share button copies a link with the whole diagram inside it |
 | Everything else | The `?` button in the toolbar |
 
@@ -339,10 +340,12 @@ src/
   core/arrange.js      tidy + flow layout, the de-occlusion rule
   core/images.js       import, downscale, embed
   core/share.js        the diagram as a URL fragment
+  core/gif.js          a GIF89a encoder, because no browser has one
   core/{io,export,commands}.js
-  render/             scene, camera, block, group, edge, grid, overlay
+  render/             scene, camera, block, group, edge, grid, overlay, handles
   input/              pointer, keyboard
-  ui/                 toolbar, palette, inspector, theme, toasts, shortcuts
+  ui/                 toolbar, palette, inspector, theme, toasts, shortcuts,
+                      export dialog
   data/               component registry, icons, samples
 ```
 

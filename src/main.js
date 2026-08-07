@@ -32,6 +32,7 @@ import { createToolbar } from './ui/toolbar.js';
 import { createPalette } from './ui/palette.js';
 import { createInspector } from './ui/inspector.js';
 import { createShortcutsDialog } from './ui/shortcuts.js';
+import { createExportDialog } from './ui/export-dialog.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
 
@@ -83,14 +84,15 @@ const commands = createCommands({ store, scene, toaster, io });
 const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);
+const exportDialog = createExportDialog(document.body, { store, exporter });
 const theme = createTheme(() => scheduleRender());
 const toolbar = createToolbar({
   root: document,
   store,
   commands,
   io,
-  exporter,
   onHelp: () => shortcuts.open(),
+  onExport: () => exportDialog.open(),
   onCopyPrompt: copyPrompt,
   onAddImage: () => io.pickImage(store.state.hover ?? { x: 0, y: 0 }),
   onCopyLink: copyShareLink,
@@ -101,7 +103,7 @@ const palette = createPalette({ root: region('palette'), store, commands });
 const inspector = createInspector({ root: region('inspector'), store, commands });
 
 const pointer = attachPointer({ canvas: canvasEl, store, scene, overlay, toaster });
-attachKeyboard({ store, commands, io, panels });
+attachKeyboard({ store, commands, io, panels, onExport: () => exportDialog.open() });
 
 io.attachDropZone(canvasEl, (e) => {
   const r = canvasEl.getBoundingClientRect();

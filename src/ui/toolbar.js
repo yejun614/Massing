@@ -8,7 +8,7 @@ import { UI_ICONS } from './icons-ui.js';
 
 const REPO_URL = 'https://github.com/yejun614/Massing';
 
-export function createToolbar({ root, store, commands, io, exporter, onHelp, onCopyPrompt, onAddImage, onCopyLink, theme, panels }) {
+export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
 
   const btn = (icon, title, onClick, extra = {}) =>
@@ -58,9 +58,12 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
     'Add a picture — it is embedded in the diagram file',
     () => onAddImage?.()
   );
-  const pngBtn = btn('image', 'Export as PNG', () => exporter.png());
-  const svgBtn = btn('vector', 'Export as SVG', () => exporter.svg());
-  clear(region('file')).append(newBtn, openBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn, promptBtn, pngBtn, svgBtn);
+  const exportBtn = btn(
+    'image',
+    'Export an image (Ctrl+E) — format, projection, grid and size',
+    () => onExport?.()
+  );
+  clear(region('file')).append(newBtn, openBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn, promptBtn, exportBtn);
 
   /**
    * Name the file the button will actually read. Which file a reload picks up

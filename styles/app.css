@@ -598,6 +598,59 @@ kbd {
 
 .sheet-close { margin-top: 18px; border-color: var(--border); }
 
+/* --- the export sheet ----------------------------------------------------- */
+
+/* Wider than the inspector's, because these labels are words rather than the
+   one-word field names the side panel uses. */
+.sheet-form .field { grid-template-columns: 74px 1fr; margin-bottom: 12px; }
+.sheet-form .field.is-hidden { display: none; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.chip {
+  font: inherit;
+  padding: 5px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); color: var(--ink); }
+.chip.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.chip:focus-visible, .btn-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 3px var(--accent);
+}
+
+.export-size {
+  margin: 2px 0 0;
+  padding-left: 82px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-primary:active:not(:disabled) { filter: brightness(0.94); }
+.btn-primary:disabled { opacity: 0.5; }
+
 .copy-area {
   width: 100%;
   margin-top: 12px;

@@ -37,6 +37,7 @@ import {
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
 import { edgeRoute } from '../src/render/edge.js';
+import { encodeGif } from '../src/core/gif.js';
 import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from '../src/data/components.js';
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
@@ -56,6 +57,7 @@ export function runCases(check) {
   planarCases(check);
   edgeCases(check);
   handleCases(check);
+  gifCases(check);
   registryCases(check);
   textMetricCases(check);
 }
@@ -1031,6 +1033,199 @@ function handleCases(check) {
       if (back.y + back.h < rect[1] + rect[3]) return false;
     }
     return true;
+  })());
+}
+
+/**
+ * A GIF decoder, for the tests only.
+ *
+ * The encoder is hand-written because no browser will make a GIF, so nothing
+ * else in the pipeline would notice if it produced a plausible-looking file
+ * that decodes to the wrong picture. Reading it back is the only way to know.
+ */
+function decodeGif(bytes) {
+  let p = 0;
+  const u8 = () => bytes[p++];
+  const u16 = () => {
+    const v = bytes[p] | (bytes[p + 1] << 8);
+    p += 2;
+    return v;
+  };
+
+  const magic = String.fromCharCode(...bytes.slice(0, 6));
+  p = 6;
+  const width = u16();
+  const height = u16();
+  const packed = u8();
+  u8(); // background index
+  u8(); // aspect ratio
+  const palette = [];
+  if (packed & 0x80) {
+    const size = 1 << ((packed & 7) + 1);
+    for (let i = 0; i < size; i++) palette.push([u8(), u8(), u8()]);
+  }
+  while (bytes[p] === 0x21) {
+    p += 2;
+    while (bytes[p]) p += bytes[p] + 1;
+    p++;
+  }
+  if (u8() !== 0x2c) throw new Error('no image descriptor');
+  u16();
+  u16();
+  const iw = u16();
+  const ih = u16();
+  u8(); // local flags
+  const minCodeSize = u8();
+
+  const data = [];
+  for (;;) {
+    const n = u8();
+    if (!n) break;
+    for (let i = 0; i < n; i++) data.push(u8());
+  }
+
+  const clear = 1 << minCodeSize;
+  const eoi = clear + 1;
+  let codeSize = minCodeSize + 1;
+  let dict = [];
+  const reset = () => {
+    dict = [];
+    for (let i = 0; i < clear; i++) dict.push([i]);
+    dict.push(null, null); // clear and EOI hold no string
+    codeSize = minCodeSize + 1;
+  };
+  reset();
+
+  let acc = 0;
+  let bits = 0;
+  let at = 0;
+  const nextCode = () => {
+    while (bits < codeSize) {
+      if (at >= data.length) return eoi;
+      acc |= data[at++] << bits;
+      bits += 8;
+    }
+    const code = acc & ((1 << codeSize) - 1);
+    acc >>>= codeSize;
+    bits -= codeSize;
+    return code;
+  };
+
+  const indices = [];
+  let previous = null;
+  for (;;) {
+    const code = nextCode();
+    if (code === eoi) break;
+    if (code === clear) {
+      reset();
+      previous = null;
+      continue;
+    }
+    let entry;
+    if (code < dict.length && dict[code]) entry = dict[code];
+    else if (previous) entry = [...previous, previous[0]];
+    else throw new Error(`undecodable code ${code}`);
+    indices.push(...entry);
+    if (previous) {
+      dict.push([...previous, entry[0]]);
+      // Grow *after* adding, not before. A decoder learns each code one step
+      // later than the encoder assigned it, and this is the offset that puts
+      // the two back on the same beat -- get it wrong and the bit stream
+      // desynchronises a few codes in, which reads as plausible garbage.
+      if (dict.length >= 1 << codeSize && codeSize < 12) codeSize++;
+    }
+    previous = entry;
+  }
+
+  return { magic, width, height, iw, ih, palette, indices, trailer: bytes.at(-1) };
+}
+
+function gifCases(check) {
+  /** An image of `colours`, laid out in vertical bands with a noisy column. */
+  const image = (width, height, colours) => {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const c = colours[(x + y * 7) % colours.length];
+        const i = (y * width + x) * 4;
+        rgba[i] = c[0];
+        rgba[i + 1] = c[1];
+        rgba[i + 2] = c[2];
+        rgba[i + 3] = 255;
+      }
+    }
+    return rgba;
+  };
+
+  const FLAT = [[237, 113, 0], [37, 99, 235], [255, 255, 255], [15, 23, 42], [22, 163, 74]];
+
+  check('a GIF is a GIF89a with a trailer on the end', (() => {
+    const bytes = encodeGif(image(16, 9, FLAT), 16, 9);
+    const gif = decodeGif(bytes);
+    return gif.magic === 'GIF89a' && gif.trailer === 0x3b &&
+      gif.width === 16 && gif.height === 9 && gif.iw === 16 && gif.ih === 9;
+  })());
+
+  check('a few flat colours survive the round trip exactly', (() => {
+    const [w, h] = [40, 24];
+    const rgba = image(w, h, FLAT);
+    const gif = decodeGif(encodeGif(rgba, w, h));
+    if (gif.indices.length !== w * h) return false;
+    for (let i = 0; i < w * h; i++) {
+      const want = [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]];
+      const got = gif.palette[gif.indices[i]];
+      if (want.some((v, c) => v !== got[c])) return false;
+    }
+    return true;
+  })());
+
+  check('more colours than the palette holds still come back close', (() => {
+    // 2000 distinct colours through a 256-entry table: the point is that the
+    // picture survives, not that it is identical.
+    const many = Array.from({ length: 2000 }, (_, i) => [
+      (i * 37) % 256, (i * 91) % 256, (i * 173) % 256,
+    ]);
+    const [w, h] = [64, 48];
+    const rgba = image(w, h, many);
+    const gif = decodeGif(encodeGif(rgba, w, h));
+    if (gif.indices.length !== w * h) return false;
+    if (gif.palette.length > 256) return false;
+    let worst = 0;
+    for (let i = 0; i < w * h; i++) {
+      const got = gif.palette[gif.indices[i]];
+      for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(rgba[i * 4 + c] - got[c]));
+    }
+    // A 5-bit histogram bounds the error at 8 per channel before median cut
+    // has to choose at all; anything much past that means the mapping is wrong.
+    return worst <= 24;
+  })());
+
+  check('a single-colour image is still a legal file', (() => {
+    const [w, h] = [8, 8];
+    const rgba = image(w, h, [[10, 20, 30]]);
+    const gif = decodeGif(encodeGif(rgba, w, h));
+    return gif.palette.length >= 2 && gif.indices.length === w * h &&
+      gif.indices.every((i) => i === gif.indices[0]) &&
+      gif.palette[gif.indices[0]].join() === '10,20,30';
+  })());
+
+  check('an image long enough to fill the code table keeps decoding', (() => {
+    // Enough varied data to force the LZW table past 4096 and reset, which is
+    // where a width that grows on the wrong beat stops being decodable.
+    const noisy = Array.from({ length: 240 }, (_, i) => [i, (i * 13) % 256, (i * 29) % 256]);
+    const [w, h] = [200, 150];
+    const rgba = image(w, h, noisy);
+    const gif = decodeGif(encodeGif(rgba, w, h));
+    return gif.indices.length === w * h;
+  })());
+
+  check('a GIF too large to describe is refused rather than truncated', (() => {
+    try {
+      encodeGif(new Uint8ClampedArray(4), 70000, 1);
+      return false;
+    } catch (err) {
+      return /65535/.test(err.message);
+    }
   })());
 }
 

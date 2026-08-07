@@ -61,7 +61,15 @@ export function createScene(container, { onResize } = {}) {
   });
   observer.observe(container);
 
-  function render(state) {
+  /**
+   * @param {object} state
+   * @param {{viewport?: {width:number,height:number}}} [options]
+   *   The grid is generated for whatever the viewport covers, so an export
+   *   that wants the grid behind content larger than the window has to say how
+   *   much ground to cover. Everything else is in scene coordinates and does
+   *   not care.
+   */
+  function render(state, { viewport: cover } = {}) {
     const { doc, camera } = state;
 
     // The pan tool changes what a press on the canvas does, so it has to change
@@ -90,7 +98,7 @@ export function createScene(container, { onResize } = {}) {
     );
     setAttr(root, 'transform', cameraTransform(camera));
 
-    updateGridView(grid, { cam: camera, proj, viewport, hover: state.hover });
+    updateGridView(grid, { cam: camera, proj, viewport: cover ?? viewport, hover: state.hover });
 
     const ctxBase = { proj, rot, doc };
 

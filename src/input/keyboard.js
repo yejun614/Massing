@@ -14,6 +14,7 @@ export const SHORTCUTS = [
   ['Ctrl/Cmd + S', 'Save'],
   ['Ctrl/Cmd + O', 'Open'],
   ['R', 'Reload the open file from disk'],
+  ['Ctrl/Cmd + E', 'Export an image'],
   ['Ctrl/Cmd + Z', 'Undo'],
   ['Ctrl/Cmd + Shift + Z', 'Redo'],
   ['Ctrl/Cmd + C / X / V', 'Copy / cut / paste as JSON'],
@@ -36,7 +37,7 @@ export const SHORTCUTS = [
   ['Drag a panel edge', 'Resize the side panels (double-click to reset)'],
 ];
 
-export function attachKeyboard({ store, commands, io, panels }) {
+export function attachKeyboard({ store, commands, io, panels, onExport }) {
   function onKeyDown(e) {
     if (isTextTarget(e.target)) return;
     const mod = e.ctrlKey || e.metaKey;
@@ -71,6 +72,10 @@ export function attachKeyboard({ store, commands, io, panels }) {
         case 'n':
           e.preventDefault();
           commands.newDoc();
+          return;
+        case 'e':
+          e.preventDefault();
+          onExport?.();
           return;
         default:
           return; // leave every other browser shortcut alone

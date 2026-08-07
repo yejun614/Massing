@@ -300,7 +300,49 @@ Defaults are omitted on write, so an unstyled note stays a three-line object.
 
 ---
 
-## 8. The bundler
+## 8. Exporting
+
+Every format comes from one clone of the live scene, cropped to the content
+rather than the viewport. Nothing is drawn a second way for export, so what is
+saved is what was on screen.
+
+The three settings that are *not* what was on screen — the projection, the grid
+and the pixel scale — are handled by rendering the scene again with a different
+state, never by patching the output. `scene.render` takes the state it draws, so
+the export hands it a camera that is not the user's and the user's camera never
+moves. Two consequences fall out:
+
+- **The grid is generated for a viewport**, so an export that wants it renders
+  once more with pan and zoom set to make scene coordinates and export pixels
+  the same thing, and a viewport the size of the crop. Otherwise the grid stops
+  where the window did.
+- **`vector-effect: non-scaling-stroke` is stripped** from the inlined
+  stylesheet. On screen it stops outlines fattening as the camera zooms; in a
+  fixed picture it pins every stroke to one device pixel whatever size was
+  asked for, so a 4× export draws four times the detail behind lines a quarter
+  as thick. On the sample the grid fell from 9.8% of the image to 2.5% between
+  1× and 4×; without the rule the ink per pixel is flat to three decimals.
+
+### GIF is written by hand
+
+`canvas.toBlob` covers PNG, JPEG and WebP. It does not cover GIF — and asking
+for `image/gif` quietly returns a PNG, so the format cannot simply be listed.
+`core/gif.js` is therefore a real encoder: a 5-bit histogram, median cut to 256
+colours, and GIF's variable-width LZW.
+
+The trap in the LZW is the code width. It grows as the table fills, and the
+decoder grows it on its own schedule — one step later, because it learns each
+code only when the next arrives. Encoder and decoder must nonetheless bump on
+the same beat, which means the encoder widens *before* assigning a code and a
+decoder widens *after* adding one. Off by one either way and the stream
+desynchronises a few codes in, producing a file that is not corrupt so much as
+plausible nonsense. The test suite decodes what the encoder wrote, and the
+browser driver hands the bytes to Chrome, which is the only authority on
+whether the file is really a GIF.
+
+---
+
+## 9. The bundler
 
 `build.js` walks the ES module graph from `src/main.js`, strips import/export
 statements, concatenates in dependency order, and inlines the stylesheets into
@@ -317,7 +359,7 @@ That check has already earned its place: it caught nine duplicated helpers
 
 ---
 
-## 9. Working without a framework
+## 10. Working without a framework
 
 There is no virtual DOM, no reactivity system and no build step for
 development. What replaces them:
@@ -335,7 +377,7 @@ selection change, sync otherwise, and never write to a focused input.
 
 ---
 
-## 10. Where things live
+## 11. Where things live
 
 ```
 src/
@@ -347,10 +389,12 @@ src/
   core/doc.js       queries and mutators
   core/arrange.js   tidy + flow layout
   core/images.js    import, downscale, embed
+  core/gif.js       a GIF89a encoder, because no browser has one
   core/{io,export,commands}.js
   render/           scene, camera, block, group, edge, text, image, grid, overlay, handles
   input/            pointer, keyboard
-  ui/               toolbar, palette, inspector, theme, toasts, shortcuts
+  ui/               toolbar, palette, inspector, theme, toasts, shortcuts,
+                    export dialog
   data/             component registry, icons, prompt, samples
 ```
 
