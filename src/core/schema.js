@@ -1,0 +1,492 @@
+/**
+ * Document schema, normalisation and serialisation.
+ *
+ * The `.arch.json` file is the product, not an implementation detail: people
+ * and language models are expected to read and edit it directly. Two rules
+ * follow from that.
+ *
+ * 1. Loading is forgiving. Missing fields get defaults, unknown component
+ *    types degrade to `generic`, dangling references are dropped -- each with
+ *    a warning, never an exception. A hand-written document that is 95%
+ *    correct should open and show its author what was wrong.
+ *
+ * 2. Writing is deterministic. Fixed key order, two-space indent, short
+ *    numeric arrays kept on one line. Save -> load -> save is byte-identical,
+ *    so diffs stay readable in version control.
+ */
+
+import { componentFor, isKnownType, groupKindFor, FALLBACK_TYPE } from '../data/components.js';
+import { clamp, clampInt } from '../util/num.js';
+import { isPlane, normaliseSpin, SPINS } from '../geom/plane.js';
+
+export const FORMAT_VERSION = 1;
+export const FILE_EXTENSION = '.arch.json';
+
+const MAX_SPAN = 400; // sanity bound on grid coordinates and sizes
+const EDGE_STYLES = new Set(['solid', 'dashed', 'dotted']);
+const EDGE_ARROWS = new Set(['none', 'end', 'start', 'both']);
+
+export function createEmptyDoc(title = 'Untitled diagram') {
+  return {
+    version: FORMAT_VERSION,
+    meta: { title },
+    canvas: { background: '#eef1f5' },
+    groups: [],
+    nodes: [],
+    edges: [],
+    texts: [],
+    images: [],
+  };
+}
+
+/**
+ * Where flat content hangs unless told otherwise: lying on the ground, which
+ * is the placement that reads as part of the isometric scene rather than
+ * stuck on top of it. One constant so everything that defaults -- text,
+ * pictures, block captions, connection captions and zone captions -- cannot
+ * drift apart.
+ */
+export const DEFAULT_PLANE = 'floor';
+
+/**
+ * Zone captions stand against the right wall by default rather than lying on
+ * the ground. A zone is large and usually full, so a caption written flat
+ * inside it competes with its own contents; standing it along the far edge
+ * keeps it clear.
+ */
+export const DEFAULT_ZONE_LABEL_PLANE = 'right';
+
+/** Caption size in pixels, matching the stylesheet's own default. */
+export const DEFAULT_LABEL_SIZE = 12;
+
+export const TEXT_ALIGNS = new Set(['left', 'center', 'right']);
+export const TEXT_DEFAULTS = {
+  size: 14,
+  color: '#334155',
+  align: 'left',
+  plane: DEFAULT_PLANE,
+};
+
+export const IMAGE_DEFAULTS = {
+  size: [6, 4],
+  plane: DEFAULT_PLANE,
+  opacity: 1,
+};
+
+/** Shared placement fields for anything flat: pictures and text alike. */
+function readPlanar(raw, defaultPlane) {
+  return {
+    z: clampInt(raw.z, 0, 40, 0),
+    plane: isPlane(raw.plane) ? raw.plane : defaultPlane,
+    spin: SPINS.includes(normaliseSpin(raw.spin)) ? normaliseSpin(raw.spin) : 0,
+    behind: raw.behind === true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * @returns {{doc: object, warnings: string[]}}
+ * @throws {SyntaxError} only when the text is not JSON at all.
+ */
+export function parseDoc(text) {
+  const raw = JSON.parse(text);
+  return normalizeDoc(raw);
+}
+
+/** @returns {{doc: object, warnings: string[]}} */
+export function normalizeDoc(raw) {
+  const warnings = [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    warnings.push('Document root is not an object; started an empty diagram instead.');
+    return { doc: createEmptyDoc(), warnings };
+  }
+
+  const version = int(raw.version, FORMAT_VERSION);
+  if (version > FORMAT_VERSION) {
+    warnings.push(
+      `Document version ${version} is newer than this editor (v${FORMAT_VERSION}); unknown fields were dropped.`
+    );
+  }
+
+  const doc = createEmptyDoc(str(raw.meta?.title) || 'Untitled diagram');
+  if (raw.canvas && typeof raw.canvas === 'object') {
+    doc.canvas.background = color(raw.canvas.background) || doc.canvas.background;
+  }
+
+  const usedIds = new Set();
+
+  // --- groups (parents resolved in a second pass) ---------------------------
+  const groupIndex = new Map();
+  const pendingParents = [];
+  for (const g of array(raw.groups)) {
+    if (!g || typeof g !== 'object') continue;
+    const kindDef = groupKindFor(str(g.kind));
+    if (g.kind && kindDef.kind !== g.kind) {
+      warnings.push(`Group kind "${g.kind}" is unknown; used "group".`);
+    }
+    const id = takeId(g.id, str(g.label) || kindDef.kind, usedIds, warnings, 'Group');
+    const rect = readRect(g.rect ?? [g.x, g.y, g.w, g.h]);
+    const group = {
+      id,
+      kind: kindDef.kind,
+      label: str(g.label) || kindDef.label,
+      rect,
+      color: color(g.color) || kindDef.color,
+      // A zone's caption is a flat rectangle too, so it hangs on a plane just
+      // like a block's does.
+      labelPlane: isPlane(g.labelPlane) ? g.labelPlane : DEFAULT_ZONE_LABEL_PLANE,
+      labelSize: clampInt(g.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
+      parent: null,
+    };
+    groupIndex.set(id, group);
+    doc.groups.push(group);
+    if (str(g.parent)) pendingParents.push([group, str(g.parent)]);
+  }
+  for (const [group, parent] of pendingParents) {
+    if (!groupIndex.has(parent) || parent === group.id) {
+      warnings.push(`Group "${group.id}" referenced unknown parent "${parent}".`);
+    } else {
+      group.parent = parent;
+    }
+  }
+  breakGroupCycles(doc.groups, warnings);
+
+  // --- nodes ----------------------------------------------------------------
+  const nodeIndex = new Map();
+  for (const n of array(raw.nodes)) {
+    if (!n || typeof n !== 'object') continue;
+    let type = str(n.type) || FALLBACK_TYPE;
+    if (!isKnownType(type)) {
+      warnings.push(`Node type "${type}" is unknown; drawn as a generic block.`);
+      type = FALLBACK_TYPE;
+    }
+    const def = componentFor(type);
+    const label = str(n.label) ?? str(n.name) ?? '';
+    const id = takeId(n.id, label || type, usedIds, warnings, 'Node');
+    const pos = readPair(n.pos ?? [n.x, n.y], [0, 0]);
+    const size = readPair(n.size ?? [n.w, n.h], def.size, 1);
+
+    const node = {
+      id,
+      type,
+      label: label || def.label,
+      pos,
+      size,
+      height: clampInt(n.height, 0, 40, def.height),
+      color: color(n.color) || def.color,
+      // A block's caption is a flat rectangle like any other, so it can be
+      // laid on the ground or written onto one of the block's own faces.
+      labelPlane: isPlane(n.labelPlane) ? n.labelPlane : DEFAULT_PLANE,
+      labelSize: clampInt(n.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
+      group: null,
+      props: plainProps(n.props),
+    };
+    const group = str(n.group);
+    if (group) {
+      if (groupIndex.has(group)) node.group = group;
+      else warnings.push(`Node "${id}" referenced unknown group "${group}".`);
+    }
+    nodeIndex.set(id, node);
+    doc.nodes.push(node);
+  }
+
+  // --- edges ----------------------------------------------------------------
+  for (const e of array(raw.edges)) {
+    if (!e || typeof e !== 'object') continue;
+    const from = str(e.from) ?? str(e.source);
+    const to = str(e.to) ?? str(e.target);
+    if (!nodeIndex.has(from) || !nodeIndex.has(to)) {
+      warnings.push(`Dropped edge ${from || '?'} -> ${to || '?'}: endpoint does not exist.`);
+      continue;
+    }
+    if (from === to) {
+      warnings.push(`Dropped self-edge on "${from}".`);
+      continue;
+    }
+    const id = takeId(e.id, `${from}-${to}`, usedIds, warnings, 'Edge');
+    doc.edges.push({
+      id,
+      from,
+      to,
+      label: str(e.label) || '',
+      style: EDGE_STYLES.has(e.style) ? e.style : 'solid',
+      arrow: EDGE_ARROWS.has(e.arrow) ? e.arrow : 'end',
+      color: color(e.color) || '#64748b',
+      // A connection's caption is a flat rectangle like any other, so it hangs
+      // on a plane too -- written on the ground along the line by default.
+      labelPlane: isPlane(e.labelPlane) ? e.labelPlane : DEFAULT_PLANE,
+      labelSize: clampInt(e.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
+    });
+  }
+
+  // --- text annotations -----------------------------------------------------
+  for (const t of array(raw.texts)) {
+    if (!t || typeof t !== 'object') continue;
+    // Leading and trailing whitespace is kept -- it may be deliberate
+    // indentation -- but a note that is *only* whitespace renders as nothing
+    // and would sit in the document as an invisible, unfindable entity.
+    const raw = typeof t.text === 'string' ? t.text : str(t.label) ?? str(t.content);
+    const body = raw?.trim() ? raw : null;
+    if (!body) {
+      warnings.push('Dropped a text annotation with no content.');
+      continue;
+    }
+    doc.texts.push({
+      id: takeId(t.id, body.split('\n')[0], usedIds, warnings, 'Text'),
+      text: body,
+      pos: readPair(t.pos ?? [t.x, t.y], [0, 0]),
+      size: clampInt(t.size, 6, 200, TEXT_DEFAULTS.size),
+      color: color(t.color) || TEXT_DEFAULTS.color,
+      bold: t.bold === true,
+      italic: t.italic === true,
+      underline: t.underline === true,
+      align: TEXT_ALIGNS.has(t.align) ? t.align : TEXT_DEFAULTS.align,
+      ...readPlanar(t, TEXT_DEFAULTS.plane),
+    });
+  }
+
+  // --- pictures -------------------------------------------------------------
+  for (const im of array(raw.images)) {
+    if (!im || typeof im !== 'object') continue;
+    const src = typeof im.src === 'string' ? im.src.trim() : '';
+    if (!src) {
+      warnings.push('Dropped an image with no src.');
+      continue;
+    }
+    doc.images.push({
+      id: takeId(im.id, str(im.label) || 'image', usedIds, warnings, 'Image'),
+      src,
+      label: str(im.label) || '',
+      pos: readPair(im.pos ?? [im.x, im.y], [0, 0]),
+      size: readPair(im.size ?? [im.w, im.h], IMAGE_DEFAULTS.size, 1),
+      opacity: clamp(Number.isFinite(Number(im.opacity)) ? Number(im.opacity) : 1, 0.05, 1),
+      ...readPlanar(im, IMAGE_DEFAULTS.plane),
+    });
+  }
+
+  return { doc, warnings };
+}
+
+/** Parent chains must be a forest; snap any cycle back to a root. */
+function breakGroupCycles(groups, warnings) {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  for (const start of groups) {
+    const seen = new Set([start.id]);
+    let cur = start;
+    while (cur.parent) {
+      if (seen.has(cur.parent)) {
+        warnings.push(`Group "${start.id}" is part of a parent cycle; detached it.`);
+        cur.parent = null;
+        break;
+      }
+      seen.add(cur.parent);
+      cur = byId.get(cur.parent);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Serialisation
+// ---------------------------------------------------------------------------
+
+/** Deterministic text form of a document. Always ends with a newline. */
+export function serializeDoc(doc) {
+  const wire = {
+    version: FORMAT_VERSION,
+    meta: { title: doc.meta.title },
+    canvas: { background: doc.canvas.background },
+    groups: doc.groups.map((g) => omitEmpty({
+      id: g.id,
+      kind: g.kind,
+      label: g.label,
+      rect: g.rect,
+      color: g.color,
+      labelPlane: g.labelPlane === DEFAULT_ZONE_LABEL_PLANE ? null : g.labelPlane,
+      labelSize: g.labelSize === DEFAULT_LABEL_SIZE ? null : g.labelSize,
+      parent: g.parent,
+    })),
+    nodes: doc.nodes.map((n) => omitEmpty({
+      id: n.id,
+      type: n.type,
+      label: n.label,
+      pos: n.pos,
+      size: n.size,
+      height: n.height,
+      color: n.color,
+      labelPlane: n.labelPlane === DEFAULT_PLANE ? null : n.labelPlane,
+      labelSize: n.labelSize === DEFAULT_LABEL_SIZE ? null : n.labelSize,
+      group: n.group,
+      props: isEmpty(n.props) ? null : n.props,
+    })),
+    edges: doc.edges.map((e) => omitEmpty({
+      id: e.id,
+      from: e.from,
+      to: e.to,
+      label: e.label || null,
+      style: e.style,
+      arrow: e.arrow,
+      color: e.color,
+      labelPlane: e.labelPlane === DEFAULT_PLANE ? null : e.labelPlane,
+      labelSize: e.labelSize === DEFAULT_LABEL_SIZE ? null : e.labelSize,
+    })),
+    // Styling flags are written only when set, so a plain note stays a plain
+    // three-line object in the file.
+    texts: doc.texts.map((t) => omitEmpty({
+      id: t.id,
+      text: t.text,
+      pos: t.pos,
+      size: t.size,
+      color: t.color,
+      bold: t.bold || null,
+      italic: t.italic || null,
+      underline: t.underline || null,
+      align: t.align === TEXT_DEFAULTS.align ? null : t.align,
+      ...planarWire(t, TEXT_DEFAULTS.plane),
+    })),
+    images: doc.images.map((im) => omitEmpty({
+      id: im.id,
+      src: im.src,
+      label: im.label || null,
+      pos: im.pos,
+      size: im.size,
+      opacity: im.opacity === 1 ? null : im.opacity,
+      ...planarWire(im, IMAGE_DEFAULTS.plane),
+    })),
+  };
+  return stringify(wire, 0) + '\n';
+}
+
+/**
+ * JSON with short primitive arrays kept inline. `JSON.stringify` would spread
+ * `"pos": [2, 2]` across five lines, which makes the file tedious to read and
+ * to write by hand.
+ */
+function stringify(value, depth) {
+  const pad = '  '.repeat(depth);
+  const padIn = '  '.repeat(depth + 1);
+
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    if (value.every((v) => v === null || typeof v !== 'object')) {
+      return `[${value.map((v) => JSON.stringify(v)).join(', ')}]`;
+    }
+    const items = value.map((v) => padIn + stringify(v, depth + 1));
+    return `[\n${items.join(',\n')}\n${pad}]`;
+  }
+
+  const keys = Object.keys(value);
+  if (keys.length === 0) return '{}';
+  const items = keys.map((k) => `${padIn}${JSON.stringify(k)}: ${stringify(value[k], depth + 1)}`);
+  return `{\n${items.join(',\n')}\n${pad}}`;
+}
+
+/** Placement fields, written only when they differ from the default. */
+function planarWire(el, defaultPlane) {
+  return {
+    z: el.z || null,
+    plane: el.plane === defaultPlane ? null : el.plane,
+    spin: el.spin || null,
+    behind: el.behind || null,
+  };
+}
+
+function omitEmpty(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== null && v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Identifiers
+// ---------------------------------------------------------------------------
+
+/** URL-ish slug; ids are meant to be read and typed by humans. */
+export function slugify(text) {
+  const slug = String(text ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return slug || 'item';
+}
+
+/** `base`, or `base-2`, `base-3`... until it is not in `taken`. */
+export function uniqueId(base, taken) {
+  const slug = slugify(base);
+  if (!taken.has(slug)) return slug;
+  for (let i = 2; ; i++) {
+    const candidate = `${slug}-${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+function takeId(raw, fallback, used, warnings, kind) {
+  const wanted = slugify(str(raw) || fallback);
+  const id = uniqueId(wanted, used);
+  if (raw && id !== String(raw)) {
+    warnings.push(`${kind} id "${raw}" was renamed to "${id}".`);
+  }
+  used.add(id);
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Field coercion
+// ---------------------------------------------------------------------------
+
+function array(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+function str(v) {
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+function color(v) {
+  return typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim()) ? v.trim().toLowerCase() : null;
+}
+
+function int(v, fallback) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function readPair(v, fallback, min = -MAX_SPAN) {
+  if (!Array.isArray(v)) return [...fallback];
+  return [
+    clampInt(v[0], min, MAX_SPAN, fallback[0]),
+    clampInt(v[1], min, MAX_SPAN, fallback[1]),
+  ];
+}
+
+function readRect(v) {
+  const a = Array.isArray(v) ? v : [];
+  return [
+    clampInt(a[0], -MAX_SPAN, MAX_SPAN, 0),
+    clampInt(a[1], -MAX_SPAN, MAX_SPAN, 0),
+    clampInt(a[2], 1, MAX_SPAN, 4),
+    clampInt(a[3], 1, MAX_SPAN, 4),
+  ];
+}
+
+/** Free-form annotations, restricted to flat string values. */
+function plainProps(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (val === null || typeof val === 'object') continue;
+    out[k] = String(val);
+  }
+  return out;
+}
+
+function isEmpty(obj) {
+  return !obj || Object.keys(obj).length === 0;
+}

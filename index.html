@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 3 29 10.5v11L16 29 3 21.5v-11Z' fill='%23f59e0b'/><path d='M16 3 29 10.5 16 18 3 10.5Z' fill='%23fbbf24'/><path d='M16 18v11L3 21.5v-11Z' fill='%23ea580c'/></svg>">
+<title>Massing — Isometric architecture diagrams</title>
+<link rel="stylesheet" href="styles/app.css">
+<link rel="stylesheet" href="styles/canvas.css" data-scene-styles>
+</head>
+<body>
+<div class="app">
+
+  <header class="toolbar">
+    <div class="toolbar-group toolbar-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Massing</span>
+    </div>
+
+    <div class="toolbar-group" data-region="file"></div>
+    <div class="toolbar-group" data-region="edit"></div>
+    <div class="toolbar-group" data-region="view"></div>
+
+    <div class="toolbar-spacer"></div>
+
+    <div class="toolbar-group" data-region="doc"></div>
+  </header>
+
+  <aside class="panel panel-left" data-region="palette">
+    <div class="panel-empty">Loading components…</div>
+  </aside>
+
+  <div class="resizer resizer-left" data-region="resize-left" role="separator"
+       aria-orientation="vertical" aria-label="Resize the component panel"
+       tabindex="0"></div>
+
+  <main class="canvas" data-region="canvas" tabindex="0"></main>
+
+  <div class="resizer resizer-right" data-region="resize-right" role="separator"
+       aria-orientation="vertical" aria-label="Resize the properties panel"
+       tabindex="0"></div>
+
+  <aside class="panel panel-right" data-region="inspector">
+    <div class="panel-empty">Nothing selected</div>
+  </aside>
+
+  <div class="toasts" data-region="toasts" role="status" aria-live="polite"></div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

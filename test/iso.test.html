@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Massing — geometry checks</title>
+<style>
+  body { font: 13px/1.7 ui-monospace, Consolas, monospace; margin: 24px; color: #1b2430; }
+  h1 { font-size: 16px; margin-bottom: 4px; }
+  p { color: #667487; margin-top: 0; }
+  ul { padding: 0; }
+  li { list-style: none; }
+  .pass { color: #15803d; }
+  .fail { color: #b91c1c; font-weight: 700; }
+  .summary { margin-top: 18px; padding: 10px 14px; border-radius: 6px; font-weight: 700; display: inline-block; }
+  .summary.ok { background: #dcfce7; color: #14532d; }
+  .summary.bad { background: #fee2e2; color: #7f1d1d; }
+</style>
+</head>
+<body>
+<h1>Geometry and document checks</h1>
+<p>Same suite as <code>node test/run.mjs</code>. Running it here also proves the modules load unbundled.</p>
+<ul id="out"></ul>
+<div id="summary" class="summary"></div>
+
+<script type="module">
+import { runCases } from './cases.js';
+
+const out = document.getElementById('out');
+let passed = 0;
+let failed = 0;
+
+runCases((name, ok, detail = '') => {
+  const li = document.createElement('li');
+  if (ok) {
+    passed++;
+    li.className = 'pass';
+    li.textContent = `PASS  ${name}`;
+  } else {
+    failed++;
+    li.className = 'fail';
+    li.textContent = `FAIL  ${name}${detail ? `  — ${detail}` : ''}`;
+    console.error('FAIL', name, detail);
+  }
+  out.append(li);
+});
+
+const summary = document.getElementById('summary');
+summary.className = `summary ${failed ? 'bad' : 'ok'}`;
+summary.textContent = `${passed} passed, ${failed} failed`;
+console.info(`[iso.test] ${passed} passed, ${failed} failed`);
+window.__testResult = { passed, failed };
+</script>
+</body>
+</html>

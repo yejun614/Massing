@@ -1,0 +1,619 @@
+/* Application chrome: toolbar, side panels, toasts. */
+
+/*
+ * Pretendard JP, loaded as a dynamic subset so only the glyph ranges actually
+ * used are fetched -- the whole family is 5 MB, which is not something to pull
+ * down for a diagram of twelve labels.
+ *
+ * This is the one external request the app makes, and it is deliberately
+ * non-fatal: nothing waits on it and the fallback stack below covers Korean,
+ * Japanese and Latin on its own. For a bundle that must work with no network
+ * at all, `node build.js --font <file.woff2>` inlines the font instead and
+ * drops this import.
+ */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard-jp/dist/web/variable/pretendardvariable-jp-dynamic-subset.css");
+
+/*
+ * Two themes, one set of variables. `data-theme` on the root is the explicit
+ * choice; without it the media query follows the system. Nothing else in the
+ * app reads a colour literal, so a theme is entirely a matter of these values.
+ */
+:root {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --border: #dde3ea;
+  --border-strong: #c4cdd8;
+  --ink: #1b2430;
+  --ink-muted: #667487;
+  --accent: #2563eb;
+  --accent-soft: #dbe7ff;
+  --danger: #dc2626;
+  --radius: 7px;
+  --toolbar-h: 48px;
+  --panel-left-w: 232px;
+  --panel-right-w: 232px;
+  --font: "Pretendard JP Variable", "Pretendard JP", Pretendard, system-ui,
+    -apple-system, "Segoe UI", "Noto Sans KR", "Malgun Gothic", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+}
+
+/*
+ * Dark values are declared twice on purpose: once behind the media query for
+ * "follow the system", once behind the attribute for an explicit choice. CSS
+ * has no way to say "either of these selectors" across an at-rule boundary,
+ * and duplicating ten custom properties is cheaper than the alternatives.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b;
+    --surface: #171e27;
+    --surface-2: #1e2731;
+    --border: #2a3540;
+    --border-strong: #3b4854;
+    --ink: #e6ecf3;
+    --ink-muted: #93a2b4;
+    --accent: #5b9bff;
+    --accent-soft: #1d2f4d;
+    --danger: #f87171;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b;
+  --surface: #171e27;
+  --surface-2: #1e2731;
+  --border: #2a3540;
+  --border-strong: #3b4854;
+  --ink: #e6ecf3;
+  --ink-muted: #93a2b4;
+  --accent: #5b9bff;
+  --accent-soft: #1d2f4d;
+  --danger: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  position: relative; /* the dividers are positioned against this */
+  display: grid;
+  grid-template-columns: var(--panel-left-w) 1fr var(--panel-right-w);
+  grid-template-rows: var(--toolbar-h) 1fr;
+  grid-template-areas:
+    "toolbar toolbar toolbar"
+    "left    canvas  right";
+  height: 100%;
+}
+
+/* --- toolbar -------------------------------------------------------------- */
+
+.toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 3;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.toolbar-group:not(:empty):not(.toolbar-brand)::before {
+  content: "";
+  width: 1px;
+  height: 20px;
+  margin: 0 5px;
+  background: var(--border);
+}
+
+.toolbar-spacer { flex: 1; }
+
+.brand-mark {
+  width: 15px;
+  height: 15px;
+  background: linear-gradient(135deg, #f59e0b 0 50%, #ea580c 50% 100%);
+  transform: rotate(45deg) skewX(-12deg);
+  border-radius: 2px;
+}
+
+.brand-name {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-left: 4px;
+  margin-right: 2px;
+}
+
+/* --- controls ------------------------------------------------------------- */
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  /* The toolbar's link buttons are anchors, so undo the UA's link styling. */
+  color: inherit;
+  text-decoration: none;
+}
+
+.btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border); }
+.btn:active:not(:disabled) { background: var(--accent-soft); }
+.btn:disabled { opacity: 0.38; cursor: default; }
+.btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.btn-icon { padding: 0; width: 28px; justify-content: center; }
+.btn svg { width: 15px; height: 15px; display: block; }
+
+.doc-title {
+  font: inherit;
+  font-weight: 550;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  padding: 5px 8px;
+  min-width: 150px;
+  text-align: right;
+}
+.doc-title:hover { border-color: var(--border); }
+.doc-title:focus { outline: none; border-color: var(--accent); background: var(--surface); text-align: left; }
+
+.dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.dirty-dot.is-on { opacity: 1; }
+
+/* --- panel dividers ------------------------------------------------------- */
+
+/*
+ * Absolutely positioned over each panel's inner edge rather than living in the
+ * grid. A divider inside a panel would scroll away with a long palette, and an
+ * extra grid column would make every layout rule harder to read.
+ */
+.resizer {
+  position: absolute;
+  top: var(--toolbar-h);
+  bottom: 0;
+  width: 11px;
+  z-index: 4;
+  cursor: col-resize;
+  touch-action: none;
+}
+.resizer-left { left: calc(var(--panel-left-w) - 5px); }
+.resizer-right { right: calc(var(--panel-right-w) - 5px); }
+
+/* A 2px bar centred in a comfortably wide grab area. */
+.resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 4px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer.is-dragging::after { opacity: 1; }
+.resizer:focus-visible { outline: none; }
+
+/* Keep the cursor and selection sane while a drag is in flight. */
+body.is-resizing { cursor: col-resize; user-select: none; }
+body.is-resizing .resizer::after { opacity: 1; }
+
+/* --- panels --------------------------------------------------------------- */
+
+.panel {
+  background: var(--surface);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 2;
+}
+.panel-left { grid-area: left; border-right: 1px solid var(--border); }
+.panel-right { grid-area: right; border-left: 1px solid var(--border); }
+
+.panel-empty {
+  padding: 22px 14px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.section {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px 12px;
+}
+.section:last-child { border-bottom: none; }
+
+.section-title {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 8px;
+}
+
+/* --- palette -------------------------------------------------------------- */
+
+.palette-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.palette-search input {
+  font: inherit;
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: inherit;
+}
+.palette-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.palette-search input::placeholder { color: var(--ink-muted); }
+
+/* Filtering hides items and whole sections rather than reflowing the grid. */
+.palette-item.is-hidden,
+.palette-empty.is-hidden,
+.section.is-hidden { display: none; }
+
+.palette-empty {
+  padding: 18px 14px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+/*
+ * Column count follows the panel width. `auto-fill` with a minimum track does
+ * this in CSS alone, so dragging the divider reflows the palette with no
+ * JavaScript and no resize listener.
+ *
+ * The 68px minimum is chosen against the divider's own bounds. `auto-fill`
+ * fits floor((width + gap) / (min + gap)) tracks, so with the narrowest panel
+ * (168px, leaving 143px inside the section) that is floor(147 / 72) = 2 — a
+ * single column looks broken, and 70px missed it by a hair. At the 232px
+ * default it still holds two rather than cramming in a third.
+ */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  gap: 4px;
+}
+
+.palette-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 4px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: grab;
+  text-align: center;
+}
+.palette-item:hover { background: var(--surface-2); border-color: var(--border); }
+.palette-item.is-active { background: var(--accent-soft); border-color: var(--accent); }
+.palette-item:active { cursor: grabbing; }
+
+.palette-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+}
+.palette-icon svg { width: 17px; height: 17px; fill: none; stroke: #fff; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.palette-label {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--ink-muted);
+}
+
+/* --- inspector ------------------------------------------------------------ */
+
+.field {
+  display: grid;
+  grid-template-columns: 66px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.field > label { color: var(--ink-muted); }
+
+.field input[type="text"],
+.field input[type="number"],
+.field select,
+.field textarea {
+  font: inherit;
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: inherit;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.field-pair { display: flex; gap: 6px; }
+.field-pair input { min-width: 0; }
+
+.field-block { margin: 10px 0 6px; }
+.field-block-label {
+  display: block;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+
+.panel-hint {
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.toggle-row { display: flex; gap: 5px; }
+
+.toggle-btn {
+  flex: 1;
+  height: 28px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+}
+.toggle-btn:hover { background: var(--surface-2); }
+.toggle-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.checkbox-row input { margin: 0; }
+
+.field input[type="range"] { width: 100%; }
+
+.image-preview {
+  display: block;
+  width: 100%;
+  max-height: 110px;
+  object-fit: contain;
+  margin-bottom: 10px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%) 0 0 / 12px 12px,
+    linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%) 6px 6px / 12px 12px,
+    var(--surface);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+.swatch {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.swatch.is-active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--surface) inset; }
+
+.entity-kind {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-bottom: 10px;
+}
+.entity-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+
+/* --- canvas --------------------------------------------------------------- */
+
+.canvas {
+  grid-area: canvas;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+  touch-action: none;
+}
+
+.canvas.is-drop-target::after {
+  content: "Drop a .arch.json file to open it";
+  position: absolute;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: rgb(91 155 255 / 0.08);
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* --- shortcuts sheet ------------------------------------------------------ */
+
+.sheet {
+  border: none;
+  border-radius: 12px;
+  padding: 22px 26px 20px;
+  max-width: 520px;
+  box-shadow: 0 24px 60px rgb(15 23 42 / 0.28);
+  color: var(--ink);
+  font: inherit;
+}
+.sheet::backdrop { background: rgb(15 23 42 / 0.35); }
+
+.sheet-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.sheet-grid {
+  display: grid;
+  gap: 7px 16px;
+}
+.sheet-row {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  align-items: baseline;
+  gap: 12px;
+}
+.sheet-row span { color: var(--ink-muted); }
+
+kbd {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.sheet-close { margin-top: 18px; border-color: var(--border); }
+
+.copy-area {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: inherit;
+  resize: vertical;
+}
+
+/* --- toasts --------------------------------------------------------------- */
+
+.toasts {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.toast {
+  max-width: 560px;
+  padding: 8px 13px;
+  border-radius: var(--radius);
+  background: #1f2937;
+  color: #f8fafc;
+  box-shadow: 0 6px 20px rgb(15 23 42 / 0.22);
+  animation: toast-in 0.16s ease-out;
+}
+.toast.is-warn { background: #92400e; }
+.toast.is-error { background: #991b1b; }
+
+/* Only toasts with buttons take the pointer back from the canvas. */
+.toast.has-actions {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding-right: 8px;
+}
+
+.toast-text { flex: 1; min-width: 0; user-select: text; }
+
+.toast-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.toast-btn {
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 2px 8px;
+  min-width: 26px;
+  border: 1px solid rgb(255 255 255 / 0.32);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 0.12);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-btn:hover { background: rgb(255 255 255 / 0.24); }
+.toast-btn:active { background: rgb(255 255 255 / 0.32); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}

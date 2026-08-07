@@ -1,0 +1,32 @@
+{
+  "name": "massing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isometric architecture diagram editor. No framework, no bundler, no dependencies.",
+  "license": "MIT",
+  "author": "YeJun Jung (https://github.com/yejun614)",
+  "homepage": "https://github.com/yejun614/Massing",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yejun614/Massing.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yejun614/Massing/issues"
+  },
+  "keywords": [
+    "isometric",
+    "architecture",
+    "diagram",
+    "editor",
+    "svg"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "python -m http.server 8123 --bind 127.0.0.1",
+    "test": "node test/run.mjs",
+    "build": "node build.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

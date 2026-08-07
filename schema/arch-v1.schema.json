@@ -1,0 +1,591 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/yejun614/Massing/main/schema/arch-v1.schema.json",
+  "title": "Massing diagram (.arch.json), version 1",
+  "description": "An isometric architecture diagram. Coordinates are integer cells on a ground grid: +x runs right-and-down on screen, +y runs left-and-down, and height rises straight up. A node's pos is its minimum corner, not its centre.",
+  "type": "object",
+  "required": [
+    "version",
+    "nodes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Format version."
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Diagram name; also the default file name."
+        }
+      }
+    },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/color"
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "description": "Flat zones drawn on the ground, such as a VPC or a subnet. Membership is by geometry: a node inside a zone's rectangle belongs to it.",
+      "items": {
+        "$ref": "#/$defs/group"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "description": "The blocks of the diagram.",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Connections between nodes.",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "texts": {
+      "type": "array",
+      "description": "Free-form notes. By default drawn square to the viewer so they stay readable at every camera rotation; set `plane` to lay one on the ground or stand it against a wall.",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "images": {
+      "type": "array",
+      "description": "Embedded pictures. The bytes live in the document as a data URL so the diagram remains a single self-contained file.",
+      "items": {
+        "$ref": "#/$defs/image"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 40,
+      "description": "Readable slug, unique across nodes, groups and edges in one document. Derive it from the label (\"Web Server\" -> \"web-server\"), never a UUID."
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-f]{6}$",
+      "description": "Lower-case six-digit hex. Omit to inherit the type's category colour."
+    },
+    "coord": {
+      "type": "integer",
+      "minimum": -400,
+      "maximum": 400
+    },
+    "extent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 400
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "pos"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "type": "string",
+          "description": "Component type. An unrecognised value loads as a plain block rather than failing.",
+          "enum": [
+            "ec2",
+            "lambda",
+            "ecs",
+            "eks",
+            "fargate",
+            "batch",
+            "s3",
+            "ebs",
+            "efs",
+            "glacier",
+            "rds",
+            "aurora",
+            "dynamodb",
+            "elasticache",
+            "redshift",
+            "elb",
+            "cloudfront",
+            "route53",
+            "apigateway",
+            "natgw",
+            "igw",
+            "sqs",
+            "sns",
+            "eventbridge",
+            "kinesis",
+            "iam",
+            "waf",
+            "cognito",
+            "kms",
+            "java",
+            "kotlin",
+            "python",
+            "javascript",
+            "typescript",
+            "rust",
+            "springboot",
+            "react",
+            "vue",
+            "svelte",
+            "vite",
+            "tauri",
+            "nodejs",
+            "mysql",
+            "postgresql",
+            "mongodb",
+            "redis",
+            "rabbitmq",
+            "erd",
+            "docker",
+            "kubernetes",
+            "jenkins",
+            "git",
+            "npm",
+            "pip",
+            "uv",
+            "pytorch",
+            "tensorflow",
+            "numpy",
+            "pandas",
+            "llm",
+            "gpu",
+            "prometheus",
+            "grafana",
+            "loki",
+            "alloy",
+            "node-exporter",
+            "healthcheck",
+            "webrtc",
+            "websocket",
+            "zeromq",
+            "stun",
+            "turn",
+            "p2p",
+            "rtp",
+            "nat",
+            "nginx",
+            "reverse-proxy",
+            "microphone",
+            "headphone",
+            "speaker",
+            "webcam",
+            "asio",
+            "wasapi",
+            "audio-interface",
+            "waveform",
+            "opus",
+            "h264",
+            "ringbuffer",
+            "mixer",
+            "midi-keyboard",
+            "sampler",
+            "metronome",
+            "music-note",
+            "recording",
+            "ffmpeg",
+            "demucs",
+            "gradle",
+            "cargo",
+            "gitlab",
+            "dockerhub",
+            "installer",
+            "certbot",
+            "webhook",
+            "worker",
+            "terminal",
+            "swagger",
+            "mattermost",
+            "jira",
+            "oauth2",
+            "jwt",
+            "google",
+            "kakao",
+            "volume",
+            "filesystem",
+            "flyway",
+            "gemini",
+            "tailwind",
+            "windows",
+            "desktop-app",
+            "webview2",
+            "server",
+            "database",
+            "queue",
+            "storage",
+            "container",
+            "user",
+            "internet",
+            "generic"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "description": "Caption under the block. Defaults to the type's name."
+        },
+        "pos": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/coord"
+          },
+          "description": "[x, y] of the block's minimum corner."
+        },
+        "size": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/extent"
+          },
+          "description": "[width, depth] in cells. Default [2, 2]."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 40,
+          "description": "Vertical extent in cells. Use it to signal weight: 1 for a gateway, 3 for a database."
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "labelPlane": {
+          "type": "string",
+          "enum": [
+            "screen",
+            "floor",
+            "right",
+            "left"
+          ],
+          "description": "Where the block's caption sits. floor (the default) writes it on the ground in front of the block; screen floats it below the block facing the viewer; right/left write it onto one of the block's own faces."
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the innermost containing zone. The editor recomputes this from geometry, so it may be omitted."
+        },
+        "props": {
+          "type": "object",
+          "description": "Free-form annotations. Values must be scalars; `note` is shown in the inspector.",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "labelSize": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 96,
+          "description": "Caption size in pixels. Default 12."
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": [
+        "id",
+        "rect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "host",
+            "docker-network",
+            "desktop-machine",
+            "lan",
+            "vpc",
+            "subnet",
+            "az",
+            "account",
+            "group"
+          ],
+          "description": "Controls the default colour and border style. Default \"group\"."
+        },
+        "label": {
+          "type": "string"
+        },
+        "rect": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "integer"
+          },
+          "description": "[x, y, width, height] on the ground. Must enclose the nodes that belong to it."
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "labelPlane": {
+          "type": "string",
+          "enum": [
+            "screen",
+            "floor",
+            "right",
+            "left"
+          ],
+          "description": "Where the zone's caption sits. right (the default) stands it along the far upper-right edge, clear of the zone's contents; left does the same on the other edge; floor writes it on the ground just inside the zone; screen floats it above the top corner facing the viewer."
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Id of the enclosing zone. Cycles are broken on load."
+        },
+        "labelSize": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 96,
+          "description": "Caption size in pixels. Default 12."
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "description": "How a flat rectangle hangs in the isometric world. Shared by texts and images.",
+      "properties": {
+        "z": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 40,
+          "description": "Elevation above the ground in cells."
+        },
+        "plane": {
+          "type": "string",
+          "enum": [
+            "screen",
+            "floor",
+            "right",
+            "left"
+          ],
+          "description": "floor = lying on the ground (the default); screen = square to the viewer; right/left = standing against a wall. Content never renders mirrored, whatever the camera rotation."
+        },
+        "spin": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "description": "Rotation within the plane, in degrees."
+        },
+        "behind": {
+          "type": "boolean",
+          "description": "Draw underneath the blocks and zones, e.g. a floorplan backdrop."
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "src",
+        "pos"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "src": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A data: URL (what the editor writes, keeping the file self-contained) or any other image URL. An image with no src is dropped on load."
+        },
+        "label": {
+          "type": "string"
+        },
+        "pos": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/coord"
+          },
+          "description": "[x, y] of the picture's anchor corner on the grid."
+        },
+        "size": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/extent"
+          },
+          "description": "[width, height] in cells, measured within the plane. Default [6, 4]."
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0.05,
+          "maximum": 1
+        },
+        "z": {
+          "$ref": "#/$defs/placement/properties/z"
+        },
+        "plane": {
+          "$ref": "#/$defs/placement/properties/plane"
+        },
+        "spin": {
+          "$ref": "#/$defs/placement/properties/spin"
+        },
+        "behind": {
+          "$ref": "#/$defs/placement/properties/behind"
+        }
+      }
+    },
+    "text": {
+      "type": "object",
+      "required": [
+        "text",
+        "pos"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The note itself. May contain \\n for line breaks. A note that is only whitespace is dropped on load."
+        },
+        "pos": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/coord"
+          },
+          "description": "[x, y] anchor on the grid. Which corner of the text this is depends on `align`."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 200,
+          "description": "Font size in pixels. Default 14."
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "bold": {
+          "type": "boolean"
+        },
+        "italic": {
+          "type": "boolean"
+        },
+        "underline": {
+          "type": "boolean"
+        },
+        "align": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "z": {
+          "$ref": "#/$defs/placement/properties/z"
+        },
+        "plane": {
+          "$ref": "#/$defs/placement/properties/plane"
+        },
+        "spin": {
+          "$ref": "#/$defs/placement/properties/spin"
+        },
+        "behind": {
+          "$ref": "#/$defs/placement/properties/behind"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "from": {
+          "type": "string",
+          "description": "Source node id. An edge naming a missing node is dropped on load."
+        },
+        "to": {
+          "type": "string",
+          "description": "Target node id."
+        },
+        "label": {
+          "type": "string",
+          "description": "Caption at the midpoint, e.g. a port number."
+        },
+        "style": {
+          "type": "string",
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ]
+        },
+        "arrow": {
+          "type": "string",
+          "enum": [
+            "none",
+            "end",
+            "start",
+            "both"
+          ]
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "labelPlane": {
+          "type": "string",
+          "enum": [
+            "screen",
+            "floor",
+            "right",
+            "left"
+          ],
+          "description": "Where the caption sits. floor (the default) writes it on the ground alongside the line; right/left stand it up above the line against a wall; screen floats it over the midpoint facing the viewer."
+        },
+        "labelSize": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 96,
+          "description": "Caption size in pixels. Default 12."
+        }
+      }
+    }
+  }
+}
