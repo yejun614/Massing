@@ -31,6 +31,7 @@ node test/run.mjs                 # geometry + document suite (143 checks)
 node build.js                     # → dist/index.html, plus the Claude skill
 node build.js --doc my.arch.json   # the same, with a diagram baked in
 node build.js --font Pretendard.woff2   # inline the font: no network at all
+MASSING_ANALYTICS=1 node build.js  # include Vercel Analytics (off by default)
 ```
 
 `test/iso.test.html` runs the identical suite in a browser, which also proves
@@ -426,6 +427,40 @@ logo — see [Trademarks](#trademarks).
 The registry is the single source: `node build.js` regenerates the JSON
 Schema's type enum, the LLM prompt's catalogue and the Claude skill from it,
 and the test suite fails if the committed schema drifts.
+
+## Analytics, if you want them
+
+The hosted copy counts page views with [Vercel Web
+Analytics](https://vercel.com/docs/analytics). Your builds do not, and cannot
+start doing so by accident: it is a **build** switch, off unless asked for.
+
+```sh
+node build.js                      # no analytics, no third-party request
+MASSING_ANALYTICS=1 node build.js  # dist/index.html carries the Vercel snippet
+```
+
+`--analytics` is the same switch on the command line. Anything other than a
+deliberate yes — unset, empty, `0`, `false`, `off` — means off, and the build
+prints `with Vercel Analytics` when it is on, so a build that started phoning
+home says so. The tests pin both halves.
+
+Two things worth knowing before switching it on:
+
+- **It only works on Vercel.** The script is served from
+  `/_vercel/insights/script.js` by the deployment itself. Anywhere else — a
+  file, another host — the request fails and the page carries on; that path is
+  tested too.
+- **It costs the bundle its best property.** A plain build opens from `file://`
+  with no network traffic at all. One built with analytics does not.
+
+The measurement is cookieless and records page views rather than people, but it
+is still a request to a third party, which is the whole reason it is a switch
+rather than a line in `index.html`.
+
+[`vercel.json`](vercel.json) points a Vercel project at `node build.js` and
+`dist/`; set `MASSING_ANALYTICS` in the project's environment variables to turn
+the snippet on for that deployment only. Nothing about it affects anyone who is
+not deploying to Vercel.
 
 ## Not included
 

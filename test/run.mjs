@@ -17,6 +17,8 @@ import {
   sharePayloadFrom,
 } from '../src/core/share.js';
 
+import { build, analyticsWanted } from '../build.js';
+
 let passed = 0;
 const failures = [];
 
@@ -121,6 +123,64 @@ try {
   rejected = true;
 }
 check('a truncated payload fails loudly rather than opening as junk', rejected);
+
+/*
+ * Analytics is the one thing in the project that reaches a third party, and it
+ * is a *build* switch rather than a runtime one precisely so that a clone, a
+ * local build or an emailed bundle cannot be carrying it. That only holds if
+ * "off" is the default and stays the default, so both halves are pinned here.
+ *
+ * `build()` is called directly rather than through a subprocess: it only reads
+ * files, so the check costs nothing and writes nothing.
+ */
+const plain = build();
+check(
+  'a plain build reaches nothing but the font CDN',
+  !plain.includes('_vercel') && !plain.includes('window.va'),
+  'analytics ended up in a build that never asked for it'
+);
+
+const measured = build({ analytics: true });
+check(
+  'asking for analytics puts the Vercel snippet in',
+  measured.includes('<script defer src="/_vercel/insights/script.js"></script>') &&
+    measured.includes('window.vaq'),
+  'the snippet did not make it into the page'
+);
+check(
+  'the snippet goes inside the body, after the app',
+  measured.indexOf('_vercel') > measured.indexOf('<script type="module">') &&
+    measured.indexOf('_vercel') < measured.indexOf('</body>'),
+  'the tag landed somewhere the browser will not run it as expected'
+);
+check(
+  'analytics is the only difference between the two builds',
+  (() => {
+    // Cut out exactly the block that was added and the two builds must be the
+    // same file. Anything else the switch touched shows up here.
+    const from = measured.indexOf('<script>\nwindow.va');
+    const to = measured.indexOf('</body>');
+    if (from < 0 || to < from) return false;
+    return measured.slice(0, from) + measured.slice(to) === plain;
+  })(),
+  'enabling analytics changed something else as well'
+);
+
+/*
+ * The switch has to be deaf to everything except a deliberate yes. An empty
+ * variable, or one someone set to `0` to turn it *off*, must not ship the
+ * script -- the failure that matters is shipping it by accident.
+ */
+for (const value of ['1', 'true', 'TRUE', ' yes ', 'on']) {
+  check(`MASSING_ANALYTICS=${JSON.stringify(value)} enables it`,
+    analyticsWanted({ MASSING_ANALYTICS: value }));
+}
+for (const value of ['', '0', 'false', 'no', 'off', 'maybe', undefined]) {
+  check(`MASSING_ANALYTICS=${JSON.stringify(value)} leaves it off`,
+    !analyticsWanted({ MASSING_ANALYTICS: value }));
+}
+check('no variable at all leaves it off', !analyticsWanted({}));
+check('the --analytics flag is the same switch', analyticsWanted({}, ['--analytics']));
 
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`${passed} passed, ${failures.length} failed`);

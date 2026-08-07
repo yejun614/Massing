@@ -17,11 +17,16 @@
  *   node build.js --doc example.json -> the same, with a diagram baked in
  *   node build.js --font Pretendard.woff2 -> inline the font, no network at all
  *   node build.js --skill            -> regenerate the Claude skill from prompt.js
+ *   MASSING_ANALYTICS=1 node build.js -> include Vercel Web Analytics
+ *
+ * `build()` is exported and the command line only runs when this file is the
+ * program, so the tests can assemble a bundle and read it without writing
+ * anything to disk.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const ENTRY = resolve(ROOT, 'src/main.js');
@@ -124,7 +129,31 @@ function assertNoCollisions(modules) {
 // Assembly
 // ---------------------------------------------------------------------------
 
-function build({ docPath, fontPath } = {}) {
+/**
+ * Vercel Web Analytics, in the form Vercel documents for a page with no
+ * framework behind it.
+ *
+ * Off unless asked for, and asked for at build time rather than at runtime,
+ * because this is the one thing in the project that phones home. Anyone who
+ * clones the repo, opens the page or emails the bundle to a colleague gets a
+ * build with none of this in it, and does not have to trust a runtime flag to
+ * stay switched off.
+ *
+ * `/_vercel/insights/script.js` is served by the deployment itself, so it
+ * resolves on Vercel and nowhere else: from a file, or from any other host,
+ * the request fails and the page carries on. The first line is Vercel's queue
+ * shim, which holds calls made before the script lands.
+ *
+ * It is cookieless and records page views rather than people — but it is still
+ * a request to a third party, and it costs the bundle the one property it
+ * advertises most loudly: that it opens with no network traffic at all.
+ */
+const VERCEL_ANALYTICS = `<script>
+window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>`;
+
+export function build({ docPath, fontPath, analytics = false } = {}) {
   const modules = collect(ENTRY);
   assertNoCollisions(modules);
 
@@ -188,9 +217,23 @@ ${embedded}
 <script type="module">
 ${script}
 </script>
-</body>
+${analytics ? `${VERCEL_ANALYTICS}\n` : ''}</body>
 </html>
 `;
+}
+
+/**
+ * Whether a build should carry analytics.
+ *
+ * Deliberately strict about what counts as yes. An environment variable that
+ * is present but empty, or left at `0` or `false` by someone turning it off,
+ * has to mean off — the failure that matters here is shipping the script by
+ * accident, never leaving it out by accident.
+ */
+export function analyticsWanted(env = process.env, args = []) {
+  if (args.includes('--analytics')) return true;
+  const value = String(env.MASSING_ANALYTICS ?? '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(value);
 }
 
 /**
@@ -262,29 +305,41 @@ async function writeSkill() {
   console.log(`wrote ${rel(out)} (${(Buffer.byteLength(body) / 1024).toFixed(1)} kB)`);
 }
 
-const args = process.argv.slice(2);
-const flag = (name) => {
-  const at = args.indexOf(name);
-  return at >= 0 ? args[at + 1] ?? true : null;
-};
+// Importing this file for `build` must not run a build. Only the program does.
+const isProgram = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-try {
-  // Both are derived from the registry, never hand-edited.
-  await writeSchemaEnums();
-  await writeSkill();
-  if (!args.includes('--skill')) {
-    const docPath = flag('--doc');
-    const fontPath = flag('--font');
-    const html = build({ docPath, fontPath });
-    mkdirSync(dirname(OUT), { recursive: true });
-    writeFileSync(OUT, html);
-    const kb = (Buffer.byteLength(html) / 1024).toFixed(1);
-    const notes = [docPath && `with ${docPath} embedded`, fontPath && 'with the font inlined']
-      .filter(Boolean)
-      .join(', ');
-    console.log(`built ${rel(OUT)} (${kb} kB)${notes ? ` ${notes}` : ''}`);
+if (isProgram) {
+  const args = process.argv.slice(2);
+  const flag = (name) => {
+    const at = args.indexOf(name);
+    return at >= 0 ? args[at + 1] ?? true : null;
+  };
+
+  try {
+    // Both are derived from the registry, never hand-edited.
+    await writeSchemaEnums();
+    await writeSkill();
+    if (!args.includes('--skill')) {
+      const docPath = flag('--doc');
+      const fontPath = flag('--font');
+      const analytics = analyticsWanted(process.env, args);
+      const html = build({ docPath, fontPath, analytics });
+      mkdirSync(dirname(OUT), { recursive: true });
+      writeFileSync(OUT, html);
+      const kb = (Buffer.byteLength(html) / 1024).toFixed(1);
+      const notes = [
+        docPath && `with ${docPath} embedded`,
+        fontPath && 'with the font inlined',
+        // Said out loud, every time. A build that quietly started phoning home
+        // is exactly the surprise this switch exists to prevent.
+        analytics && 'with Vercel Analytics',
+      ]
+        .filter(Boolean)
+        .join(', ');
+      console.log(`built ${rel(OUT)} (${kb} kB)${notes ? ` ${notes}` : ''}`);
+    }
+  } catch (err) {
+    console.error(`build failed: ${err.message}`);
+    process.exit(1);
   }
-} catch (err) {
-  console.error(`build failed: ${err.message}`);
-  process.exit(1);
 }

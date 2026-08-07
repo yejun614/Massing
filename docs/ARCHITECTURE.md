@@ -392,6 +392,21 @@ one scope.
 That check has already earned its place: it caught nine duplicated helpers
 (`round`, `clamp`, `download` …) that became `util/num.js` and `util/dom.js`.
 
+### The one thing that phones home
+
+Analytics is a build switch, `MASSING_ANALYTICS`, and it is off unless asked
+for. That is not caution for its own sake: the bundle's headline property is
+that it opens from a file with no network traffic, and a runtime flag would put
+the burden of trusting it on everyone who clones the repo. A build either has
+the script in it or it does not, and `grep` settles the question.
+
+`build()` is exported and the command line is guarded by a main-module check,
+so the tests assemble both builds in-process and diff them — the enabled one
+must differ from the plain one by exactly the snippet and nothing else. The
+switch is deliberately deaf to anything but an explicit yes, because the
+failure that matters is shipping the script by accident, never leaving it out
+by accident.
+
 ---
 
 ## 10. Working without a framework
