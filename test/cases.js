@@ -26,7 +26,15 @@ import {
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
 import { estimateTextBox, estimateLineWidth } from '../src/util/text.js';
-import { planeTransform, effectivePlane, PLANES, normaliseSpin } from '../src/geom/plane.js';
+import {
+  planeTransform,
+  planeAxes,
+  planeVector,
+  effectivePlane,
+  PLANES,
+  normaliseSpin,
+} from '../src/geom/plane.js';
+import { handlesFor, resizeFootprint } from '../src/render/handles.js';
 import { COMPONENTS, GROUP_KINDS, componentFor, isKnownType } from '../src/data/components.js';
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
@@ -44,6 +52,7 @@ export function runCases(check) {
   textCases(check);
   arrangeCases(check);
   planarCases(check);
+  handleCases(check);
   registryCases(check);
   textMetricCases(check);
 }
@@ -618,6 +627,149 @@ function arrangeCases(check) {
   })());
 }
 
+function handleCases(check) {
+  const doc = normalizeDoc({
+    nodes: [{ id: 'a', type: 'ec2', pos: [2, 3], size: [4, 5], height: 2 }],
+    groups: [{ id: 'z', kind: 'vpc', rect: [0, 0, 10, 10] }],
+    images: [{ id: 'pic', src: 'x.png', pos: [0, 0], size: [8, 6] }],
+  }).doc;
+  const camAt = (over = {}) => ({ ...createCamera(), ...over });
+  const state = (over = {}) => ({
+    doc,
+    camera: createCamera(),
+    selection: ['a'],
+    tool: 'select',
+    pendingType: null,
+    ...over,
+  });
+
+  check(
+    'grips are offered for exactly one selected entity, with the select tool',
+    handlesFor(state()).length > 0 &&
+      handlesFor(state({ selection: [] })).length === 0 &&
+      handlesFor(state({ selection: ['a', 'z'] })).length === 0 &&
+      handlesFor(state({ tool: 'connect' })).length === 0 &&
+      handlesFor(state({ pendingType: 'ec2' })).length === 0
+  );
+
+  check('every corner grip sits on a corner of the block it resizes', (() => {
+    // Rotation reorders the corners, so the assertion is that the four corner
+    // grips land on the four corners -- not on any particular one of them.
+    for (let rot = 0; rot < 4; rot++) {
+      const camera = camAt({ rot });
+      const grips = handlesFor(state({ camera })).filter((g) => g.role === 'size');
+      const corners = [[2, 3], [6, 3], [6, 8], [2, 8]].map(([x, y]) =>
+        gridToScreen(camera, x, y, 2)
+      );
+      const hits = grips.filter((g) =>
+        corners.some((c) => near(c.x, g.x, 0.01) && near(c.y, g.y, 0.01))
+      );
+      if (hits.length !== 4) return false;
+    }
+    return true;
+  })());
+
+  check('grips sit on the top face, not on the ground under it', (() => {
+    const raised = handlesFor(state()).find((g) => g.role === 'size');
+    const ground = gridToScreen(createCamera(), 2, 3, 0);
+    // The block is two cells tall, so its top face is two cells up the screen.
+    return raised && !near(raised.y, ground.y, 1) && raised.y < ground.y;
+  })());
+
+  check('height is grippable in 3D, where there is a height to see', (() => {
+    const iso = handlesFor(state()).filter((g) => g.role === 'height');
+    const flat = handlesFor(state({ camera: camAt({ mode: 'flat' }) })).filter(
+      (g) => g.role === 'height'
+    );
+    return iso.length === 1 && flat.length === 0;
+  })());
+
+  check('the height grip stays clear of the grips already on the block', (() => {
+    // A fixed lift off the centre of the top face lands on the back corner as
+    // soon as the block is small, which is exactly when it matters.
+    for (const zoom of [0.2, 0.3, 0.6, 1, 2]) {
+      const grips = handlesFor(state({ camera: camAt({ zoom }) }));
+      const height = grips.find((g) => g.role === 'height');
+      if (!height) return false;
+      const crowded = grips.some(
+        (g) => g !== height && Math.hypot(g.x - height.x, g.y - height.y) < 14
+      );
+      if (crowded) return false;
+    }
+    return true;
+  })());
+
+  check('a shape too small on screen sheds its grips rather than burying itself', (() => {
+    const roomy = handlesFor(state()); // 4 corners + 4 edges + height
+    const cramped = handlesFor(state({ camera: camAt({ zoom: 0.2 }) })); // corners + height
+    const tiny = handlesFor(state({ camera: camAt({ zoom: 0.05 }) }));
+    return roomy.length === 9 && cramped.length === 5 && tiny.length === 0;
+  })());
+
+  check('a zone is gripped on the ground', (() => {
+    const grips = handlesFor(state({ selection: ['z'] }));
+    const corner = gridToScreen(createCamera(), 0, 0, 0);
+    return (
+      grips.length === 8 &&
+      grips.every((g) => g.role === 'size') &&
+      grips.some((g) => near(g.x, corner.x, 0.01) && near(g.y, corner.y, 0.01))
+    );
+  })());
+
+  check('a picture is gripped only on the edges that grow it', (() => {
+    const grips = handlesFor(state({ selection: ['pic'] }));
+    return grips.length === 3 && grips.every((g) => g.ax === 1 || g.ay === 1);
+  })());
+
+  // --- the rectangle a drag produces ---------------------------------------
+
+  const start = { x: 2, y: 3, w: 4, h: 5 };
+  const same = (r) => r.x === start.x && r.y === start.y && r.w === start.w && r.h === start.h;
+
+  check('dropping a grip back where it was changes nothing', (() =>
+    [[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]].every(([ax, ay]) =>
+      same(resizeFootprint(start, ax, ay, { x: start.x + ax * start.w, y: start.y + ay * start.h }))
+    ))());
+
+  check('a grip moves its own edge and leaves the opposite one', (() => {
+    const grown = resizeFootprint(start, 0, 0, { x: -1, y: 0 });
+    return grown.x === -1 && grown.x + grown.w === 6 && grown.y === 0 && grown.y + grown.h === 8;
+  })());
+
+  check('an edge grip leaves the other axis alone', (() => {
+    const wider = resizeFootprint(start, 1, 0.5, { x: 20, y: 20 });
+    return wider.w === 18 && wider.y === 3 && wider.h === 5;
+  })());
+
+  check('a resize never turns a shape inside out', (() => {
+    const crushed = resizeFootprint(start, 1, 1, { x: -20, y: -20 });
+    const pushed = resizeFootprint(start, 0, 0, { x: 99, y: 99 });
+    return (
+      crushed.w === 1 && crushed.h === 1 && crushed.x === 2 && crushed.y === 3 &&
+      pushed.w === 1 && pushed.h === 1 && pushed.x === 5 && pushed.y === 7
+    );
+  })());
+
+  check('a resize reads the same at every camera rotation', (() => {
+    // Pulling the far grip two and three cells further out has to grow the
+    // block by two and three cells whichever way the camera is facing -- along
+    // whichever document axis this rotation happens to have put them.
+    const rect = [2, 3, 4, 5];
+    for (let rot = 0; rot < 4; rot++) {
+      const r = rotateRect(rect[0], rect[1], rect[2], rect[3], rot);
+      const next = resizeFootprint(r, 1, 1, { x: r.x + r.w + 2, y: r.y + r.h + 3 });
+      const back = rotateRect(next.x, next.y, next.w, next.h, -rot);
+      const grew = [back.w - rect[2], back.h - rect[3]].sort((a, b) => a - b);
+      if (grew[0] !== 2 || grew[1] !== 3) return false;
+      // Growing outwards can only ever add to the original footprint.
+      if (back.x > rect[0] || back.y > rect[1]) return false;
+      if (back.x + back.w < rect[0] + rect[2]) return false;
+      if (back.y + back.h < rect[1] + rect[3]) return false;
+    }
+    return true;
+  })());
+}
+
 function boxesOverlapLocal(a, b) {
   return a.pos[0] < b.pos[0] + b.size[0] && b.pos[0] < a.pos[0] + a.size[0] &&
     a.pos[1] < b.pos[1] + b.size[1] && b.pos[1] < a.pos[1] + a.size[1];
@@ -735,6 +887,58 @@ function planarCases(check) {
       effectivePlane('left', flatProjection) === 'screen' &&
       effectivePlane('floor', flatProjection) === 'floor' &&
       effectivePlane('right', isoProjection) === 'right';
+  })());
+
+  check('plane axes reproduce the very matrix the renderer emits', (() => {
+    // Grips are placed from `planeAxes` and pictures are drawn from
+    // `planeTransform`. If those two ever disagree, a grip sits somewhere the
+    // picture's corner is not -- so they are checked against each other for
+    // every plane, spin and camera angle, with the spin folded in by hand.
+    const w = 240;
+    const h = 160;
+    for (const plane of PLANES) {
+      for (const spin of [0, 90, 180, 270]) {
+        for (let rot = 0; rot < 4; rot++) {
+          const el = { pos: [3, -2], z: 1, plane, spin };
+          const axes = planeAxes(isoProjection, rot, el, [w / 2, h / 2]);
+          const [a, b, c, d, e, f] = matrixOf(
+            planeTransform(isoProjection, rot, el, [w / 2, h / 2])
+          );
+          const rad = (spin * Math.PI) / 180;
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+          for (const [lx, ly] of [[0, 0], [w, 0], [0, h], [w, h]]) {
+            // rotate(spin cx cy), applied in the element's own pixel space.
+            const px = w / 2 + (lx - w / 2) * cos - (ly - h / 2) * sin;
+            const py = h / 2 + (lx - w / 2) * sin + (ly - h / 2) * cos;
+            const wanted = { x: e + a * px + c * py, y: f + b * px + d * py };
+            const got = {
+              x: axes.origin.x + axes.u.x * lx + axes.v.x * ly,
+              y: axes.origin.y + axes.u.y * lx + axes.v.y * ly,
+            };
+            if (!near(wanted.x, got.x, 1e-6) || !near(wanted.y, got.y, 1e-6)) return false;
+          }
+        }
+      }
+    }
+    return true;
+  })());
+
+  check('a plane vector inverts the axes it was measured against', (() => {
+    for (const plane of PLANES) {
+      for (let rot = 0; rot < 4; rot++) {
+        const axes = planeAxes(isoProjection, rot, { pos: [0, 0], plane, spin: 90 });
+        for (const [lx, ly] of [[12, 0], [0, -7], [30, 45]]) {
+          const scene = {
+            x: axes.u.x * lx + axes.v.x * ly,
+            y: axes.u.y * lx + axes.v.y * ly,
+          };
+          const back = planeVector(axes, scene.x, scene.y);
+          if (!near(back.x, lx, 1e-6) || !near(back.y, ly, 1e-6)) return false;
+        }
+      }
+    }
+    return true;
   })());
 
   check('elevation lifts a plane straight up the screen', (() => {

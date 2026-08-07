@@ -35,6 +35,7 @@ export function createExporter({ store, scene, toaster }) {
     clone.querySelector('.scene-root')?.removeAttribute('transform');
     clone.querySelector('.grid')?.remove();
     clone.querySelector('.layer-overlay')?.remove();
+    clone.querySelector('.layer-handles')?.remove();
     for (const marker of clone.querySelectorAll('.is-selected, .is-hovered')) {
       marker.classList.remove('is-selected', 'is-hovered');
     }

@@ -22,7 +22,8 @@ import { isPlane, normaliseSpin, SPINS } from '../geom/plane.js';
 export const FORMAT_VERSION = 1;
 export const FILE_EXTENSION = '.arch.json';
 
-const MAX_SPAN = 400; // sanity bound on grid coordinates and sizes
+/** Sanity bound on grid coordinates and sizes, shared with the resize drag. */
+export const MAX_SPAN = 400;
 const EDGE_STYLES = new Set(['solid', 'dashed', 'dotted']);
 const EDGE_ARROWS = new Set(['none', 'end', 'start', 'both']);
 

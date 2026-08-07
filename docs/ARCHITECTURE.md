@@ -174,6 +174,17 @@ rotation, and the anchor always remains one of the element's four corners.
 > and leaves the two axes disagreeing about scale. `round6` for the linear
 > part, `round2` for the translation.
 
+### Resizing one of these
+
+`planeAxes` hands the same frame back as numbers so a grip can be put on a
+picture's own corner. Reading a drag back the other way has a trap in it: the
+flip walks the origin along `u` by twice the spin centre, which is a function of
+the picture's *own size*. Map absolute points and the new size feeds straight
+back into the next reading, and one drag grows the picture without bound. So the
+drag is measured as a **vector** — `planeVector`, axes only, no origin — which
+is the same number in every case and stable in the ones that would otherwise run
+away.
+
 ---
 
 ## 5. Rendering
@@ -183,6 +194,14 @@ One SVG, seven stacked layers, and a keyed diff:
 ```
 grid → behind → zones → edges → blocks → texts → overlay
 ```
+
+Resize grips are the exception, and deliberately so: they hang *outside* the
+camera transform, in a layer of their own above everything. A grip is a control,
+not scenery — it has to stay the same size on screen at every zoom, and putting
+it in viewport pixels means the pointer layer hit-tests it in the coordinates it
+already works in. Each grip carries what it grabs in its own data attributes, so
+`input/pointer.js` reads the drag off the DOM rather than recomputing geometry
+that could drift from what was drawn.
 
 Rendering never rebuilds the tree. Each entity keeps its own `<g>` across
 frames, keyed by document id; a frame creates, updates and removes, and only
@@ -292,7 +311,7 @@ src/
   core/arrange.js   tidy + flow layout
   core/images.js    import, downscale, embed
   core/{io,export,commands}.js
-  render/           scene, camera, block, group, edge, text, image, grid, overlay
+  render/           scene, camera, block, group, edge, text, image, grid, overlay, handles
   input/            pointer, keyboard
   ui/               toolbar, palette, inspector, theme, toasts, shortcuts
   data/             component registry, icons, prompt, samples

@@ -1,17 +1,30 @@
 /**
- * Pointer interaction: hover, selection, dragging, panning, zooming and
- * placement.
+ * Pointer interaction: hover, selection, dragging, resizing, panning, zooming
+ * and placement.
  *
  * A small explicit state machine (`idle` -> `pan` | `marquee` | `move` |
- * `connect`) rather than a tangle of boolean flags, because every one of these
- * gestures starts from the same pointerdown and only diverges on what was hit.
+ * `resize` | `connect`) rather than a tangle of boolean flags, because every
+ * one of these gestures starts from the same pointerdown and only diverges on
+ * what was hit.
  *
  * Drag deltas are computed in grid space, not screen space: the pointer is
  * unprojected onto the ground plane each frame and the delta is snapped to
  * whole cells. That keeps dragging exact at any zoom or rotation.
  */
 
-import { screenToGrid, gridToScreen, zoomAt, pan, projectionOf } from '../render/camera.js';
+import {
+  screenToGrid,
+  screenToScene,
+  gridToScreen,
+  zoomAt,
+  pan,
+  projectionOf,
+} from '../render/camera.js';
+import { resizeFootprint } from '../render/handles.js';
+import { rotatePoint, rotateRect, CELL } from '../geom/iso.js';
+import { planeAxes, planeVector } from '../geom/plane.js';
+import { MAX_SPAN } from '../core/schema.js';
+import { clampInt } from '../util/num.js';
 import {
   nodeById,
   groupById,
@@ -32,6 +45,7 @@ import { componentFor } from '../data/components.js';
 
 const DRAG_THRESHOLD = 3; // px before a press becomes a drag
 const CONNECT_KEY = 'c';
+const MAX_HEIGHT = 40; // matches the loader's own bound on `height`
 
 export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   /** @type {null | {mode: string, ...}} */
@@ -59,6 +73,23 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   const hitId = (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY);
     return el?.closest?.('[data-id]')?.dataset.id ?? null;
+  };
+
+  /**
+   * The resize grip under the pointer, if any. Grips are drawn above the whole
+   * scene, so a press that lands on one is never a press on the entity beneath
+   * it -- which is why this is asked before anything else on the canvas.
+   */
+  const hitHandle = (e) => {
+    if (store.state.tool !== 'select') return null;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-handle]');
+    if (!el) return null;
+    return {
+      role: el.dataset.handle,
+      id: el.dataset.id,
+      ax: Number(el.dataset.ax),
+      ay: Number(el.dataset.ay),
+    };
   };
 
   function refreshOverlay() {
@@ -101,6 +132,15 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
     }
 
     canvas.setPointerCapture(e.pointerId);
+
+    const grip = hitHandle(e);
+    if (grip) {
+      const resize = beginResize(grip, pt);
+      if (resize) {
+        drag = resize;
+        return;
+      }
+    }
 
     if (store.state.tool === 'text') {
       placeText(cellAt(pt));
@@ -199,6 +239,49 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
         break;
       }
 
+      // The three resize gestures share a shape: work out what the shape would
+      // become, do nothing if that is what it already is, and open the undo
+      // gesture only once something is actually about to change.
+      case 'resize': {
+        const g = screenToGrid(store.state.camera, pt.x, pt.y, drag.z);
+        const p = rotatePoint(g.x, g.y, drag.rot);
+        const next = resizeFootprint(drag.start, drag.grip.ax, drag.grip.ay, p);
+        // Back out of the rotated frame only now, at the point of writing.
+        const r = rotateRect(next.x, next.y, next.w, next.h, -drag.rot);
+        applyResize(drag, [r.x, r.y, r.w, r.h]);
+        break;
+      }
+
+      case 'resize-height': {
+        const node = nodeById(store.state.doc, drag.id);
+        if (!node) break;
+        // +z projects to exactly CELL pixels straight up the screen, so the
+        // conversion from a vertical drag to whole storeys is that and nothing
+        // more.
+        const risen = (drag.origin.y - pt.y) / (CELL * store.state.camera.zoom);
+        const height = clampInt(drag.startHeight + risen, 0, MAX_HEIGHT, node.height);
+        if (height === node.height) break;
+        openResize(drag);
+        store.commit('Resize', (doc) => {
+          const n = nodeById(doc, drag.id);
+          if (n) n.height = height;
+        });
+        break;
+      }
+
+      case 'resize-plane': {
+        const image = imageById(store.state.doc, drag.id);
+        if (!image) break;
+        const size = pictureSize(store.state.camera, image, drag, pt);
+        if (size[0] === image.size[0] && size[1] === image.size[1]) break;
+        openResize(drag);
+        store.commit('Resize', (doc) => {
+          const im = imageById(doc, drag.id);
+          if (im) im.size = size;
+        });
+        break;
+      }
+
       case 'draw-zone': {
         drag.endCell = cellAt(pt);
         overlay.ghost(store.state.camera, projectionOf(store.state.camera), zoneRect(drag));
@@ -235,6 +318,15 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
     if (active.mode === 'move' && active.moved) {
       store.commit('Move', (doc) => {
         reassignGroups(doc, active.targets.nodes.map((t) => nodeById(doc, t.id)).filter(Boolean));
+      });
+      store.endGesture();
+    } else if (active.mode.startsWith('resize') && active.moved) {
+      // A block that grew may now reach into a zone, and a zone that grew may
+      // now hold blocks that were outside it a moment ago.
+      store.commit('Resize', (doc) => {
+        const node = nodeById(doc, active.id);
+        if (node) reassignGroups(doc, [node]);
+        else if (groupById(doc, active.id)) reassignGroups(doc, doc.nodes);
       });
       store.endGesture();
     } else if (active.mode === 'connect') {
@@ -359,6 +451,110 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
     store.commit('Connect', (d) => {
       d.edges.push(makeEdge(d, fromId, toId));
     });
+  }
+
+  /**
+   * Snapshot of what a resize starts from.
+   *
+   * Grip anchors are fractions of the *rotated* footprint, so the starting
+   * rectangle is captured in that frame too and converted back to document
+   * coordinates only when it is written. Returns null when the grip names
+   * something that is no longer there, in which case the press falls through
+   * and behaves as an ordinary one.
+   */
+  function beginResize(grip, pt) {
+    const doc = store.state.doc;
+    const { camera } = store.state;
+
+    if (grip.role === 'height') {
+      const node = nodeById(doc, grip.id);
+      if (!node) return null;
+      return {
+        mode: 'resize-height',
+        id: grip.id,
+        origin: pt,
+        startHeight: node.height,
+        moved: false,
+      };
+    }
+
+    if (grip.role === 'plane-size') {
+      const image = imageById(doc, grip.id);
+      if (!image) return null;
+      return {
+        mode: 'resize-plane',
+        id: grip.id,
+        grip,
+        origin: pt,
+        startSize: [...image.size],
+        moved: false,
+      };
+    }
+
+    const node = nodeById(doc, grip.id);
+    const group = groupById(doc, grip.id);
+    const rect = node ? [...node.pos, ...node.size] : group?.rect;
+    if (!rect) return null;
+
+    return {
+      mode: 'resize',
+      id: grip.id,
+      grip,
+      rot: camera.rot,
+      // Footprint grips sit on the top face, so the drag has to be unprojected
+      // onto that plane rather than onto the ground -- otherwise the pointer
+      // and the corner it is holding drift apart on anything with height.
+      z: node && projectionOf(camera).showsSides ? node.height : 0,
+      start: rotateRect(rect[0], rect[1], rect[2], rect[3], camera.rot),
+      moved: false,
+    };
+  }
+
+  /** Open the undo gesture for a resize, once, at the first real change. */
+  function openResize(drag) {
+    if (drag.moved) return;
+    store.beginGesture('Resize');
+    drag.moved = true;
+  }
+
+  function applyResize(drag, rect) {
+    const doc = store.state.doc;
+    const node = nodeById(doc, drag.id);
+    const group = groupById(doc, drag.id);
+    const current = node ? [...node.pos, ...node.size] : group?.rect;
+    if (!current || current.every((v, i) => v === rect[i])) return;
+
+    openResize(drag);
+    store.commit('Resize', (d) => {
+      const n = nodeById(d, drag.id);
+      if (n) {
+        n.pos = [rect[0], rect[1]];
+        n.size = [rect[2], rect[3]];
+        return;
+      }
+      const g = groupById(d, drag.id);
+      if (g) g.rect = [...rect];
+    });
+  }
+
+  /**
+   * A picture's new size in cells, read out of its own plane.
+   *
+   * The drag is measured as a vector rather than an absolute point, because a
+   * spun or flipped plane puts its origin at a place that depends on the
+   * picture's own size -- so reading absolute positions would feed the new size
+   * straight back into the next reading and run away.
+   */
+  function pictureSize(camera, image, drag, pt) {
+    const axes = planeAxes(projectionOf(camera), camera.rot, image);
+    const from = screenToScene(camera, drag.origin.x, drag.origin.y);
+    const to = screenToScene(camera, pt.x, pt.y);
+    const moved = planeVector(axes, to.x - from.x, to.y - from.y);
+    const [w, h] = drag.startSize;
+    return [
+      drag.grip.ax === 1 ? clampInt(w + moved.x / CELL, 1, MAX_SPAN, w) : w,
+      drag.grip.ay === 1 ? clampInt(h + moved.y / CELL, 1, MAX_SPAN, h) : h,
+    ];
   }
 
   function applyMove(targets, dx, dy) {

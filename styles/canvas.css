@@ -211,3 +211,28 @@
   stroke-dasharray: 6 4;
   vector-effect: non-scaling-stroke;
 }
+
+/* --- resize grips --------------------------------------------------------- */
+
+/* Drawn outside the camera transform, so these coordinates are viewport pixels
+   and a grip keeps its size at every zoom. The layer itself is inert and each
+   grip opts back in, so the gaps between them still reach the diagram. */
+.layer-handles { pointer-events: none; }
+
+.handle { pointer-events: auto; }
+
+.handle-dot {
+  fill: #fff;
+  stroke: #2563eb;
+  stroke-width: 1.8;
+}
+
+.handle:hover .handle-dot { fill: #bfdbfe; }
+
+/* The stem is what says the grip belongs to the top face below it rather than
+   floating free -- height is the one dimension with nothing to hold on to. */
+.handle-stem {
+  stroke: #2563eb;
+  stroke-width: 1.4;
+  stroke-dasharray: 3 3;
+}

@@ -8,11 +8,15 @@
  *
  * Layer order is the painter's order for the whole diagram:
  *   grid -> zones -> edges -> blocks -> texts -> overlay
+ *
+ * Resize grips are the exception. They hang outside the camera transform, so
+ * they keep their size on screen at any zoom, and are drawn above everything.
  */
 
 import { svg, setAttr } from '../util/dom.js';
 import { cameraTransform, projectionOf } from './camera.js';
 import { createGridView, updateGridView } from './grid.js';
+import { createHandlesView, updateHandlesView } from './handles.js';
 import { createGroupView, updateGroupView } from './group.js';
 import { createEdgeView, updateEdgeView } from './edge.js';
 import { createBlockView, updateBlockView } from './block.js';
@@ -35,8 +39,10 @@ export function createScene(container, { onResize } = {}) {
   const texts = svg('g', { class: 'layer layer-texts' });
   const overlay = svg('g', { class: 'layer layer-overlay' });
 
+  const handles = createHandlesView();
+
   const root = svg('g', { class: 'scene-root' }, [grid.el, behind, zones, edges, blocks, texts, overlay]);
-  const el = svg('svg', { class: 'scene', xmlns: 'http://www.w3.org/2000/svg' }, [root]);
+  const el = svg('svg', { class: 'scene', xmlns: 'http://www.w3.org/2000/svg' }, [root, handles.el]);
   container.append(el);
 
   const zoneViews = new Map();
@@ -144,6 +150,9 @@ export function createScene(container, { onResize } = {}) {
         hovered: hoverId === entity.id,
       }));
     }
+
+    // --- resize grips ------------------------------------------------------
+    updateHandlesView(handles, state);
   }
 
   /**
@@ -170,7 +179,7 @@ export function createScene(container, { onResize } = {}) {
     el,
     root,
     overlay,
-    layers: { behind, zones, edges, blocks, texts, overlay },
+    layers: { behind, zones, edges, blocks, texts, overlay, handles: handles.el },
     render,
     contentBox,
     get viewport() {

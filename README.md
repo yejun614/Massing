@@ -42,6 +42,7 @@ the modules load unbundled.
 |---|---|
 | Place a block | Click a component in the left panel, then click the canvas (Shift keeps it armed) |
 | Move | Drag. Dragging a zone moves everything inside it |
+| Resize | Select one thing, then drag a grip. A block gets an extra grip above it for its height |
 | Connect | `C`, then drag from one block to another |
 | Draw a zone | `G`, then drag a rectangle |
 | Add a note | `T`, then click. Bold, italic, underline, size and colour in the inspector |

@@ -83,14 +83,13 @@ function screenBasis(proj, rot, plane) {
 }
 
 /**
- * SVG transform putting an element's local pixel space onto its plane.
+ * Where an element's plane sits, before any spin: an origin in scene pixels
+ * and the two unit axes its local pixel space is drawn along.
  *
- * @param {object} proj      current projection
- * @param {number} rot       camera rotation in quarter-turns
- * @param {object} el        `{ pos: [x, y], z, plane, spin }`
- * @param {[number, number]} spinCentre  local pixel point to spin about
+ * Rounded exactly as the emitted matrix is, so anything positioned from these
+ * numbers -- a resize grip, say -- lands on the same pixel as the element.
  */
-export function planeTransform(proj, rot, el, spinCentre = [0, 0]) {
+function planeFrame(proj, rot, el, spinCentre) {
   const anchor = rotatePoint(el.pos[0], el.pos[1], rot);
   const origin = proj.project(anchor.x, anchor.y, el.z ?? 0);
   let { u, v } = screenBasis(proj, rot, effectivePlane(el.plane, proj));
@@ -115,13 +114,79 @@ export function planeTransform(proj, rot, el, spinCentre = [0, 0]) {
   }
 
   // The basis is kept at full precision, the translation only needs pixels.
-  const matrix =
-    `matrix(${round6(u.x)},${round6(u.y)},${round6(v.x)},${round6(v.y)},` +
-    `${round2(ox)},${round2(oy)})`;
+  return {
+    origin: { x: round2(ox), y: round2(oy) },
+    u: { x: round6(u.x), y: round6(u.y) },
+    v: { x: round6(v.x), y: round6(v.y) },
+  };
+}
+
+/**
+ * SVG transform putting an element's local pixel space onto its plane.
+ *
+ * @param {object} proj      current projection
+ * @param {number} rot       camera rotation in quarter-turns
+ * @param {object} el        `{ pos: [x, y], z, plane, spin }`
+ * @param {[number, number]} spinCentre  local pixel point to spin about
+ */
+export function planeTransform(proj, rot, el, spinCentre = [0, 0]) {
+  const { origin, u, v } = planeFrame(proj, rot, el, spinCentre);
+  const matrix = `matrix(${u.x},${u.y},${v.x},${v.y},${origin.x},${origin.y})`;
 
   const spin = normaliseSpin(el.spin);
   if (!spin) return matrix;
   return `${matrix} rotate(${spin} ${round2(spinCentre[0])} ${round2(spinCentre[1])})`;
+}
+
+/**
+ * The same placement as `planeTransform`, as numbers rather than a string and
+ * with the spin folded in: a local pixel point `(lx, ly)` sits at
+ * `origin + u*lx + v*ly` in scene pixels.
+ *
+ * Resize grips have to be put on a flat element's own corners and a drag has
+ * to be read back into its local pixels. Deriving both from the frame the
+ * renderer already uses is the only way the grip and the picture cannot end up
+ * disagreeing about where a corner is.
+ */
+export function planeAxes(proj, rot, el, spinCentre = [0, 0]) {
+  const frame = planeFrame(proj, rot, el, spinCentre);
+  const spin = normaliseSpin(el.spin);
+  if (!spin) return frame;
+
+  // SVG applies `rotate(a cx cy)` in local space, so folding it in is a change
+  // of axes plus whatever shift keeps the spin centre where it was.
+  const rad = (spin * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const { origin, u, v } = frame;
+  const su = { x: u.x * cos + v.x * sin, y: u.y * cos + v.y * sin };
+  const sv = { x: -u.x * sin + v.x * cos, y: -u.y * sin + v.y * cos };
+  const [cx, cy] = spinCentre;
+  return {
+    origin: {
+      x: origin.x + (u.x * cx + v.x * cy) - (su.x * cx + sv.x * cy),
+      y: origin.y + (u.y * cx + v.y * cy) - (su.y * cx + sv.y * cy),
+    },
+    u: su,
+    v: sv,
+  };
+}
+
+/**
+ * A scene-pixel vector read back into an element's own local pixels.
+ *
+ * Only the axes are involved, never the origin -- which is what makes it safe
+ * to use during a resize. The origin of a spun or flipped plane is a function
+ * of the element's own size, so mapping absolute points would feed the new
+ * size straight back into the reading and run away.
+ */
+export function planeVector(axes, dx, dy) {
+  const det = axes.u.x * axes.v.y - axes.u.y * axes.v.x;
+  if (!det) return { x: 0, y: 0 };
+  return {
+    x: (dx * axes.v.y - dy * axes.v.x) / det,
+    y: (dy * axes.u.x - dx * axes.u.y) / det,
+  };
 }
 
 export function normaliseSpin(spin) {
