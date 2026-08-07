@@ -10,6 +10,17 @@
  * end of a word.
  */
 
+/**
+ * SVG's name for an alignment. One function so a caption on a block, on a
+ * connection and on a free note cannot end up disagreeing about what "right"
+ * means.
+ */
+export function textAnchorFor(align) {
+  if (align === 'center') return 'middle';
+  if (align === 'right') return 'end';
+  return 'start';
+}
+
 /** Average advance of a Latin glyph, as a fraction of the font size. */
 const NARROW_EM = 0.55;
 /** CJK and full-width forms occupy a full em. */

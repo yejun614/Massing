@@ -15,6 +15,7 @@ import {
   DEFAULT_PLANE,
   DEFAULT_ZONE_LABEL_PLANE,
   DEFAULT_LABEL_SIZE,
+  DEFAULT_LABEL_ALIGN,
 } from './schema.js';
 
 export function nodeById(doc, id) {
@@ -202,6 +203,7 @@ export function makeNode(doc, type, x, y, overrides = {}) {
     color: def.color,
     labelPlane: DEFAULT_PLANE,
     labelSize: DEFAULT_LABEL_SIZE,
+    labelAlign: DEFAULT_LABEL_ALIGN,
     group: null,
     props: {},
     ...stripIdentity(overrides),
@@ -271,6 +273,7 @@ export function makeEdge(doc, from, to, overrides = {}) {
     color: '#64748b',
     labelPlane: DEFAULT_PLANE,
     labelSize: DEFAULT_LABEL_SIZE,
+    labelAlign: DEFAULT_LABEL_ALIGN,
     ...stripIdentity(overrides),
   };
 }

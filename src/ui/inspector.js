@@ -16,8 +16,11 @@ import { PLANES, PLANE_LABELS, SPINS } from '../geom/plane.js';
 // The defaults come from the schema rather than being written out again here:
 // a literal in the inspector is exactly how the two drift apart, and a control
 // that shows the wrong default is worse than one that shows none.
-import { DEFAULT_PLANE, DEFAULT_ZONE_LABEL_PLANE } from '../core/schema.js';
+import { DEFAULT_PLANE, DEFAULT_ZONE_LABEL_PLANE, DEFAULT_LABEL_ALIGN } from '../core/schema.js';
 import { approximateBytes, formatSize } from '../core/images.js';
+
+/** Shared by every caption control, so the wording cannot drift apart. */
+const ALIGN_OPTIONS = [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']];
 
 const SWATCHES = [
   '#ed7100', '#f59e0b', '#eab308', '#7aa116', '#16a34a', '#0ea5a5', '#2a7fd4', '#2563eb',
@@ -193,6 +196,15 @@ function buildNode(root, store, id) {
   );
 
   fields.push(
+    selectField(section, store, {
+      label: 'Label align',
+      options: ALIGN_OPTIONS,
+      get: (s) => nodeById(s.doc, id)?.labelAlign ?? DEFAULT_LABEL_ALIGN,
+      set: (value) => withNode((n) => (n.labelAlign = value)),
+    })
+  );
+
+  fields.push(
     areaField(section, store, {
       label: 'Notes',
       get: (s) => nodeById(s.doc, id)?.props?.note ?? '',
@@ -326,7 +338,7 @@ function buildText(root, store, id) {
   fields.push(
     selectField(section, store, {
       label: 'Align',
-      options: [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']],
+      options: ALIGN_OPTIONS,
       get: (s) => textById(s.doc, id)?.align ?? 'left',
       set: (value) => withText((t) => (t.align = value)),
     })
@@ -528,6 +540,15 @@ function buildEdge(root, store, id) {
       max: 96,
       get: (s) => edgeById(s.doc, id)?.labelSize ?? 12,
       set: (value) => withEdge((e) => (e.labelSize = value)),
+    })
+  );
+
+  fields.push(
+    selectField(section, store, {
+      label: 'Label align',
+      options: ALIGN_OPTIONS,
+      get: (s) => edgeById(s.doc, id)?.labelAlign ?? DEFAULT_LABEL_ALIGN,
+      set: (value) => withEdge((e) => (e.labelAlign = value)),
     })
   );
 

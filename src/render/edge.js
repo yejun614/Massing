@@ -16,6 +16,7 @@ import { rotatePoint, unrotatePoint } from '../geom/iso.js';
 import { nodeById } from '../core/doc.js';
 import { round2 } from '../util/num.js';
 import { planeTransform, effectivePlane } from '../geom/plane.js';
+import { textAnchorFor } from '../util/text.js';
 
 const EDGE_Z = 0.14; // lift off the ground plane to avoid z-fighting with the grid
 const CLEARANCE = 0.2; // cells of daylight between a block and the line
@@ -81,6 +82,12 @@ export function updateEdgeView(view, edge, ctx) {
  * lies alongside the line; on either wall the same offset stands it up above
  * the line, because a wall's in-plane down direction is world height inverted.
  *
+ * A connection has no width of its own to align against, only that one point,
+ * so `labelAlign` decides which end of the caption is pinned to it -- the same
+ * model a free text annotation uses for its own anchor. Nudging a caption to
+ * start or finish at the midpoint is how you keep it off a block it would
+ * otherwise run across.
+ *
  * The midpoint is measured along the *grid* polyline rather than its screen
  * projection, so the caption sits at the middle of the connection as drawn on
  * the plan, not at the middle of the foreshortened picture of it.
@@ -88,6 +95,7 @@ export function updateEdgeView(view, edge, ctx) {
 function placeEdgeLabel(view, edge, ctx, rotated, screen) {
   const { proj, rot } = ctx;
   const plane = effectivePlane(edge.labelPlane, proj);
+  setAttr(view.label, 'text-anchor', textAnchorFor(edge.labelAlign));
 
   if (plane === 'screen') {
     const mid = midpoint(screen);
@@ -103,8 +111,8 @@ function placeEdgeLabel(view, edge, ctx, rotated, screen) {
   const mid = midpoint(rotated);
   const anchor = unrotatePoint(mid.x, mid.y, rot);
 
-  // Anchored at the line and offset in local pixels, so `text-anchor: middle`
-  // still centres the caption on the midpoint whichever plane it hangs on.
+  // Anchored at the line and offset in local pixels, so the alignment still
+  // reads against the midpoint whichever plane the caption hangs on.
   setAttr(view.label, 'x', 0);
   setAttr(view.label, 'y', -EDGE_LABEL_GAP);
   setAttr(

@@ -60,6 +60,15 @@ export const DEFAULT_ZONE_LABEL_PLANE = 'right';
 /** Caption size in pixels, matching the stylesheet's own default. */
 export const DEFAULT_LABEL_SIZE = 12;
 
+/**
+ * Captions centre on what they describe.
+ *
+ * A block's caption reads against the block's own width and a connection's
+ * against the point it hangs from, but "centred" is the sane answer for both,
+ * and it is what the `screen` plane has always done.
+ */
+export const DEFAULT_LABEL_ALIGN = 'center';
+
 export const TEXT_ALIGNS = new Set(['left', 'center', 'right']);
 export const TEXT_DEFAULTS = {
   size: 14,
@@ -185,6 +194,7 @@ export function normalizeDoc(raw) {
       // laid on the ground or written onto one of the block's own faces.
       labelPlane: isPlane(n.labelPlane) ? n.labelPlane : DEFAULT_PLANE,
       labelSize: clampInt(n.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
+      labelAlign: TEXT_ALIGNS.has(n.labelAlign) ? n.labelAlign : DEFAULT_LABEL_ALIGN,
       group: null,
       props: plainProps(n.props),
     };
@@ -223,6 +233,7 @@ export function normalizeDoc(raw) {
       // on a plane too -- written on the ground along the line by default.
       labelPlane: isPlane(e.labelPlane) ? e.labelPlane : DEFAULT_PLANE,
       labelSize: clampInt(e.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
+      labelAlign: TEXT_ALIGNS.has(e.labelAlign) ? e.labelAlign : DEFAULT_LABEL_ALIGN,
     });
   }
 
@@ -322,6 +333,7 @@ export function serializeDoc(doc) {
       color: n.color,
       labelPlane: n.labelPlane === DEFAULT_PLANE ? null : n.labelPlane,
       labelSize: n.labelSize === DEFAULT_LABEL_SIZE ? null : n.labelSize,
+      labelAlign: n.labelAlign === DEFAULT_LABEL_ALIGN ? null : n.labelAlign,
       group: n.group,
       props: isEmpty(n.props) ? null : n.props,
     })),
@@ -335,6 +347,7 @@ export function serializeDoc(doc) {
       color: e.color,
       labelPlane: e.labelPlane === DEFAULT_PLANE ? null : e.labelPlane,
       labelSize: e.labelSize === DEFAULT_LABEL_SIZE ? null : e.labelSize,
+      labelAlign: e.labelAlign === DEFAULT_LABEL_ALIGN ? null : e.labelAlign,
     })),
     // Styling flags are written only when set, so a plain note stays a plain
     // three-line object in the file.

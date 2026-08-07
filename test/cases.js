@@ -22,10 +22,11 @@ import {
   parseDoc,
   DEFAULT_PLANE,
   DEFAULT_ZONE_LABEL_PLANE,
+  DEFAULT_LABEL_ALIGN,
 } from '../src/core/schema.js';
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
-import { estimateTextBox, estimateLineWidth } from '../src/util/text.js';
+import { estimateTextBox, estimateLineWidth, textAnchorFor } from '../src/util/text.js';
 import {
   planeTransform,
   planeAxes,
@@ -300,6 +301,55 @@ function documentCases(check) {
     // Not "item": the slug falls back to what the thing *is*.
     return doc.groups[0].id === 'vpc' && doc.nodes[0].id === 'ec2';
   })());
+
+  // --- caption alignment ----------------------------------------------------
+
+  check('a caption alignment round-trips on blocks and connections', (() => {
+    const doc = normalizeDoc({
+      nodes: [
+        { id: 'a', type: 'ec2', pos: [0, 0], labelAlign: 'left' },
+        { id: 'b', type: 'rds', pos: [5, 0], labelAlign: 'right' },
+      ],
+      edges: [{ id: 'e', from: 'a', to: 'b', label: '5432', labelAlign: 'left' }],
+    }).doc;
+    const saved = serializeDoc(doc);
+    const back = parseDoc(saved).doc;
+    return back.nodes[0].labelAlign === 'left' && back.nodes[1].labelAlign === 'right' &&
+      back.edges[0].labelAlign === 'left' && serializeDoc(back) === saved;
+  })());
+
+  check('captions centre unless told otherwise', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ id: 'a', type: 'ec2', pos: [0, 0] }, { id: 'b', type: 'rds', pos: [5, 0] }],
+      edges: [{ id: 'e', from: 'a', to: 'b' }],
+    }).doc;
+    return doc.nodes.every((n) => n.labelAlign === DEFAULT_LABEL_ALIGN) &&
+      doc.edges[0].labelAlign === DEFAULT_LABEL_ALIGN;
+  })());
+
+  check('the default alignment is not written to the file', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ id: 'a', type: 'ec2', pos: [0, 0], labelAlign: DEFAULT_LABEL_ALIGN }],
+    }).doc;
+    return !serializeDoc(doc).includes('labelAlign');
+  })());
+
+  check('a nonsense alignment falls back rather than reaching the renderer', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ id: 'a', type: 'ec2', pos: [0, 0], labelAlign: 'justify' }, { id: 'b', type: 'rds', pos: [5, 0] }],
+      edges: [{ id: 'e', from: 'a', to: 'b', labelAlign: 7 }],
+    }).doc;
+    return doc.nodes[0].labelAlign === DEFAULT_LABEL_ALIGN &&
+      doc.edges[0].labelAlign === DEFAULT_LABEL_ALIGN;
+  })());
+
+  check('every alignment maps to an SVG text-anchor', (() =>
+    textAnchorFor('left') === 'start' &&
+    textAnchorFor('center') === 'middle' &&
+    textAnchorFor('right') === 'end' &&
+    // Anything unrecognised has to land somewhere sane rather than emit an
+    // attribute the browser will ignore.
+    textAnchorFor(undefined) === 'start')());
 
   check('clearing every caption produces no warnings', (() => {
     const doc = normalizeDoc(THREE_TIER).doc;

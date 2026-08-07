@@ -127,6 +127,11 @@ alongside, `right` / `left` stand it up above the line.
 `{ "id": "prod-vpc", "kind": "vpc", "rect": [0, 0, 18, 12], "labelPlane": "floor" }`
 `{ "from": "api", "to": "db", "label": "5432", "labelPlane": "screen" }`
 
+`labelAlign` (`left`, `center`, `right`; default `center`) lines a block's
+caption up with its own left edge, centre or right edge, and decides which end
+of an edge caption is pinned to the line's midpoint. Leave it out unless a
+caption is crowding something. Set `"label": ""` to draw no caption at all.
+
 Raise `labelSize` on the one or two blocks a diagram is really about; it
 reads better than making them taller, which costs depth (see below).
 

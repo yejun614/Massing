@@ -14,6 +14,7 @@
 
 import { svg, setAttr, setClass, clear } from '../util/dom.js';
 import { planeTransform, effectivePlane } from '../geom/plane.js';
+import { textAnchorFor } from '../util/text.js';
 import { round2 } from '../util/num.js';
 
 const LINE_HEIGHT = 1.35;
@@ -43,7 +44,7 @@ export function updateTextView(view, note, ctx) {
   setAttr(view.text, 'font-weight', note.bold ? 700 : 400);
   setAttr(view.text, 'font-style', note.italic ? 'italic' : 'normal');
   setAttr(view.text, 'text-decoration', note.underline ? 'underline' : 'none');
-  setAttr(view.text, 'text-anchor', anchorFor(note.align));
+  setAttr(view.text, 'text-anchor', textAnchorFor(note.align));
 
   // Rebuilding tspans on every frame would throw away the browser's text
   // layout during a drag, so only do it when the content actually differs.
@@ -84,10 +85,4 @@ function resizeHitArea(view) {
   setAttr(view.hit, 'y', round2(box.y - HIT_PADDING));
   setAttr(view.hit, 'width', round2(box.width + HIT_PADDING * 2));
   setAttr(view.hit, 'height', round2(box.height + HIT_PADDING * 2));
-}
-
-function anchorFor(align) {
-  if (align === 'center') return 'middle';
-  if (align === 'right') return 'end';
-  return 'start';
 }

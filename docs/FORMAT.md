@@ -177,6 +177,26 @@ only decides which way it is offset from the line. `floor` lays it alongside,
 
 `labelSize` sets the caption size in pixels on any of them, 6–96, default 12.
 
+### Which way a caption lines up
+
+`labelAlign` is `left`, `center` (the default) or `right`, on blocks and
+connections:
+
+```json
+{ "id": "db", "type": "rds", "pos": [4, 0], "labelAlign": "left" }
+{ "from": "api", "to": "db", "label": "5432", "labelAlign": "right" }
+```
+
+A block has a width, so the caption lines up with the block's own left edge,
+centre or right edge — whichever plane it hangs on, and whether or not the
+caption is wider than the block. A connection has only its midpoint, so the
+setting decides which end of the caption is pinned there; `left` starts the
+text at the midpoint and runs it onward, which is how you keep a long caption
+off a block it would otherwise cross.
+
+Free text annotations have had the same three settings all along, under the
+plain name `align`, measured against their own anchor.
+
 ### No caption at all
 
 Leave `label` out and a block or a zone is named after what it is — an `ec2`

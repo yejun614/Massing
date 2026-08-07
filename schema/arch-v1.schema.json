@@ -301,6 +301,16 @@
           "minimum": 6,
           "maximum": 96,
           "description": "Caption size in pixels. Default 12."
+        },
+        "labelAlign": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "default": "center",
+          "description": "Which part of the caption lines up with what it names. On a block that is the block's own left edge, centre or right edge; on a connection it is which end of the caption is pinned to the midpoint."
         }
       }
     },
@@ -586,6 +596,16 @@
           "minimum": 6,
           "maximum": 96,
           "description": "Caption size in pixels. Default 12."
+        },
+        "labelAlign": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "default": "center",
+          "description": "Which part of the caption lines up with what it names. On a block that is the block's own left edge, centre or right edge; on a connection it is which end of the caption is pinned to the midpoint."
         }
       }
     }
