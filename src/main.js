@@ -56,6 +56,21 @@ installCrashReporting();
 
 const store = createStore(startingDocument());
 
+/*
+ * A finger starts by moving the drawing, not by selecting things in it.
+ *
+ * With a mouse, select-first is right: the cursor is precise and panning has a
+ * wheel, a held space and a middle button. A touchscreen has none of those, so
+ * select-first means every attempt to look at the rest of the diagram lands on
+ * whatever was under the thumb. Two fingers still pan and pinch from any tool.
+ *
+ * Keyed off the pointer rather than the width: a narrow desktop window still
+ * has a mouse, and a touchscreen laptop still has a finger.
+ */
+if (window.matchMedia?.('(pointer: coarse)').matches) {
+  store.setUI({ tool: 'pan' });
+}
+
 /**
  * A bundle built with `--doc` carries its diagram inline, which is what makes
  * a single `.html` file both the editor and the document. Without one we open

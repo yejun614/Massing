@@ -22,6 +22,21 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     });
 
   /**
+   * A button that stays on the rail when the rest are folded away.
+   *
+   * Which ones those are is a judgement about editing on a phone rather than
+   * about the desktop toolbar's grouping: the two panels, because they are how
+   * anything is added or edited at all; select and pan, because they decide
+   * what a finger does; connect, because it is the one thing you can create
+   * that the palette does not offer; and undo, redo and delete, which are what
+   * you reach for after every mistake.
+   */
+  const core = (button) => {
+    button.classList.add('is-core');
+    return button;
+  };
+
+  /**
    * An anchor rather than a button that calls `window.open`: it opens in a new
    * tab from a plain click, but middle-click, Ctrl+click and "copy link" all
    * keep working, and it survives a popup blocker.
@@ -81,9 +96,9 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   }
 
   // --- edit ----------------------------------------------------------------
-  const undoBtn = btn('undo', 'Undo (Ctrl+Z)', () => commands.undo());
-  const redoBtn = btn('redo', 'Redo (Ctrl+Shift+Z)', () => commands.redo());
-  const deleteBtn = btn('trash', 'Delete selection (Del)', () => commands.deleteSelection());
+  const undoBtn = core(btn('undo', 'Undo (Ctrl+Z)', () => commands.undo()));
+  const redoBtn = core(btn('redo', 'Redo (Ctrl+Shift+Z)', () => commands.redo()));
+  const deleteBtn = core(btn('trash', 'Delete selection (Del)', () => commands.deleteSelection()));
   const tidyBtn = btn(
     'tidy',
     'Tidy (A) — nudge blocks apart until nothing is hidden, keeping your layout',
@@ -97,29 +112,55 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   clear(region('edit')).append(undoBtn, redoBtn, deleteBtn, tidyBtn, layoutBtn);
 
   // --- view ----------------------------------------------------------------
-  const selectBtn = btn('cursor', 'Select tool (V)', () => commands.setTool('select'));
-  const panBtn = btn('hand', 'Pan tool (H) — Space + drag does the same from any tool', () =>
+  const selectBtn = core(btn('cursor', 'Select tool (V)', () => commands.setTool('select')));
+  const panBtn = core(btn('hand', 'Pan tool (H) — Space + drag does the same from any tool', () =>
     commands.setTool('pan')
-  );
+  ));
   const zoneBtn = btn('zone', 'Draw a zone (G)', () => commands.setTool('group'));
-  const connectBtn = btn('link', 'Connect blocks (C)', () => commands.setTool('connect'));
+  const connectBtn = core(btn('link', 'Connect blocks (C)', () => commands.setTool('connect')));
   const rotLeft = btn('rotateLeft', 'Rotate left (Q)', () => commands.rotateLeft());
   const rotRight = btn('rotateRight', 'Rotate right (E)', () => commands.rotateRight());
-  const zoomOut = btn('zoomOut', 'Zoom out (-)', () => commands.zoomOut());
-  const zoomIn = btn('zoomIn', 'Zoom in (+)', () => commands.zoomIn());
-  const fitBtn = btn('fit', 'Zoom to fit (0)', () => commands.zoomFit());
+  // The rail has no room for these and the dock in the corner has them, so on
+  // a narrow screen these three step aside rather than appear twice.
+  const docked = (button) => {
+    button.classList.add('is-docked');
+    return button;
+  };
+  const zoomOut = docked(btn('zoomOut', 'Zoom out (-)', () => commands.zoomOut()));
+  const zoomIn = docked(btn('zoomIn', 'Zoom in (+)', () => commands.zoomIn()));
+  const fitBtn = docked(btn('fit', 'Zoom to fit (0)', () => commands.zoomFit()));
   const modeBtn = btn('cube', 'Toggle 2D / 3D (2)', () => commands.toggleMode());
   const themeBtn = btn('themeSystem', 'Theme', () => {
     paintTheme(theme.cycle());
   });
-  const leftPanelBtn = btn('panelLeft', 'Show or hide the component panel ([)', () =>
+  const leftPanelBtn = core(btn('panelLeft', 'Show or hide the component panel ([)', () =>
     panels?.toggle('left')
-  );
-  const rightPanelBtn = btn('panelRight', 'Show or hide the properties panel (])', () =>
+  ));
+  const rightPanelBtn = core(btn('panelRight', 'Show or hide the properties panel (])', () =>
     panels?.toggle('right')
-  );
+  ));
   const helpBtn = btn('help', 'Keyboard shortcuts', () => onHelp?.());
   const repoLink = link('github', 'Source on GitHub (opens in a new tab)', REPO_URL);
+
+  /**
+   * Fold the rest of the rail away, and bring it back.
+   *
+   * Twenty-nine buttons is a fine toolbar and a poor rail: on a phone it would
+   * be a column taller than the screen, so all but the core fold behind this.
+   * It is the last thing on the rail and marked core itself, or pressing it
+   * once would hide the way back.
+   */
+  const moreBtn = core(btn('more', 'More tools', () => {
+    const bar = region('panels').closest('.toolbar');
+    const open = bar.classList.toggle('is-expanded');
+    setClass(moreBtn, 'is-active', open);
+    // The name changes with the state, and both copies of it have to: a
+    // tooltip saying one thing while a screen reader says the other is worse
+    // than either being wrong on its own.
+    const label = open ? 'Fewer tools' : 'More tools';
+    setAttrs(moreBtn, { title: label, 'aria-label': label, 'aria-expanded': String(open) });
+  }, { class: 'btn btn-icon is-rail-only', 'aria-expanded': 'false' }));
+
 
   /**
    * A folded panel dims its button rather than lighting it up. `is-active` in
@@ -146,11 +187,22 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     selectBtn, panBtn, zoneBtn, connectBtn,
     rotLeft, rotRight,
     zoomOut, zoomIn, fitBtn,
-    modeBtn, themeBtn, helpBtn, repoLink
+    modeBtn, themeBtn, helpBtn, repoLink,
+    moreBtn
   );
 
   clear(region('panels')).append(leftPanelBtn, rightPanelBtn);
   paintPanels();
+
+  // Zoom lives in the corner on a phone: within reach of a thumb, and out of
+  // the way of a rail that is already full. The same three commands as the
+  // toolbar's, not the same three elements, because one of the two is always
+  // hidden and moving nodes between them on every resize is worse.
+  clear(region('zoom')).append(
+    btn('zoomIn', 'Zoom in', () => commands.zoomIn()),
+    btn('zoomOut', 'Zoom out', () => commands.zoomOut()),
+    btn('fit', 'Zoom to fit', () => commands.zoomFit())
+  );
 
   // --- document ------------------------------------------------------------
   const dirtyDot = h('span', { class: 'dirty-dot', title: 'Unsaved changes' });

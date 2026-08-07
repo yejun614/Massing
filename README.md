@@ -65,13 +65,27 @@ the modules load unbundled.
 
 ### On a phone
 
+**The toolbar stands on its end** as a rail down the left edge. A row of
+twenty-nine icons on a phone is something you scroll through hunting; a column
+costs 52px of width instead of 56px of height, which is the cheaper trade in
+portrait, and it is under the thumb already holding the phone. Eight buttons
+stay out — the two panels, select, pan, connect, undo, redo, delete — and the
+rest fold behind `⋯`, which pins itself to the bottom while open so the way
+back is never scrolled away.
+
+**Pan is the tool a finger starts with.** With a mouse, select-first is right;
+a touchscreen has no wheel, no held space and no middle button, so select-first
+means every attempt to look at the rest of the diagram lands on whatever was
+under the thumb. Tap the arrow on the rail to select instead. **Two fingers pan
+and pinch from any tool**, and **zoom sits in the bottom-right corner**.
+
 The two panels stop being columns and become drawers over the canvas — a phone
 cannot spare 232px for a palette *and* have somewhere left to draw. Picking a
 component closes the palette on its own, since the next thing you do is press
-the canvas it was covering. One finger selects and drags; **two pan and zoom**,
-as they do on a map. Grips are drawn larger and withheld from shapes too small
-to hold them, because four dots on the corners of a small block cover the block
-and dragging it stops working.
+the canvas it was covering; a drawer always leaves a strip of canvas beside it
+to press to dismiss it. Grips are drawn larger and withheld from shapes too
+small to hold them, because four dots on the corners of a small block cover the
+block and dragging it stops working.
 
 Blocks belong to a zone by **geometry**: a block inside a VPC's rectangle is in
 that VPC, and membership is recomputed whenever anything moves.

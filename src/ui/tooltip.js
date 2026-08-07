@@ -78,10 +78,12 @@ export function createTooltips(root) {
   /**
    * Under the control, centred on it, and inside the window.
    *
-   * Below the whole row, not merely below the button: a control is shorter
+   * Below the whole *bar*, not merely below the button: a control is shorter
    * than the bar it sits in, so hanging the bubble off the button alone tucks
-   * its top edge back inside the bar. Every tooltip then also lines up on one
-   * row, which is what a menu bar's should do.
+   * its top edge back inside it, and every tooltip then lines up on one row,
+   * which is what a menu bar's should do. That only holds while the container
+   * is a bar — stood on its end as a rail it runs the height of the screen,
+   * and clearing it would put every tooltip off the bottom edge.
    *
    * When the bubble has to be pushed sideways to stay on screen the arrow
    * stays where it was, so it still points at what it is describing.
@@ -95,8 +97,14 @@ export function createTooltips(root) {
       EDGE,
       Math.max(EDGE, window.innerWidth - self.width - EDGE)
     );
+    const isBar = row.width > row.height;
+    let top = (isBar ? Math.max(anchor.bottom, row.bottom) : anchor.bottom) + GAP;
+    // Out of room underneath: go above the control rather than off the screen.
+    if (top + self.height > window.innerHeight - EDGE) {
+      top = Math.max(EDGE, anchor.top - self.height - GAP);
+    }
     tip.style.left = `${Math.round(x)}px`;
-    tip.style.top = `${Math.round(Math.max(anchor.bottom, row.bottom) + GAP)}px`;
+    tip.style.top = `${Math.round(top)}px`;
     tip.style.setProperty('--tip-arrow', `${Math.round(anchor.left + anchor.width / 2 - x)}px`);
   }
 

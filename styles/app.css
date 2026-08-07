@@ -730,20 +730,131 @@ kbd {
  * left to the width variables, and the canvas is full width whatever the
  * panels are doing.
  */
+/*
+ * Only the phone layout shows this; a desktop has the same three buttons in
+ * the toolbar and a wheel besides. Declared before the media query that turns
+ * it on, or the later rule would win at every width.
+ */
+.zoom-dock { display: none; }
+
+/* Folding the toolbar away is a rail idea; a desktop shows everything. */
+.btn.is-rail-only { display: none; }
+
+/*
+ * The toolbar becomes a rail down the left edge.
+ *
+ * A horizontal bar on a phone is a scrolling row of icons you have to hunt
+ * through — twenty-nine of them, most of which need two swipes to reach. Stood
+ * on its end it costs 52px of width instead of 56px of height, which is the
+ * cheaper trade in portrait, and everything is under the thumb that is already
+ * holding the phone. All but the core folds behind the `more` button, so the
+ * column is eight buttons rather than a screen and a half of them.
+ */
 @media (max-width: 759px) {
+  :root { --rail-w: 52px; }
+
+  /* The toolbar row collapses; the rail is laid over the padding instead. */
+  .app {
+    grid-template-columns: 0 1fr 0;
+    grid-template-rows: 0 1fr;
+    padding-left: var(--rail-w);
+  }
+
+  .toolbar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--rail-w);
+    padding: 6px 0 max(6px, env(safe-area-inset-bottom, 0));
+    padding-left: env(safe-area-inset-left, 0);
+    flex-direction: column;
+    gap: 2px;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+    overflow-x: hidden;
+    overflow-y: auto;
+    z-index: 7; /* over the drawers, which is how you close them */
+  }
+  .toolbar-group { flex-direction: column; gap: 2px; }
+  /* Stood up, the separators have to lie down. */
+  .toolbar-group:not(:empty):not(.toolbar-brand)::before {
+    width: 22px;
+    height: 1px;
+    margin: 4px 0;
+  }
+  .toolbar-spacer { display: none; }
+  .toolbar-panels, .toolbar-doc { position: static; }
+
+  /* The title is in the inspector's Diagram panel; the dot is the part that
+     has to be visible from anywhere. */
+  .doc-title { display: none; }
+  .toolbar-doc { padding: 4px 0 0; }
+  .brand-mark { margin: 2px 0 4px; }
+
+  /* Folded: only the core, and no separators between things that are gone. */
+  .toolbar:not(.is-expanded) .btn:not(.is-core),
+  .toolbar:not(.is-expanded) .toolbar-group::before { display: none; }
+  /* Zoom is in the corner dock; two of each would be two of each. */
+  .btn.is-docked { display: none; }
+  .toolbar .btn.is-rail-only { display: inline-flex; }
+
+  /*
+   * Unfolded, the rail is longer than the screen and the button that folds it
+   * back would be the last thing on it — reachable only by scrolling past
+   * everything it just revealed. Pinned to the bottom instead, so the way out
+   * is where the way in was. Folded there is nothing to scroll, so it stays in
+   * the column with the rest.
+   */
+  .toolbar.is-expanded { padding-bottom: 56px; }
+  .toolbar.is-expanded .btn.is-rail-only {
+    position: fixed;
+    left: env(safe-area-inset-left, 0);
+    bottom: env(safe-area-inset-bottom, 0);
+    z-index: 2;
+    width: var(--rail-w);
+    border-radius: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .zoom-dock {
+    position: fixed;
+    right: max(12px, env(safe-area-inset-right, 0));
+    bottom: max(12px, env(safe-area-inset-bottom, 0));
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 6px 20px rgb(15 23 42 / 0.16);
+  }
+
+  /* The scrim and the drawers start where the rail ends, so the rail stays
+     reachable — pressing it is one of the ways out of an open drawer. */
+  .panel-scrim { inset: 0 0 0 var(--rail-w); }
+  /* Clear of the zoom dock in the corner. */
+  .consent { bottom: max(78px, env(safe-area-inset-bottom, 0)); }
+
   .app { grid-template-columns: 0 1fr 0; }
 
   .panel {
     position: fixed;
-    top: var(--toolbar-h);
+    top: 0;
     bottom: 0;
-    width: min(86vw, 330px);
+    /* Room for the scrim beside it: with the rail taking 52px as well, a
+       drawer at 86vw left eight pixels of canvas to press to dismiss it. */
+    width: min(330px, calc(100vw - var(--rail-w, 0px) - 52px));
     z-index: 6;
     box-shadow: 0 0 40px rgb(15 23 42 / 0.28);
     transition: transform 0.18s ease-out;
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
-  .panel-left { left: 0; padding-left: env(safe-area-inset-left, 0); }
+  /* Beside the rail, not over it: pressing the rail is one of the ways out. */
+  .panel-left { left: var(--rail-w); padding-left: env(safe-area-inset-left, 0); }
   .panel-right { right: 0; padding-right: env(safe-area-inset-right, 0); }
   .panel-left.is-collapsed { transform: translateX(-101%); }
   .panel-right.is-collapsed { transform: translateX(101%); }

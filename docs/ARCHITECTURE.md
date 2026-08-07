@@ -354,12 +354,28 @@ whether the file is really a GIF.
 
 Three things had to change shape rather than merely shrink.
 
+**The toolbar stops being a row.** It is the same element and the same
+buttons: below 760px the grid's toolbar row goes to zero, the bar is laid over
+a left padding as a fixed rail, and the flex direction turns. What is *not*
+free is deciding which eight of twenty-nine buttons stay out — that is a
+judgement about editing on a phone, marked in `toolbar.js` rather than in the
+stylesheet, because the desktop grouping does not answer it. Two rules earned
+their comments the hard way: the button that folds the rail back pins itself to
+the bottom while open, or it is the last item on a list taller than the screen;
+and a drawer's width now subtracts the rail, or the strip of canvas left to
+dismiss it with came out eight pixels wide.
+
 **The panels stop being columns.** 232px of palette plus 232px of inspector
 leaves nothing to draw on at 390px wide, so below 760px the columns are pinned
 to zero and the panels become drawers over the canvas — the same `is-collapsed`
 class, a different stylesheet. Only one opens at a time, and arming a component
 closes the palette, because the next thing that has to happen is a press on the
 canvas it was covering.
+
+**Pan is the default tool, on a coarse pointer.** Keyed off the pointer and not
+the width: a narrow desktop window still has a wheel and a held space, and a
+touchscreen laptop still has a finger. It is set once at startup rather than
+enforced, so switching to select stays a switch.
 
 **A second finger is always the camera.** There is no wheel on a phone and no
 key to hold, so without a gesture the diagram could be edited but never
