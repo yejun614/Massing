@@ -159,8 +159,7 @@ function build({ docPath, fontPath } = {}) {
   }
 
   const html = readFileSync(resolve(ROOT, 'index.html'), 'utf8');
-  // Reuse the page's own favicon rather than keeping a second copy in sync.
-  const favicon = /<link rel="icon"[^>]*>/.exec(html)?.[0] ?? '';
+  const favicon = faviconOf(html);
   const body = html
     .slice(html.indexOf('<body>') + '<body>'.length, html.indexOf('</body>'))
     .replace(/<script[\s\S]*?<\/script>/g, '')
@@ -192,6 +191,25 @@ ${script}
 </body>
 </html>
 `;
+}
+
+/**
+ * Lift the favicon out of the page so the bundle keeps no second copy of it.
+ *
+ * The obvious `[^>]*` is wrong here. The icon is an inline SVG data URL, so the
+ * attribute value contains `>` characters of its own; stopping at the first one
+ * truncates the tag mid-attribute. That is not a cosmetic problem -- an
+ * unterminated attribute swallows everything up to the next quote, which is the
+ * `<style>` block that follows, and the page renders with no CSS at all. The
+ * alternation below steps over quoted values rather than scanning blindly, and
+ * the quote count is asserted rather than assumed.
+ */
+function faviconOf(html) {
+  const tag = /<link rel="icon"(?:[^>"']|"[^"]*"|'[^']*')*>/.exec(html)?.[0] ?? '';
+  if (tag.split('"').length % 2 === 0) {
+    throw new Error(`Favicon tag came out with unbalanced quotes:\n  ${tag}`);
+  }
+  return tag;
 }
 
 function rel(path) {
