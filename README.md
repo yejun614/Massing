@@ -50,7 +50,7 @@ the modules load unbundled.
 | Auto layout | `Shift+A` — re-flow the whole diagram from its connections |
 | Rotate the view | `Q` / `E` |
 | 2D / 3D | `2` |
-| Pan | Space + drag, or middle-drag |
+| Pan | `H` for the pan tool, or Space + drag / middle-drag from any tool |
 | Find a component | The search box at the top of the left panel |
 | Light / dark | The theme button cycles system → light → dark |
 | Resize the panels | Drag either panel edge; double-click to reset, arrow keys when focused |

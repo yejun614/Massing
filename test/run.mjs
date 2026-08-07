@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { runCases } from './cases.js';
 import { COMPONENTS, GROUP_KINDS } from '../src/data/components.js';
-import { normalizeDoc, serializeDoc } from '../src/core/schema.js';
+import { normalizeDoc, serializeDoc, DEFAULT_PLANE } from '../src/core/schema.js';
 import { THREE_TIER } from '../src/data/samples.js';
 import {
   encodeShareText,
@@ -40,6 +40,11 @@ check(
   'the JSON Schema zone enum matches the registry',
   sameList(schema.$defs.group.properties.kind.enum, GROUP_KINDS.map((k) => k.kind)),
   'run `node build.js` to regenerate it'
+);
+check(
+  'the JSON Schema plane default matches the loader',
+  schema.$defs.placement.properties.plane.default === DEFAULT_PLANE,
+  `schema says ${schema.$defs.placement.properties.plane.default}, loader uses ${DEFAULT_PLANE}`
 );
 
 /*

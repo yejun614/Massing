@@ -13,6 +13,10 @@ import { h, clear, setClass, setText } from '../util/dom.js';
 import { COMPONENTS, GROUP_KINDS, componentFor } from '../data/components.js';
 import { nodeById, groupById, edgeById, textById, imageById, planarById, entityById } from '../core/doc.js';
 import { PLANES, PLANE_LABELS, SPINS } from '../geom/plane.js';
+// The defaults come from the schema rather than being written out again here:
+// a literal in the inspector is exactly how the two drift apart, and a control
+// that shows the wrong default is worse than one that shows none.
+import { DEFAULT_PLANE, DEFAULT_ZONE_LABEL_PLANE } from '../core/schema.js';
 import { approximateBytes, formatSize } from '../core/images.js';
 
 const SWATCHES = [
@@ -173,7 +177,7 @@ function buildNode(root, store, id) {
     selectField(section, store, {
       label: 'Label on',
       options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
-      get: (s) => nodeById(s.doc, id)?.labelPlane ?? 'floor',
+      get: (s) => nodeById(s.doc, id)?.labelPlane ?? DEFAULT_PLANE,
       set: (value) => withNode((n) => (n.labelPlane = value)),
     })
   );
@@ -258,7 +262,7 @@ function buildGroup(root, store, id) {
     selectField(section, store, {
       label: 'Label on',
       options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
-      get: (s) => groupById(s.doc, id)?.labelPlane ?? 'right',
+      get: (s) => groupById(s.doc, id)?.labelPlane ?? DEFAULT_ZONE_LABEL_PLANE,
       set: (value) => withGroup((g) => (g.labelPlane = value)),
     })
   );
@@ -370,7 +374,7 @@ function planarFields(root, store, id, fields) {
     selectField(section, store, {
       label: 'Plane',
       options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
-      get: (s) => planarById(s.doc, id)?.plane ?? 'screen',
+      get: (s) => planarById(s.doc, id)?.plane ?? DEFAULT_PLANE,
       set: (value) => withEl((el) => (el.plane = value)),
     })
   );
@@ -512,7 +516,7 @@ function buildEdge(root, store, id) {
     selectField(section, store, {
       label: 'Label on',
       options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
-      get: (s) => edgeById(s.doc, id)?.labelPlane ?? 'floor',
+      get: (s) => edgeById(s.doc, id)?.labelPlane ?? DEFAULT_PLANE,
       set: (value) => withEdge((e) => (e.labelPlane = value)),
     })
   );

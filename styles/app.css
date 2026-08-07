@@ -529,6 +529,17 @@ body.is-resizing .resizer::after { opacity: 1; }
   touch-action: none;
 }
 
+/*
+ * Panning, whether from the tool or from a held Space. The descendant selector
+ * is the point: blocks, captions and pictures each set a cursor of their own,
+ * so styling the container alone would leave the pointer advertising "click me"
+ * over exactly the things you mean to drag past.
+ */
+.canvas.is-pan-tool, .canvas.is-pan-tool *,
+.canvas.is-pan-ready, .canvas.is-pan-ready * { cursor: grab; }
+.canvas.is-pan-tool:active, .canvas.is-pan-tool:active *,
+.canvas.is-pan-ready:active, .canvas.is-pan-ready:active * { cursor: grabbing; }
+
 .canvas.is-drop-target::after {
   content: "Drop a .arch.json file to open it";
   position: absolute;

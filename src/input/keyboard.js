@@ -27,6 +27,7 @@ export const SHORTCUTS = [
   ['A', 'Tidy — separate anything hidden'],
   ['Shift + A', 'Auto layout from the connections'],
   ['V', 'Select tool'],
+  ['H', 'Pan tool'],
   ['2', 'Toggle 2D / 3D'],
   ['0', 'Zoom to fit'],
   ['Space + drag', 'Pan'],
@@ -109,6 +110,9 @@ export function attachKeyboard({ store, commands, io, panels }) {
         break;
       case 'v':
         commands.setTool('select');
+        break;
+      case 'h':
+        commands.setTool('pan');
         break;
       case 'g':
         commands.setTool('group');

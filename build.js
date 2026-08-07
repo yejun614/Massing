@@ -232,11 +232,16 @@ async function writeSchemaEnums() {
   const { COMPONENTS, GROUP_KINDS } = await import(
     new URL('./src/data/components.js', import.meta.url)
   );
+  const { DEFAULT_PLANE } = await import(new URL('./src/core/schema.js', import.meta.url));
   const file = resolve(ROOT, 'schema/arch-v1.schema.json');
   const schema = JSON.parse(readFileSync(file, 'utf8'));
 
   schema.$defs.node.properties.type.enum = COMPONENTS.map((c) => c.type);
   schema.$defs.group.properties.kind.enum = GROUP_KINDS.map((k) => k.kind);
+  // Written as a real `default` keyword, not only described in prose. The prose
+  // is what drifted last time, and a machine-readable default is the copy a
+  // validator and a language model can both be held to.
+  schema.$defs.placement.properties.plane.default = DEFAULT_PLANE;
 
   writeFileSync(file, JSON.stringify(schema, null, 2) + '\n');
   console.log(

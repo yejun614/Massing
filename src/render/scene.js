@@ -57,6 +57,11 @@ export function createScene(container, { onResize } = {}) {
 
   function render(state) {
     const { doc, camera } = state;
+
+    // The pan tool changes what a press on the canvas does, so it has to change
+    // what the canvas looks like. Space-to-pan sets the same affordance from
+    // the pointer layer, which is the other way into the same mode.
+    container.classList.toggle('is-pan-tool', state.tool === 'pan');
     const proj = projectionOf(camera);
     const rot = camera.rot;
     const selected = new Set(state.selection);

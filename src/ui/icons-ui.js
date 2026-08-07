@@ -32,6 +32,7 @@ export const UI_ICONS = {
   cube: wrap('<path d="M8 1.8 14 5v6l-6 3.2L2 11V5Z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/>'),
   square: wrap('<rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.4"/>'),
   cursor: wrap('<path d="M3.4 2.2 12.6 7.8l-4 1.1-1.7 3.9Z"/>'),
+  hand: wrap('<path d="M5.4 7.4V3.9a1.15 1.15 0 0 1 2.3 0v3"/><path d="M7.7 6.9V2.9a1.15 1.15 0 0 1 2.3 0v4"/><path d="M10 7.2V4.4a1.15 1.15 0 0 1 2.3 0v5.1c0 2.7-1.8 4.7-4.3 4.7-1.6 0-2.7-.6-3.5-1.8L2.9 9.6a1.2 1.2 0 0 1 2-1.4l.5.8"/>'),
   link: wrap('<path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/>'),
   zone: wrap('<rect x="1.8" y="4" width="12.4" height="8" rx="1.2" stroke-dasharray="2.6 2"/>'),
   help: wrap('<circle cx="8" cy="8" r="6"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4"/><path d="M8 11.6h.01"/>'),

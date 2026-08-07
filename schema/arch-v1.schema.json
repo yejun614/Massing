@@ -56,7 +56,7 @@
     },
     "texts": {
       "type": "array",
-      "description": "Free-form notes. By default drawn square to the viewer so they stay readable at every camera rotation; set `plane` to lay one on the ground or stand it against a wall.",
+      "description": "Free-form notes. Like everything else flat they lie on the ground by default, which reads as part of the scene rather than stuck on top of it; set `plane` to `screen` when a note must stay square to the viewer, or to a wall to stand it up.",
       "items": {
         "$ref": "#/$defs/text"
       }
@@ -388,7 +388,8 @@
             "right",
             "left"
           ],
-          "description": "floor = lying on the ground (the default); screen = square to the viewer; right/left = standing against a wall. Content never renders mirrored, whatever the camera rotation."
+          "description": "floor = lying on the ground (the default); screen = square to the viewer; right/left = standing against a wall. Content never renders mirrored, whatever the camera rotation.",
+          "default": "floor"
         },
         "spin": {
           "enum": [

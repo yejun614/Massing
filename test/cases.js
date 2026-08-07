@@ -16,7 +16,13 @@ import {
 } from '../src/geom/iso.js';
 import { sortForPaint } from '../src/geom/depth.js';
 import { createCamera, screenToGrid, gridToScreen, zoomAt, rotate } from '../src/render/camera.js';
-import { normalizeDoc, serializeDoc, parseDoc } from '../src/core/schema.js';
+import {
+  normalizeDoc,
+  serializeDoc,
+  parseDoc,
+  DEFAULT_PLANE,
+  DEFAULT_ZONE_LABEL_PLANE,
+} from '../src/core/schema.js';
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
 import { estimateTextBox, estimateLineWidth } from '../src/util/text.js';
@@ -339,6 +345,33 @@ function textCases(check) {
     const plain = normalizeDoc({ texts: [{ id: 'p', text: 'hi', pos: [0, 0] }] }).doc;
     const out = serializeDoc(plain);
     return !out.includes('"bold"') && !out.includes('"italic"') && !out.includes('"align"');
+  })());
+
+  /*
+   * Anything flat lies on the ground unless it says otherwise, and captions
+   * follow the same rule. This went untested once and the JSON Schema's prose
+   * drifted to claim the opposite for `texts` — which is the copy a language
+   * model reads, so it emitted screen-facing notes for months.
+   */
+  check('flat content defaults to the ground', (() => {
+    const doc = normalizeDoc({
+      texts: [{ id: 't', text: 'hi', pos: [0, 0] }],
+      images: [{ id: 'i', src: 'data:image/png;base64,iVBORw0KGgo=', pos: [0, 0] }],
+    }).doc;
+    return doc.texts[0].plane === DEFAULT_PLANE && doc.images[0].plane === DEFAULT_PLANE;
+  })());
+
+  check('captions default to the ground, except a zone’s', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ id: 'a', type: 'ec2' }, { id: 'b', type: 'rds' }],
+      edges: [{ from: 'a', to: 'b' }],
+      groups: [{ id: 'z', kind: 'vpc', rect: [0, 0, 8, 8] }],
+    }).doc;
+    return (
+      doc.nodes[0].labelPlane === DEFAULT_PLANE &&
+      doc.edges[0].labelPlane === DEFAULT_PLANE &&
+      doc.groups[0].labelPlane === DEFAULT_ZONE_LABEL_PLANE
+    );
   })());
 
   check('the sample document includes annotations', (() => {

@@ -279,7 +279,10 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   const onKeyDown = (e) => {
     if (e.code === 'Space' && !isTextTarget(e.target)) {
       spaceDown = true;
-      canvas.style.cursor = 'grab';
+      // A class rather than an inline cursor: blocks and captions set cursors
+      // of their own, so styling only the container leaves the pointer looking
+      // like a click target over exactly the things you want to drag past.
+      canvas.classList.add('is-pan-ready');
     }
     if (e.key.toLowerCase() === CONNECT_KEY && !isTextTarget(e.target) && !e.metaKey && !e.ctrlKey) {
       store.setUI({ tool: store.state.tool === 'connect' ? 'select' : 'connect' });
@@ -288,7 +291,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   const onKeyUp = (e) => {
     if (e.code === 'Space') {
       spaceDown = false;
-      canvas.style.cursor = '';
+      canvas.classList.remove('is-pan-ready');
     }
   };
   window.addEventListener('keydown', onKeyDown);

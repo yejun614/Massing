@@ -79,6 +79,9 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
 
   // --- view ----------------------------------------------------------------
   const selectBtn = btn('cursor', 'Select tool (V)', () => commands.setTool('select'));
+  const panBtn = btn('hand', 'Pan tool (H) — Space + drag does the same from any tool', () =>
+    commands.setTool('pan')
+  );
   const zoneBtn = btn('zone', 'Draw a zone (G)', () => commands.setTool('group'));
   const connectBtn = btn('link', 'Connect blocks (C)', () => commands.setTool('connect'));
   const rotLeft = btn('rotateLeft', 'Rotate left (Q)', () => commands.rotateLeft());
@@ -121,7 +124,7 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
   }
   paintTheme(theme.current());
   clear(region('view')).append(
-    selectBtn, zoneBtn, connectBtn,
+    selectBtn, panBtn, zoneBtn, connectBtn,
     rotLeft, rotRight,
     zoomOut, zoomIn, fitBtn,
     modeBtn, themeBtn, helpBtn, repoLink
@@ -153,6 +156,7 @@ export function createToolbar({ root, store, commands, io, exporter, onHelp, onC
     deleteBtn.disabled = state.selection.length === 0;
 
     setClass(selectBtn, 'is-active', state.tool === 'select');
+    setClass(panBtn, 'is-active', state.tool === 'pan');
     setClass(zoneBtn, 'is-active', state.tool === 'group');
     setClass(connectBtn, 'is-active', state.tool === 'connect');
     setClass(modeBtn, 'is-active', state.camera.mode === 'flat');
