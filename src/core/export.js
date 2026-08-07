@@ -169,6 +169,34 @@ export function createExporter({ store, scene, toaster }) {
     };
   }
 
+  /**
+   * A small version of the file the settings would produce.
+   *
+   * Encoded through the very same path as the export, not merely drawn: the
+   * grid and the projection would show up either way, but GIF's 256 colours
+   * are a property of the encoder, and a preview that quietly skipped it would
+   * be lying about the one format whose output actually surprises people.
+   *
+   * @returns {Promise<{url: string, width: number, height: number} | null>}
+   */
+  async function preview(options = {}, maxSide = 440) {
+    const settings = { ...DEFAULT_EXPORT, ...options };
+    const built = buildSvg(settings);
+    if (!built) return null;
+
+    const format = formatFor(settings.format);
+    const fit = Math.min(1, maxSide / Math.max(built.box.width, built.box.height));
+    const width = Math.max(1, Math.round(built.box.width * fit));
+    const height = Math.max(1, Math.round(built.box.height * fit));
+
+    if (!format.raster) {
+      return { url: svgUrl(built.text), width, height };
+    }
+    const canvas = await rasterize(built.text, width, height, store.state.doc.canvas.background);
+    const blob = format.id === 'gif' ? gifBlob(canvas) : await canvasBlob(canvas, format.mime);
+    return { url: URL.createObjectURL(blob), width, height, revoke: true };
+  }
+
   async function run(options = {}) {
     const settings = { ...DEFAULT_EXPORT, ...options };
     const format = formatFor(settings.format);
@@ -209,6 +237,7 @@ export function createExporter({ store, scene, toaster }) {
 
   return {
     run,
+    preview,
     measure,
     buildSvg: (options) => buildSvg(options)?.text ?? null,
     // Kept so a quick PNG or SVG is still one call from the console or a test.
@@ -265,9 +294,11 @@ function rasterize(svgText, width, height, background) {
       resolve(canvas);
     };
     image.onerror = () => reject(new Error('the browser could not render the SVG'));
-    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+    image.src = svgUrl(svgText);
   });
 }
+
+const svgUrl = (text) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
 
 function canvasBlob(canvas, mime) {
   return new Promise((resolve, reject) => {

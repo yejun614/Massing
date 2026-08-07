@@ -8,6 +8,12 @@
  * The pixel size is measured for real -- by rendering the scene the way the
  * export would and asking how big the content came out -- rather than
  * estimated, so the number under the controls is the number in the file.
+ *
+ * So is the preview. It is encoded through the same path the export takes and
+ * shown as an image, rather than being a live copy of the canvas: the grid and
+ * the projection would look right either way, but GIF's 256 colours happen in
+ * the encoder, and a preview that skipped that would misrepresent the one
+ * format whose output actually surprises people.
  */
 
 import { h, clear, setText, setClass } from '../util/dom.js';
@@ -61,6 +67,11 @@ export function createExportDialog(root, { store, exporter }) {
   });
   const hint = h('p', { class: 'panel-hint' });
   const size = h('div', { class: 'export-size' });
+  const shot = h('img', { class: 'export-shot', alt: '' });
+  const note = h('span', { class: 'export-note' });
+  // A fixed frame: the preview changes shape with the projection, and a sheet
+  // that jumps as you compare two options is a sheet you cannot compare in.
+  const preview = h('div', { class: 'export-preview' }, [shot, note]);
   const scaleRow = optionRow('Scale', h('div', { class: 'chips' }, scaleButtons));
 
   const exportBtn = h('button', {
@@ -79,6 +90,7 @@ export function createExportDialog(root, { store, exporter }) {
 
   clear(dialog).append(
     h('h2', { class: 'sheet-title', text: 'Export image' }),
+    preview,
     optionRow('Format', h('div', { class: 'chips' }, formatButtons)),
     hint,
     optionRow('View', h('div', { class: 'chips' }, modeButtons)),
@@ -93,6 +105,11 @@ export function createExportDialog(root, { store, exporter }) {
 
   dialog.addEventListener('click', (e) => {
     if (e.target === dialog) dialog.close();
+  });
+  // A blob URL outlives the element that pointed at it, so let it go.
+  dialog.addEventListener('close', () => {
+    token++;
+    drop();
   });
   root.append(dialog);
 
@@ -130,6 +147,62 @@ export function createExportDialog(root, { store, exporter }) {
       setText(size, `${measured.width} × ${measured.height} px, and scales without loss`);
     }
     exportBtn.disabled = !measured;
+    repaint(measured ? effective() : null);
+  }
+
+  /**
+   * Redraw the preview, discarding anything already in flight.
+   *
+   * Encoding is asynchronous and clicking through the formats is not, so
+   * without the token a slow GIF started three clicks ago can land after the
+   * PNG that replaced it and leave the sheet showing the wrong picture.
+   */
+  let token = 0;
+  let shown = null;
+  async function repaint(options) {
+    const mine = ++token;
+    if (!options) {
+      setText(note, 'Nothing to export yet.');
+      return drop();
+    }
+
+    // The picture already on screen stays until its replacement is ready, so
+    // switching between two options does not blink through an empty frame.
+    // The first one has nothing to keep, and can be slow enough to need
+    // saying so: rasterising waits for the webfont, which on a cold load is
+    // most of a second. Waiting is right -- an export must not be set in the
+    // fallback face -- but a blank rectangle for a second is not.
+    setText(note, 'Rendering…');
+    setClass(preview, 'is-loading', true);
+
+    let made = null;
+    try {
+      made = await exporter.preview(options);
+    } catch {
+      made = null; // an encoder that refused; the sheet still says the size
+    }
+    if (mine !== token) {
+      if (made?.revoke) URL.revokeObjectURL(made.url);
+      return;
+    }
+
+    setClass(preview, 'is-loading', false);
+    if (!made) {
+      setText(note, 'This one could not be drawn.');
+      return drop();
+    }
+    if (shown?.revoke) URL.revokeObjectURL(shown.url);
+    shown = made;
+    shot.src = made.url;
+    setClass(preview, 'has-shot', true);
+  }
+
+  function drop() {
+    if (shown?.revoke) URL.revokeObjectURL(shown.url);
+    shown = null;
+    shot.removeAttribute('src');
+    setClass(preview, 'has-shot', false);
+    setClass(preview, 'is-loading', false);
   }
 
   return {

@@ -323,6 +323,16 @@ moves. Two consequences fall out:
   as thick. On the sample the grid fell from 9.8% of the image to 2.5% between
   1× and 4×; without the rule the ink per pixel is flat to three decimals.
 
+The sheet's preview goes through that same path and is shown as an image,
+rather than being a live copy of the canvas. The grid and the projection would
+look right either way, but GIF's 256 colours happen in the encoder, and a
+preview that skipped it would misrepresent the one format whose output actually
+surprises people. It also has to wait: Chrome holds off rasterising an SVG
+image until pending webfonts settle, which on a cold load is most of a second.
+That wait is correct — an export must not be set in the fallback face — so the
+frame says it is working rather than sitting blank, and keeps the previous
+picture up while the next one is drawn.
+
 ### GIF is written by hand
 
 `canvas.toBlob` covers PNG, JPEG and WebP. It does not cover GIF — and asking
