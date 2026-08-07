@@ -130,7 +130,7 @@ function assertNoCollisions(modules) {
 // ---------------------------------------------------------------------------
 
 /**
- * Vercel Web Analytics.
+ * Vercel Web Analytics and Speed Insights.
  *
  * Off unless asked for, and asked for at build time rather than at runtime,
  * because this is the one thing in the project that phones home. Anyone who
@@ -138,18 +138,24 @@ function assertNoCollisions(modules) {
  * build with none of this in it, and does not have to trust a runtime flag to
  * stay switched off.
  *
- * What goes in is a *name*, not a `<script>` tag. The page must not fetch it
- * until someone has agreed, so `ui/consent.js` reads this and loads the script
- * itself — consent that arrives after the request has gone out is not consent.
- * Keeping the URL here rather than in the app code also means `_vercel` appears
- * in a build if and only if that build carries analytics, so grepping the
- * output still settles the question.
+ * What goes in is a list of *names*, not `<script>` tags. The page must not
+ * fetch them until someone has agreed, so `ui/consent.js` reads this and adds
+ * the elements itself — consent that arrives after the request has gone out is
+ * not consent. Keeping the URLs here rather than in the app code also means
+ * `_vercel` appears in a build if and only if that build carries them, so
+ * grepping the output still settles the question.
  *
- * `/_vercel/insights/script.js` is served by the deployment itself, so it
- * resolves on Vercel and nowhere else: from a file, or from any other host,
- * the request fails and the page carries on.
+ * One switch covers both. They answer different questions — how many visits,
+ * and how quickly the page came up — but they are the same decision to anyone
+ * being asked, and two banners for one deployment would be absurd.
+ *
+ * Both paths are served by the deployment itself, so they resolve on Vercel
+ * and nowhere else: from a file, or from any other host, the requests fail and
+ * the page carries on.
  */
-const VERCEL_ANALYTICS = '<meta name="massing-analytics" content="/_vercel/insights/script.js">';
+const VERCEL_SCRIPTS = ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js'];
+const VERCEL_ANALYTICS =
+  `<meta name="massing-analytics" content="${VERCEL_SCRIPTS.join(' ')}">`;
 
 export function build({ docPath, fontPath, analytics = false } = {}) {
   const modules = collect(ENTRY);

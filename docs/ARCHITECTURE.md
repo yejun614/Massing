@@ -417,11 +417,13 @@ the burden of trusting it on everyone who clones the repo. `grep _vercel` over
 the output settles the question, which is why the URL lives in `build.js` and
 not in the app code.
 
-What the switch injects is a `<meta>` **naming** the script, never a `<script>`
-tag. `ui/consent.js` reads that name, asks, and adds the element only if the
-answer is yes — consent that arrives after the request has gone out is not
-consent, it is a notification. Both answers are stored, because re-asking
-someone who declined is the behaviour that earns these banners their
+What the switch injects is a `<meta>` **naming** the scripts — Web Analytics
+and Speed Insights — never `<script>` tags. `ui/consent.js` reads that list,
+asks once, and adds the elements only if the answer is yes: consent that
+arrives after the request has gone out is not consent, it is a notification.
+One tag and one question for both, because they measure different things and
+are the same decision to whoever is being asked. Both answers are stored, since
+re-asking someone who declined is the behaviour that earns these banners their
 reputation. Storage that throws is a real configuration, so the store falls
 back to memory: asking once per visit is worse than asking once and better than
 breaking the page.

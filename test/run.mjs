@@ -18,7 +18,7 @@ import {
 } from '../src/core/share.js';
 
 import { build, analyticsWanted } from '../build.js';
-import { readConsent, writeConsent, analyticsSource } from '../src/ui/consent.js';
+import { readConsent, writeConsent, analyticsSources } from '../src/ui/consent.js';
 
 let passed = 0;
 const failures = [];
@@ -142,19 +142,19 @@ check(
 );
 
 const measured = build({ analytics: true });
-const TAG = '<meta name="massing-analytics" content="/_vercel/insights/script.js">';
+const TAG = '<meta name="massing-analytics" content="/_vercel/insights/script.js /_vercel/speed-insights/script.js">';
 check(
-  'asking for analytics names the script in the head',
+  'asking for analytics names both scripts in the head',
   measured.includes(TAG) && measured.indexOf(TAG) < measured.indexOf('</head>'),
-  'the tag did not make it into the head'
+  'the tag did not make it into the head, or does not name both'
 );
 check(
-  'the script is named but never fetched by the page itself',
+  'the scripts are named but never fetched by the page itself',
   // A <script src> here would load before anyone could be asked, which would
-  // make the consent banner decorative. ui/consent.js adds the element, and
+  // make the consent banner decorative. ui/consent.js adds the elements, and
   // only once somebody has said yes.
   !measured.includes('<script defer src="/_vercel'),
-  'the build fetches analytics without waiting for consent'
+  'the build fetches them without waiting for consent'
 );
 check(
   'analytics is the only difference between the two builds',
@@ -218,12 +218,22 @@ check('storage that throws does not throw on write', writeConsent(brokenStorage,
  * The meta tag is what tells the app there is anything to ask about, so a build
  * without analytics has to be silent: no banner, nothing to consent to.
  */
-const fakeDoc = (present) => ({
-  querySelector: () => (present ? { getAttribute: () => '/_vercel/insights/script.js' } : null),
+const fakeDoc = (content) => ({
+  querySelector: () => (content === null ? null : { getAttribute: () => content }),
 });
-check('a plain build offers nothing to consent to', analyticsSource(fakeDoc(false)) === null);
-check('an analytics build names its script',
-  analyticsSource(fakeDoc(true)) === '/_vercel/insights/script.js');
+check('a plain build offers nothing to consent to',
+  analyticsSources(fakeDoc(null)).length === 0);
+check('a tag with nothing in it is the same as no tag',
+  analyticsSources(fakeDoc('   ')).length === 0,
+  'an empty list would be read as a script to load');
+check('both scripts are read out of the one tag', (() => {
+  const found = analyticsSources(fakeDoc('/_vercel/insights/script.js /_vercel/speed-insights/script.js'));
+  return found.length === 2 &&
+    found[0] === '/_vercel/insights/script.js' &&
+    found[1] === '/_vercel/speed-insights/script.js';
+})(), 'the pair is one decision, so they travel in one tag');
+check('the list survives odd spacing',
+  analyticsSources(fakeDoc(['  a.js', '  b.js  '].join('\n'))).join() === 'a.js,b.js');
 
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`${passed} passed, ${failures.length} failed`);

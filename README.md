@@ -445,12 +445,15 @@ and the test suite fails if the committed schema drifts.
 ## Analytics, if you want them
 
 The hosted copy counts page views with [Vercel Web
-Analytics](https://vercel.com/docs/analytics). Your builds do not, and cannot
-start doing so by accident: it is a **build** switch, off unless asked for.
+Analytics](https://vercel.com/docs/analytics) and watches how quickly the page
+comes up with [Speed
+Insights](https://vercel.com/docs/speed-insights). Your builds do neither, and
+cannot start doing so by accident: it is one **build** switch, off unless asked
+for.
 
 ```sh
 node build.js                      # no analytics, no third-party request
-MASSING_ANALYTICS=1 node build.js  # dist/index.html carries the Vercel snippet
+MASSING_ANALYTICS=1 node build.js  # dist/index.html names both Vercel scripts
 ```
 
 `--analytics` is the same switch on the command line. Anything other than a
@@ -460,13 +463,17 @@ home says so. The tests pin both halves.
 
 ### Nothing is fetched until someone agrees
 
-A build with analytics does not contain a `<script>` tag for it. It contains
-the script's *name*, and the page asks before loading anything:
+A build with analytics does not contain `<script>` tags for them. It contains
+their *names*, and the page asks before loading anything:
 
-> **Count this visit?** Page views only, no cookies and nothing that identifies
-> you. The script is not loaded unless you say yes.
+> **Count this visit?** Page views and how quickly the page loaded. No cookies,
+> nothing that identifies you, and nothing is fetched unless you say yes.
 >
 > `No thanks`  `Allow`
+
+One question for both. They measure different things and they are the same
+decision to whoever is being asked; two banners for one deployment would be
+absurd.
 
 Consent that arrives after the request has already gone out is not consent, so
 the request waits for the answer. **Both** answers are remembered in
@@ -479,16 +486,15 @@ to.
 
 Two things worth knowing before switching it on:
 
-- **It only works on Vercel.** The script is served from
-  `/_vercel/insights/script.js` by the deployment itself. Anywhere else — a
-  file, another host — the request fails and the page carries on; that path is
-  tested too.
+- **They only work on Vercel.** The scripts are served from `/_vercel/…` by
+  the deployment itself. Anywhere else — a file, another host — the requests
+  fail and the page carries on; that path is tested too.
 - **It costs the bundle its best property.** A plain build opens from `file://`
   with no network traffic at all. One built with analytics does not.
 
-The measurement is cookieless and records page views rather than people, but it
-is still a request to a third party, which is the whole reason it is a switch
-rather than a line in `index.html`.
+Both are cookieless and record visits rather than people, but they are still
+requests to a third party, which is the whole reason this is a switch rather
+than a line in `index.html`.
 
 [`vercel.json`](vercel.json) points a Vercel project at `node build.js` and
 `dist/`; set `MASSING_ANALYTICS` in the project's environment variables to turn

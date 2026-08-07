@@ -1,10 +1,14 @@
 /**
- * Asking before loading the analytics script.
+ * Asking before loading the measurement scripts.
  *
- * The script is not on the page. A build that carries analytics carries a
- * `<meta>` naming the script instead, and nothing is fetched until someone
- * says yes — consent that arrives after the request has already gone out is
- * not consent, it is a notification.
+ * They are not on the page. A build that carries them carries a `<meta>`
+ * naming them instead, and nothing is fetched until someone says yes —
+ * consent that arrives after the request has already gone out is not consent,
+ * it is a notification.
+ *
+ * The tag names a list, because there is more than one script and they are one
+ * decision: how many visits, and how quickly the page came up, are different
+ * questions to answer and the same question to be asked.
  *
  * The answer is remembered, so the question is asked once and not on every
  * visit. Both answers are remembered: "no" is an answer, and re-asking someone
@@ -21,10 +25,10 @@ const META = 'massing-analytics';
 const GRANTED = 'granted';
 const DENIED = 'denied';
 
-/** The analytics script this build was made with, or null for every other build. */
-export function analyticsSource(doc = document) {
-  const content = doc.querySelector(`meta[name="${META}"]`)?.getAttribute('content');
-  return content?.trim() || null;
+/** The scripts this build was made with; empty for every other build. */
+export function analyticsSources(doc = document) {
+  const content = doc.querySelector(`meta[name="${META}"]`)?.getAttribute('content') ?? '';
+  return content.split(/\s+/).filter(Boolean);
 }
 
 /** @returns {'granted' | 'denied' | null} null when nobody has been asked yet. */
@@ -70,12 +74,12 @@ function safeStorage() {
 }
 
 export function createConsent({ root = document.body, storage = safeStorage(), doc = document } = {}) {
-  const src = analyticsSource(doc);
-  if (!src) return { destroy() {} }; // no analytics in this build; nothing to ask
+  const sources = analyticsSources(doc);
+  if (!sources.length) return { destroy() {} }; // nothing in this build to ask about
 
   const answered = readConsent(storage);
   if (answered === GRANTED) {
-    loadScript(src);
+    sources.forEach(loadScript);
     return { destroy() {} };
   }
   if (answered === DENIED) return { destroy() {} };
@@ -84,7 +88,7 @@ export function createConsent({ root = document.body, storage = safeStorage(), d
 
   const decide = (value) => {
     writeConsent(storage, value);
-    if (value === GRANTED) loadScript(src);
+    if (value === GRANTED) sources.forEach(loadScript);
     banner?.remove();
     banner = null;
   };
@@ -101,7 +105,8 @@ export function createConsent({ root = document.body, storage = safeStorage(), d
     h('p', { class: 'consent-text' }, [
       'Count this visit? ',
       h('span', { class: 'consent-detail', text:
-        'Page views only, no cookies and nothing that identifies you. The script is not loaded unless you say yes.' }),
+        'Page views and how quickly the page loaded. No cookies, nothing that identifies you, ' +
+        'and nothing is fetched unless you say yes.' }),
     ]),
     h('div', { class: 'consent-actions' }, [
       h('button', { class: 'btn', type: 'button', text: 'No thanks', onClick: () => decide(DENIED) }),
@@ -119,10 +124,14 @@ export function createConsent({ root = document.body, storage = safeStorage(), d
 }
 
 function loadScript(src) {
-  if (document.querySelector(`script[data-analytics]`)) return;
+  // Matched on the value rather than through a selector, so a path with
+  // anything awkward in it needs no escaping.
+  const already = [...document.querySelectorAll('script[data-analytics]')]
+    .some((el) => el.dataset.analytics === src);
+  if (already) return;
   const el = document.createElement('script');
   el.defer = true;
   el.src = src;
-  el.setAttribute('data-analytics', '');
+  el.setAttribute('data-analytics', src);
   document.head.append(el);
 }
