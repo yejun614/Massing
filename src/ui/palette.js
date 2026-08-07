@@ -9,7 +9,7 @@ import { h, clear, setClass } from '../util/dom.js';
 import { componentsByCategory, GROUP_KINDS } from '../data/components.js';
 import { iconMarkup } from '../data/icons.js';
 
-export function createPalette({ root, store, commands }) {
+export function createPalette({ root, store, commands, onArm }) {
   const buttons = new Map();
   const zoneButtons = new Map();
   /** Every filterable entry: [button, haystack]. */
@@ -103,6 +103,7 @@ export function createPalette({ root, store, commands }) {
       onClick: () => {
         const already = store.state.tool === 'text';
         store.setUI({ tool: already ? 'select' : 'text', pendingType: null });
+        if (!already) onArm?.();
       },
     },
     [
@@ -147,6 +148,7 @@ export function createPalette({ root, store, commands }) {
   function arm(type) {
     const already = store.state.pendingType === type && store.state.tool === 'place';
     store.setUI({ pendingType: already ? null : type, tool: already ? 'select' : 'place' });
+    if (!already) onArm?.();
   }
 
   function armZone(kind) {
@@ -156,6 +158,7 @@ export function createPalette({ root, store, commands }) {
       tool: already ? 'select' : 'group',
       pendingType: null,
     });
+    if (!already) onArm?.();
   }
 
   function render(state) {

@@ -71,6 +71,18 @@ export function rotate(cam, turns) {
 }
 
 /**
+ * Margin to leave around a fitted diagram.
+ *
+ * A fixed 60px is a comfortable frame on a laptop and a third of the width of
+ * a phone held upright, where the diagram then has to shrink to pay for a
+ * border nobody asked for. Above a certain size the number stops mattering, so
+ * it is capped rather than scaled all the way up.
+ */
+function breathingRoom(viewport, most) {
+  return Math.min(most, viewport.width * 0.06, viewport.height * 0.06);
+}
+
+/**
  * Centre the camera on a box already expressed in scene pixels.
  *
  * Preferred over `fitToBox` whenever the scene has been rendered: the grid
@@ -80,7 +92,7 @@ export function rotate(cam, turns) {
  *
  * @param {{x:number,y:number,width:number,height:number}} box
  */
-export function fitToSceneBox(cam, box, viewport, padding = 60) {
+export function fitToSceneBox(cam, box, viewport, padding = breathingRoom(viewport, 60)) {
   const w = Math.max(box.width, 1);
   const h = Math.max(box.height, 1);
   const zoom = clamp(
@@ -103,7 +115,7 @@ export function fitToSceneBox(cam, box, viewport, padding = 60) {
  * @param {{x0:number,y0:number,x1:number,y1:number,zmax:number}} box
  * @param {{width:number,height:number}} viewport
  */
-export function fitToBox(cam, box, viewport, padding = 80) {
+export function fitToBox(cam, box, viewport, padding = breathingRoom(viewport, 80)) {
   const proj = projectionOf(cam);
   const corners = [];
   for (const [gx, gy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]) {

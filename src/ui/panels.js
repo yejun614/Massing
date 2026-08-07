@@ -15,6 +15,12 @@
  * does it on its own, because 320px of canvas between two 232px panels is not a
  * drawing area. What the viewport decides and what the user decides are kept
  * apart — see `setCollapsed`.
+ *
+ * On a phone a panel stops being a column at all and slides over the canvas
+ * instead — the stylesheet does that on its own, off the same `is-collapsed`
+ * class. Two things still need saying in script: only one drawer at a time,
+ * since there is no room for two, and a scrim to dismiss it with, since there
+ * is no longer any canvas beside it to press.
  */
 
 const PANELS_KEY = 'massing:panels';
@@ -33,7 +39,11 @@ const VARS = { left: '--panel-left-w', right: '--panel-right-w' };
  */
 const AUTO_HIDE = { right: 1180, left: 900 };
 
+/** Below this the panels stop being columns and become drawers. */
+const DRAWER_WIDTH = 760;
+
 export function createPanels({ root = document, onResize, onChange } = {}) {
+  const drawers = window.matchMedia(`(max-width: ${DRAWER_WIDTH - 1}px)`);
   const saved = readState();
   const widths = { ...DEFAULTS, ...saved.widths };
 
@@ -61,6 +71,10 @@ export function createPanels({ root = document, onResize, onChange } = {}) {
     panel?.classList.toggle('is-collapsed', collapsed[side]);
     handle?.classList.toggle('is-collapsed', collapsed[side]);
     handle?.setAttribute('aria-valuenow', String(width));
+    // The scrim is only ever drawn in drawer mode, but the class it keys off
+    // is set either way -- one fewer thing that has to agree with a media
+    // query it cannot see.
+    document.body.classList.toggle('has-drawer', !collapsed.left || !collapsed.right);
   }
 
   /**
@@ -96,6 +110,13 @@ export function createPanels({ root = document, onResize, onChange } = {}) {
     if (remember && !forced[side] && pref[side] !== value) {
       pref[side] = value;
       saveState();
+    }
+    // A drawer covers most of the screen, so two of them would leave nothing
+    // to draw on. Closing the other is a consequence of the viewport and is
+    // deliberately not remembered as a preference.
+    if (!value && drawers.matches) {
+      const other = side === 'left' ? 'right' : 'left';
+      if (!collapsed[other]) setCollapsed(other, true, { remember: false });
     }
     if (collapsed[side] === value) return;
     collapsed[side] = value;
@@ -175,6 +196,13 @@ export function createPanels({ root = document, onResize, onChange } = {}) {
     writeState({ ...widths, collapsed: { ...pref } });
   }
 
+  // Pressing away from a drawer closes it: on a phone there is no canvas
+  // beside it left to press instead.
+  root.querySelector('[data-region="scrim"]')?.addEventListener('pointerdown', () => {
+    setCollapsed('left', true, { remember: false });
+    setCollapsed('right', true, { remember: false });
+  });
+
   // A window that shrinks can invalidate a width that was fine when it was set.
   window.addEventListener('resize', () => {
     set('left', widths.left);
@@ -193,6 +221,15 @@ export function createPanels({ root = document, onResize, onChange } = {}) {
     },
     show(side) {
       setCollapsed(side, false);
+    },
+    /**
+     * Something was picked that is placed by pressing the canvas next.
+     *
+     * Only a drawer is in the way -- as a column the palette can stay open,
+     * and closing it would undo the user's own choice for no reason.
+     */
+    armed() {
+      if (drawers.matches) setCollapsed('left', true, { remember: false });
     },
     reset() {
       set('left', DEFAULTS.left);

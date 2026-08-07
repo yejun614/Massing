@@ -104,7 +104,15 @@ const toolbar = createToolbar({
 // so the order is a matter of reading rather than of correctness.
 createTooltips(document.querySelector('.toolbar'));
 
-const palette = createPalette({ root: region('palette'), store, commands });
+const palette = createPalette({
+  root: region('palette'),
+  store,
+  commands,
+  // On a phone the palette is a drawer over the canvas, so picking a component
+  // and then being unable to reach the canvas to place it is the whole
+  // interaction failing on its last step.
+  onArm: () => panels.armed(),
+});
 const inspector = createInspector({ root: region('inspector'), store, commands });
 
 const pointer = attachPointer({ canvas: canvasEl, store, scene, overlay, toaster });

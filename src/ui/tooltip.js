@@ -120,6 +120,10 @@ export function createTooltips(root) {
   const target = (e) => e.target?.closest?.('[title], [data-tip]');
 
   const onOver = (e) => {
+    // A touch fires pointerover on the way to a tap, with no matching leave to
+    // take it back down again -- so a tooltip raised by one sits there until
+    // something else happens to hide it.
+    if (e.pointerType === 'touch') return;
     const el = target(e);
     if (!el || !root.contains(el)) return hide();
     schedule(el);

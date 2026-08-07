@@ -10,6 +10,12 @@
  * Drag deltas are computed in grid space, not screen space: the pointer is
  * unprojected onto the ground plane each frame and the delta is snapped to
  * whole cells. That keeps dragging exact at any zoom or rotation.
+ *
+ * Touch adds one more: a second finger down means the camera, never the
+ * document. One finger selects and drags, exactly as a mouse does; two pan and
+ * pinch together, which is the convention every map and canvas on a phone
+ * shares. There is no wheel on a phone and no key to hold, so without it the
+ * diagram could be edited but never navigated.
  */
 
 import {
@@ -55,6 +61,8 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   /** @type {null | {mode: string, ...}} */
   let drag = null;
   let spaceDown = false;
+  /** Every finger currently down, so a second one can take over as a gesture. */
+  const touches = new Map();
 
   // --- helpers -------------------------------------------------------------
 
@@ -96,6 +104,30 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
     };
   };
 
+  /** Midpoint and separation of the first two fingers, in canvas pixels. */
+  function twoFinger() {
+    const [a, b] = [...touches.values()];
+    return {
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      // Never zero: it divides the next frame's ratio.
+      span: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+    };
+  }
+
+  /**
+   * Close whatever the first finger had begun, keeping what it did.
+   *
+   * Undoing it would be the other reasonable choice, but a pinch usually
+   * starts *after* a deliberate drag rather than instead of one, and throwing
+   * that away because a second finger landed would be the worse surprise.
+   */
+  function abandonDrag() {
+    if (!drag) return;
+    if (drag.moved) store.endGesture();
+    drag = null;
+    overlay.clear();
+  }
+
   function refreshOverlay() {
     const { camera, pendingType, hover } = store.state;
     if (pendingType && hover) {
@@ -116,6 +148,20 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.focus({ preventScroll: true });
     const pt = local(e);
+
+    if (e.pointerType === 'touch') {
+      touches.set(e.pointerId, pt);
+      // Two fingers are always the camera. Whatever the first one had started
+      // is closed off here rather than abandoned, so a half-finished move is
+      // still one undo entry.
+      if (touches.size === 2) {
+        abandonDrag();
+        canvas.setPointerCapture(e.pointerId);
+        drag = { mode: 'pinch', ...twoFinger() };
+        return;
+      }
+      if (touches.size > 2) return;
+    }
 
     const wantsPan = e.button === 1 || spaceDown || store.state.tool === 'pan';
     if (wantsPan) {
@@ -193,6 +239,17 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
 
   canvas.addEventListener('pointermove', (e) => {
     const pt = local(e);
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) touches.set(e.pointerId, pt);
+
+    if (drag?.mode === 'pinch') {
+      if (touches.size < 2) return;
+      const now = twoFinger();
+      let camera = zoomAt(store.state.camera, now.mid.x, now.mid.y, now.span / drag.span);
+      camera = pan(camera, now.mid.x - drag.mid.x, now.mid.y - drag.mid.y);
+      store.setUI({ camera });
+      drag = { mode: 'pinch', ...now };
+      return;
+    }
 
     if (!drag) {
       const cell = cellAt(pt);
@@ -329,6 +386,23 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   // --- pointer up ----------------------------------------------------------
 
   const finish = (e) => {
+    if (e.pointerType === 'touch') touches.delete(e.pointerId);
+    // A pinch ends when it stops being a pinch. The finger still down is not
+    // promoted to a drag: it has been moving the camera, and taking whatever
+    // is under it now would move a block by however far the pinch travelled.
+    if (drag?.mode === 'pinch') {
+      if (touches.size >= 2) {
+        drag = { mode: 'pinch', ...twoFinger() };
+        return;
+      }
+      drag = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch { /* already released */ }
+      overlay.clear();
+      refreshOverlay();
+      return;
+    }
     if (!drag) return;
     const active = drag;
     drag = null;

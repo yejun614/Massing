@@ -51,9 +51,13 @@ export function createScene(container, { onResize } = {}) {
   const textViews = new Map();
   const imageViews = new Map();
 
-  let viewport = { width: container.clientWidth || 800, height: container.clientHeight || 600 };
+  const measure = () => ({
+    width: container.clientWidth || 800,
+    height: container.clientHeight || 600,
+  });
+  let viewport = measure();
   const observer = new ResizeObserver(() => {
-    viewport = { width: container.clientWidth, height: container.clientHeight };
+    viewport = measure();
     // The grid is generated for whatever the viewport covers, so any layout
     // change -- a dragged panel divider, not just a window resize -- has to
     // reach the renderer or the grid is left short.
@@ -190,8 +194,17 @@ export function createScene(container, { onResize } = {}) {
     layers: { behind, zones, edges, blocks, texts, overlay, handles: handles.el },
     render,
     contentBox,
+    /**
+     * Measured on every read rather than served from the observer's cache.
+     *
+     * The cache is a frame behind on the one that matters most: the first
+     * zoom-to-fit runs before any resize has been observed, so on a phone --
+     * where the panels have just folded away and the canvas has gone from
+     * nothing to full width -- it would otherwise fit the diagram to the 800px
+     * fallback and open at roughly twice the right zoom.
+     */
     get viewport() {
-      return viewport;
+      return measure();
     },
     destroy() {
       observer.disconnect();

@@ -21,14 +21,26 @@ import { nodeById, groupById, imageById, edgeById } from '../core/doc.js';
 import { clampInt, round2 } from '../util/num.js';
 import { MAX_SPAN } from '../core/schema.js';
 
-/** Screen radius of a grip. */
-const GRIP_RADIUS = 4.5;
+/**
+ * How big a grip is, and how much room a shape needs before it gets any.
+ *
+ * A fingertip covers far more than a mouse cursor, so on touch the grips are
+ * drawn larger, given a larger invisible target still, and withheld until the
+ * shape is comfortably bigger than the grips themselves. That last part is the
+ * one that matters: four dots on the corners of a shape barely wider than they
+ * are cover the shape, and dragging it -- the commonest thing anyone does --
+ * stops working at all.
+ */
+const SIZES = {
+  fine: { dot: 4.5, hit: 4.5, edgeAbove: 46, noneBelow: 14 },
+  coarse: { dot: 6.5, hit: 14, edgeAbove: 96, noneBelow: 40 },
+};
+
+const isCoarse = () =>
+  typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+
 /** Pixels the height grip floats above the block's topmost point. */
 const GRIP_LIFT = 22;
-/** Shortest on-screen side, in px, above which edge grips join the corners... */
-const EDGE_GRIPS_ABOVE = 46;
-/** ...and below which a shape gets none at all, because they would bury it. */
-const NO_GRIPS_BELOW = 14;
 
 /** Grip anchors as fractions of the shape. */
 const CORNER_ANCHORS = [[0, 0], [1, 0], [1, 1], [0, 1]];
@@ -46,19 +58,19 @@ const EDGE_ANCHORS = [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]];
  * Grips are also withheld unless the select tool is live, or the press that
  * starts a connection would land on a grip instead of on the block.
  */
-export function handlesFor(state) {
+export function handlesFor(state, { size = isCoarse() ? SIZES.coarse : SIZES.fine } = {}) {
   const { doc, camera, selection, tool, pendingType } = state;
   if (tool !== 'select' || pendingType || selection.length !== 1) return [];
 
   const id = selection[0];
   const node = nodeById(doc, id);
-  if (node) return blockHandles(node, camera);
+  if (node) return blockHandles(node, camera, size);
   const group = groupById(doc, id);
-  if (group) return footprintHandles(id, group.rect, 0, camera);
+  if (group) return footprintHandles(id, group.rect, 0, camera, size);
   const image = imageById(doc, id);
-  if (image) return pictureHandles(image, camera);
+  if (image) return pictureHandles(image, camera, size);
   const edge = edgeById(doc, id);
-  if (edge) return edgeHandles(doc, edge, camera);
+  if (edge) return edgeHandles(doc, edge, camera, size);
   return [];
 }
 
@@ -70,7 +82,7 @@ export function handlesFor(state) {
  * that run sideways is how a line is moved out from under whatever it happened
  * to be crossing.
  */
-function edgeHandles(doc, edge, cam) {
+function edgeHandles(doc, edge, cam, size) {
   const route = edgeRoute(doc, edge);
   if (!route) return [];
   const p = gridToScreen(cam, route.grip.x, route.grip.y, EDGE_Z);
@@ -78,6 +90,7 @@ function edgeHandles(doc, edge, cam) {
     key: 'bend',
     role: 'bend',
     target: edge.id,
+    size,
     // The run moves along one grid axis, which projects to a skewed screen
     // direction, so none of the four resize cursors would be telling the truth.
     cursor: 'move',
@@ -86,11 +99,11 @@ function edgeHandles(doc, edge, cam) {
   }];
 }
 
-function blockHandles(node, cam) {
+function blockHandles(node, cam, size) {
   const proj = projectionOf(cam);
   const ht = proj.showsSides ? node.height : 0;
   const rect = [node.pos[0], node.pos[1], node.size[0], node.size[1]];
-  const grips = footprintHandles(node.id, rect, ht, cam);
+  const grips = footprintHandles(node.id, rect, ht, cam, size);
 
   // Height is the one dimension the footprint grips cannot reach, so it gets
   // one of its own, floating over the top face on a stem. In 2D there is no
@@ -107,6 +120,7 @@ function blockHandles(node, cam) {
       key: 'height',
       role: 'height',
       target: node.id,
+      size,
       x: stem.x,
       y: back.y - GRIP_LIFT,
       stem,
@@ -123,16 +137,16 @@ function blockHandles(node, cam) {
  * edge" only means anything relative to the camera. `resizeFootprint` works in
  * the same frame, so the two agree at every camera angle.
  */
-function footprintHandles(id, rect, ht, cam) {
+function footprintHandles(id, rect, ht, cam, size) {
   const proj = projectionOf(cam);
   const r = rotateRect(rect[0], rect[1], rect[2], rect[3], cam.rot);
 
   // A unit grid direction projects to exactly CELL pixels, so this is the real
   // on-screen length of the shortest side without measuring anything.
   const shortest = Math.min(r.w, r.h) * CELL * cam.zoom;
-  if (shortest < NO_GRIPS_BELOW) return [];
+  if (shortest < size.noneBelow) return [];
   const anchors =
-    shortest < EDGE_GRIPS_ABOVE ? CORNER_ANCHORS : [...CORNER_ANCHORS, ...EDGE_ANCHORS];
+    shortest < size.edgeAbove ? CORNER_ANCHORS : [...CORNER_ANCHORS, ...EDGE_ANCHORS];
 
   const at = (ax, ay) => screenPoint(cam, proj.project(r.x + ax * r.w, r.y + ay * r.h, ht));
   const centre = at(0.5, 0.5);
@@ -142,6 +156,7 @@ function footprintHandles(id, rect, ht, cam) {
       key: `size:${ax},${ay}`,
       role: 'size',
       target: id,
+      size,
       ax,
       ay,
       x: p.x,
@@ -160,7 +175,7 @@ function footprintHandles(id, rect, ht, cam) {
  * readability flip -- a lot of machinery so a picture can grow the other way,
  * when dragging it afterwards does the same job.
  */
-function pictureHandles(image, cam) {
+function pictureHandles(image, cam, size) {
   const proj = projectionOf(cam);
   const w = image.size[0] * CELL;
   const h = image.size[1] * CELL;
@@ -173,8 +188,8 @@ function pictureHandles(image, cam) {
 
   // Plane axes are unit screen vectors, so local pixels are screen pixels.
   const shortest = Math.min(w, h) * cam.zoom;
-  if (shortest < NO_GRIPS_BELOW) return [];
-  const anchors = shortest < EDGE_GRIPS_ABOVE ? [[1, 1]] : [[1, 0.5], [0.5, 1], [1, 1]];
+  if (shortest < size.noneBelow) return [];
+  const anchors = shortest < size.edgeAbove ? [[1, 1]] : [[1, 0.5], [0.5, 1], [1, 1]];
 
   const centre = at(w / 2, h / 2);
   return anchors.map(([ax, ay]) => {
@@ -183,6 +198,7 @@ function pictureHandles(image, cam) {
       key: `plane:${ax},${ay}`,
       role: 'plane-size',
       target: image.id,
+      size,
       ax,
       ay,
       x: p.x,
@@ -266,9 +282,15 @@ export function updateHandlesView(view, state) {
     setAttr(g.el, 'data-ay', grip.ay ?? 0);
     setAttr(g.el, 'style', `cursor:${grip.cursor}`);
 
-    setAttr(g.dot, 'cx', round2(grip.x));
-    setAttr(g.dot, 'cy', round2(grip.y));
-    setAttr(g.dot, 'r', GRIP_RADIUS);
+    const size = grip.size ?? SIZES.fine;
+    for (const circle of [g.dot, g.hit]) {
+      setAttr(circle, 'cx', round2(grip.x));
+      setAttr(circle, 'cy', round2(grip.y));
+    }
+    setAttr(g.dot, 'r', size.dot);
+    // A separate, invisible target: a fingertip needs far more room than the
+    // dot it aims at, and growing the dot itself would bury the shape.
+    setAttr(g.hit, 'r', size.hit);
 
     if (grip.stem) {
       setAttr(g.stem, 'x1', round2(grip.stem.x));
@@ -289,7 +311,8 @@ export function updateHandlesView(view, state) {
 
 function createGrip() {
   const stem = svg('line', { class: 'handle-stem', visibility: 'hidden' });
+  const hit = svg('circle', { class: 'handle-hit' });
   const dot = svg('circle', { class: 'handle-dot' });
-  const el = svg('g', { class: 'handle' }, [stem, dot]);
-  return { el, stem, dot };
+  const el = svg('g', { class: 'handle' }, [stem, hit, dot]);
+  return { el, stem, hit, dot };
 }

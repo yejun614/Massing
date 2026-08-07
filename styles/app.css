@@ -694,6 +694,101 @@ kbd {
 .btn-primary:active:not(:disabled) { filter: brightness(0.94); }
 .btn-primary:disabled { opacity: 0.5; }
 
+/* --- touch, and small screens --------------------------------------------- */
+
+/*
+ * A finger is not a mouse pointer. 28px is a comfortable icon button to click
+ * and an uncomfortable one to tap, so on a coarse pointer everything that can
+ * be pressed grows to the 44px that touch guidelines have settled on. This is
+ * keyed off the input device, not the screen: a touchscreen laptop gets the
+ * bigger targets at any width.
+ */
+@media (pointer: coarse) {
+  /* On :root, not on .toolbar: the grid row, the dividers and the scrim all
+     measure themselves against this. */
+  :root { --toolbar-h: 56px; }
+  .btn { height: 44px; padding: 0 12px; }
+  .btn-icon { width: 44px; }
+  .btn svg { width: 19px; height: 19px; }
+  .toolbar { gap: 2px; }
+  .chip { padding: 9px 14px; }
+  .field input, .field select, .field textarea { padding: 9px 10px; }
+  .swatch { width: 26px; height: 26px; }
+  .toggle-btn { min-width: 38px; height: 38px; }
+  /* A hover tooltip has no meaning without a pointer that hovers. */
+  .tooltip { display: none !important; }
+}
+
+/*
+ * Below this the two panels stop being columns and become drawers over the
+ * canvas.
+ *
+ * A phone cannot spare 232px for a palette *and* still have somewhere to draw:
+ * a column layout leaves 320px of canvas at best, and nothing at all at 390px
+ * wide. As a drawer the panel costs the canvas nothing while it is shut, which
+ * is almost always — so the columns are pinned to zero here rather than being
+ * left to the width variables, and the canvas is full width whatever the
+ * panels are doing.
+ */
+@media (max-width: 759px) {
+  .app { grid-template-columns: 0 1fr 0; }
+
+  .panel {
+    position: fixed;
+    top: var(--toolbar-h);
+    bottom: 0;
+    width: min(86vw, 330px);
+    z-index: 6;
+    box-shadow: 0 0 40px rgb(15 23 42 / 0.28);
+    transition: transform 0.18s ease-out;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .panel-left { left: 0; padding-left: env(safe-area-inset-left, 0); }
+  .panel-right { right: 0; padding-right: env(safe-area-inset-right, 0); }
+  .panel-left.is-collapsed { transform: translateX(-101%); }
+  .panel-right.is-collapsed { transform: translateX(101%); }
+  /*
+   * A collapsed panel is `display: none` as a column, which is right: a column
+   * of zero width should not be in the layout at all. A drawer is not in the
+   * layout to begin with, and `display: none` would leave the slide with
+   * nothing to animate — so it stays laid out and goes invisible instead,
+   * after the transform has finished carrying it off screen.
+   */
+  .panel.is-collapsed {
+    display: block;
+    visibility: hidden;
+    transition: transform 0.18s ease-out, visibility 0s 0.18s;
+  }
+
+  /* There is no column edge left to drag. */
+  .resizer { display: none; }
+
+  body.has-drawer .panel-scrim {
+    display: block;
+    opacity: 1;
+  }
+
+  /* The title is the first thing worth losing when the row is this tight. */
+  .doc-title { width: 74px; }
+  .toolbar { padding-left: max(10px, env(safe-area-inset-left, 0)); }
+  .sheet { max-width: min(94vw, 520px); }
+  .export-preview { height: 150px; }
+}
+
+.panel-scrim {
+  position: fixed;
+  inset: var(--toolbar-h) 0 0;
+  z-index: 5;
+  display: none;
+  opacity: 0;
+  background: rgb(15 23 42 / 0.32);
+  transition: opacity 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel, .panel-scrim { transition: none; }
+}
+
 /* --- tooltips ------------------------------------------------------------- */
 
 /*

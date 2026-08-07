@@ -62,6 +62,16 @@ the modules load unbundled.
 | Share a diagram | The share button copies a link with the whole diagram inside it |
 | Everything else | The `?` button in the toolbar |
 
+### On a phone
+
+The two panels stop being columns and become drawers over the canvas — a phone
+cannot spare 232px for a palette *and* have somewhere left to draw. Picking a
+component closes the palette on its own, since the next thing you do is press
+the canvas it was covering. One finger selects and drags; **two pan and zoom**,
+as they do on a map. Grips are drawn larger and withheld from shapes too small
+to hold them, because four dots on the corners of a small block cover the block
+and dragging it stops working.
+
 Blocks belong to a zone by **geometry**: a block inside a VPC's rectangle is in
 that VPC, and membership is recomputed whenever anything moves.
 

@@ -350,6 +350,31 @@ plausible nonsense. The test suite decodes what the encoder wrote, and the
 browser driver hands the bytes to Chrome, which is the only authority on
 whether the file is really a GIF.
 
+### A phone is not a small desktop
+
+Three things had to change shape rather than merely shrink.
+
+**The panels stop being columns.** 232px of palette plus 232px of inspector
+leaves nothing to draw on at 390px wide, so below 760px the columns are pinned
+to zero and the panels become drawers over the canvas — the same `is-collapsed`
+class, a different stylesheet. Only one opens at a time, and arming a component
+closes the palette, because the next thing that has to happen is a press on the
+canvas it was covering.
+
+**A second finger is always the camera.** There is no wheel on a phone and no
+key to hold, so without a gesture the diagram could be edited but never
+navigated. One finger selects and drags exactly as a mouse does; two pan and
+pinch together. The first finger's drag is closed off rather than abandoned
+when the second lands, so a half-finished move is still one undo entry.
+
+**Grips are sized to the pointer, not the screen.** This is the one that bites:
+on a coarse pointer the grips are drawn larger and given a larger invisible
+target still — and are withheld until the shape is comfortably bigger than they
+are. Four dots on the corners of a block barely wider than they are cover the
+block, and dragging it, the commonest thing anyone does, stops working
+altogether. The threshold is keyed off `(pointer: coarse)` rather than the
+viewport, so a touchscreen laptop gets it at any width.
+
 ---
 
 ## 9. The bundler
@@ -382,6 +407,7 @@ development. What replaces them:
 | Panels | Built once per selection *shape*, then values synced in place — otherwise typing rebuilds the panel and steals focus |
 | Templating | `h()` and `svg()` in `util/dom.js`, about forty lines |
 | Tooltips | One popover moved between controls; `title` harvested on hover, so the toolbar keeps writing plain titles |
+| Touch | A second finger switches the pointer machine to `pinch`; grips resize themselves off `(pointer: coarse)` |
 
 The inspector's rebuild rule is the one that bites if forgotten: rebuild on
 selection change, sync otherwise, and never write to a focused input.

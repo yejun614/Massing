@@ -221,7 +221,12 @@
 
 .handle { pointer-events: auto; }
 
+/* The target, not the mark: larger than the dot on a touchscreen, the same
+   size as it with a mouse. */
+.handle-hit { fill: transparent; }
+
 .handle-dot {
+  pointer-events: none;
   fill: #fff;
   stroke: #2563eb;
   stroke-width: 1.8;
