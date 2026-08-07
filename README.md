@@ -65,13 +65,15 @@ the modules load unbundled.
 
 ### On a phone
 
-**The toolbar stands on its end** as a rail down the left edge. A row of
-twenty-nine icons on a phone is something you scroll through hunting; a column
-costs 52px of width instead of 56px of height, which is the cheaper trade in
-portrait, and it is under the thumb already holding the phone. Eight buttons
-stay out — the two panels, select, pan, connect, undo, redo, delete — and the
-rest fold behind `⋯`, which pins itself to the bottom while open so the way
-back is never scrolled away.
+**The toolbar stands on its end** as a rail down the left edge, and floats:
+there is no panel behind it, so the diagram runs underneath and the screen
+keeps the width it appears to have. A row of twenty-nine icons on a phone is
+something you scroll through hunting; a column costs 52px of width instead of
+56px of height, which is the cheaper trade in portrait, and it is under the
+thumb already holding the phone. Six tools stay out — select, pan, connect,
+undo, redo, delete — and the rest fold behind `⋯`, which pins itself to the
+bottom while open so the way back is never scrolled away. **The two panel
+toggles sit in the top-right corner**, opposite the zoom controls.
 
 **Pan is the tool a finger starts with.** With a mouse, select-first is right;
 a touchscreen has no wheel, no held space and no middle button, so select-first

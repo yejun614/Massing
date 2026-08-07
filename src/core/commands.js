@@ -269,9 +269,26 @@ export function createCommands({ store, scene, toaster, io }) {
 
   // --- view ----------------------------------------------------------------
 
+  /**
+   * How much of the canvas something is floating over on the left.
+   *
+   * On a phone the toolbar is a rail laid over the drawing rather than a
+   * column beside it, so the canvas keeps the full width and a diagram fitted
+   * to all of it would sit half underneath. The stylesheet is what decides
+   * that and already says so in `--rail-w`; reading the number back is better
+   * than keeping a second copy of it here that could disagree.
+   */
+  function coveredLeft() {
+    const value = getComputedStyle(document.documentElement).getPropertyValue('--rail-w');
+    return Number.parseFloat(value) || 0;
+  }
+
   function zoomBy(factor) {
     const { width, height } = scene.viewport;
-    store.setUI({ camera: zoomAt(store.state.camera, width / 2, height / 2, factor) });
+    const left = coveredLeft();
+    // About the middle of what can actually be seen.
+    const camera = zoomAt(store.state.camera, left + (width - left) / 2, height / 2, factor);
+    store.setUI({ camera });
   }
 
   /**
@@ -282,11 +299,14 @@ export function createCommands({ store, scene, toaster, io }) {
   function zoomFit() {
     scene.render(store.state);
     const box = scene.contentBox(24);
-    store.setUI({
-      camera: box
-        ? fitToSceneBox(store.state.camera, box, scene.viewport)
-        : fitToBox(store.state.camera, docBounds(store.state.doc), scene.viewport),
-    });
+    const { width, height } = scene.viewport;
+    const left = coveredLeft();
+    // Fit into the part that is not covered, then slide the result across it.
+    const usable = { width: Math.max(1, width - left), height };
+    const camera = box
+      ? fitToSceneBox(store.state.camera, box, usable)
+      : fitToBox(store.state.camera, docBounds(store.state.doc), usable);
+    store.setUI({ camera: { ...camera, tx: camera.tx + left } });
   }
 
   function zoomReset() {

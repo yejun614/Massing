@@ -355,15 +355,26 @@ whether the file is really a GIF.
 Three things had to change shape rather than merely shrink.
 
 **The toolbar stops being a row.** It is the same element and the same
-buttons: below 760px the grid's toolbar row goes to zero, the bar is laid over
-a left padding as a fixed rail, and the flex direction turns. What is *not*
-free is deciding which eight of twenty-nine buttons stay out — that is a
-judgement about editing on a phone, marked in `toolbar.js` rather than in the
-stylesheet, because the desktop grouping does not answer it. Two rules earned
-their comments the hard way: the button that folds the rail back pins itself to
-the bottom while open, or it is the last item on a list taller than the screen;
-and a drawer's width now subtracts the rail, or the strip of canvas left to
-dismiss it with came out eight pixels wide.
+buttons: below 760px the grid's toolbar row goes to zero, the bar becomes a
+fixed rail laid *over* the canvas, and the flex direction turns. What is *not*
+free is deciding which of twenty-nine buttons stay out — that is a judgement
+about editing on a phone, marked in `toolbar.js` rather than in the stylesheet,
+because the desktop grouping does not answer it.
+
+The rail is transparent, which is three decisions rather than one. The canvas
+keeps the whole width, so `zoomFit` reads `--rail-w` back out of the stylesheet
+and fits into what is left — the alternative is a diagram whose left edge is
+permanently under the icons. The icons carry a halo of the surface colour, the
+same trick the diagram's own captions use to stay legible over a block. And the
+bar takes no pointer events while its buttons do, because a strip that looks
+like canvas has to behave like canvas.
+
+Three more rules earned their comments the hard way: the button that folds the
+rail back pins itself to the bottom while open, or it is the last item on a
+list taller than the screen; a drawer's width subtracts the rail, or the strip
+of canvas left to dismiss it with comes out eight pixels wide; and the panel
+toggles have to clear `left` when they move to the corner, because the bar's
+own sticky rule pins them left and an over-constrained box keeps the left edge.
 
 **The panels stop being columns.** 232px of palette plus 232px of inspector
 leaves nothing to draw on at 390px wide, so below 760px the columns are pinned
