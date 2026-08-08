@@ -525,7 +525,7 @@ default and both individually switchable on a live deployment:
 
 | | |
 |---|---|
-| **Publish** | Store the diagram and get `/d/<name>` and `/d/<hash>` back. The name can be re-pointed at a newer version by whoever claimed it; the hash never moves. |
+| **Publish** | Store the diagram and get `/d/<name>` and `/d/<hash>` back. The name can be re-pointed at a newer version by whoever claimed it; the hash never moves. Links are kept for 90 days after they are last opened, so the ones in use stay and the ones nobody opens are swept. |
 | **Assistant** | Describe a change and have it made. It runs through Vercel AI Gateway, reads and rewrites the document through tool calls, and edits go through the normal store — so undo works on whatever it does. |
 
 Each is only there if the deployment says so, and the button is absent rather

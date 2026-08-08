@@ -67,11 +67,22 @@ export function createPublishDialog(root, { cloud, store, toaster }) {
       status.textContent = 'It was not published. The message above says why.';
       return;
     }
-    status.textContent = `Published, ${Math.max(1, Math.round(result.bytes / 1024))} kB.`;
+    const kb = Math.max(1, Math.round(result.bytes / 1024));
+    // The lifetime is said here or it is not said anywhere, and a link whose
+    // expiry nobody mentioned is one people find out about from a document
+    // they shared three months ago.
+    status.textContent = result.expiresAt
+      ? `Published, ${kb} kB. Kept until ${result.expiresAt.slice(0, 10)}, and for ` +
+        `${result.retentionDays} more days each time someone opens it.`
+      : `Published, ${kb} kB.`;
     results.append(
-      linkRow('By name', result.url, 'Publish again under this name to update what it shows.'),
-      linkRow('By content', result.hashUrl, 'Always this exact version, whatever you publish later.')
+      linkRow('By name', result.url, 'Publish again under this name to update what it shows.')
     );
+    if (result.hashUrl) {
+      results.append(
+        linkRow('By content', result.hashUrl, 'Always this exact version, whatever you publish later.')
+      );
+    }
     // The address bar follows, so a reload reopens what was just published and
     // the link in it is one you can copy out of the browser rather than only
     // out of this sheet.
@@ -82,7 +93,8 @@ export function createPublishDialog(root, { cloud, store, toaster }) {
     h('h2', { class: 'sheet-title', text: 'Publish this diagram' }),
     h('p', { class: 'sheet-text', text:
       'The diagram is stored on this deployment and reachable by a short link. ' +
-      'Anyone with the link can read it, so treat it as public.' }),
+      'Anyone with the link can read it, so treat it as public. Opening a link ' +
+      'keeps it alive; one nobody opens is eventually removed.' }),
     h('div', { class: 'field' }, [h('label', { text: 'Name' }), name]),
     status,
     results,

@@ -29,6 +29,8 @@ import {
   newEditToken,
   hashToken,
   tokenMatches,
+  expiryOf,
+  retentionDays,
 } from '../_lib/policy.js';
 
 const limiter = createRateLimiter(RATE_LIMITS.store);
@@ -92,33 +94,51 @@ export default async function handler(req, res) {
       editToken = newEditToken();
     }
 
+    const at = new Date().toISOString();
+
     // The document first. A name pointing at nothing is the one broken state
     // worth ruling out, and writing the same content twice is free.
     await store.put(paths.document(hash), text, { contentType: 'application/json' });
-    await store.put(
-      paths.shortcut(shortHash),
-      JSON.stringify({ hash }),
-      { contentType: 'application/json' }
-    );
+
+    /*
+     * A short link is claimed once and never repointed.
+     *
+     * Ten hex characters is forty bits, so two documents sharing a prefix is
+     * remote -- but overwriting on collision would silently hand whoever holds
+     * the older link a *different diagram*, which is the worst kind of failure
+     * this could have. First claim keeps it; the newcomer simply has no short
+     * link, and its name and full hash both still work.
+     */
+    const claimedShort = await store.getJson(paths.shortcut(shortHash));
+    const shortIsOurs = !claimedShort?.value || claimedShort.value.hash === hash;
+    if (shortIsOurs) {
+      await store.put(
+        paths.shortcut(shortHash),
+        JSON.stringify({ hash, at }),
+        { contentType: 'application/json', maxAge: 60 }
+      );
+    }
+
     await store.put(
       paths.alias(displayId),
-      JSON.stringify({
-        hash,
-        tokenHash: hashToken(editToken),
-        updatedAt: new Date().toISOString(),
-      }),
-      // Names move; hashes do not. So the pointer is cached for a minute and
-      // the document it points at for a year.
+      JSON.stringify({ hash, tokenHash: hashToken(editToken), at }),
+      // Both pointers carry the clock a read slides forward, so neither may sit
+      // in an edge cache long enough to hide that it has moved or expired.
       { contentType: 'application/json', maxAge: 60 }
     );
 
     return send(res, 200, {
       hash,
-      shortHash,
+      shortHash: shortIsOurs ? shortHash : null,
       displayId,
       editToken,
       claimed: !existing?.value,
       bytes,
+      // Null when retention is switched off. Shown next to the link, because a
+      // lifetime nobody was told about is one they find out about in three
+      // months, from a document that has already been shared.
+      expiresAt: expiryOf(at, retentionDays(process.env)),
+      retentionDays: retentionDays(process.env),
     });
   } catch (err) {
     console.error('store failed', err);

@@ -64,7 +64,13 @@ export function createBlobStore(env = process.env, fetchImpl = fetch) {
    * either a content hash or a name someone chose, and both have to be findable
    * again by the same string.
    */
-  async function put(pathname, body, { contentType = 'application/json', maxAge = 31536000 } = {}) {
+  /**
+   * `maxAge` is a day rather than a year, and that is about deletion rather
+   * than about freshness. Stored diagrams are swept once their links go unused,
+   * and an edge holding a year-old copy would keep serving what the sweeper has
+   * already removed. A day bounds how long the store and the edge can disagree.
+   */
+  async function put(pathname, body, { contentType = 'application/json', maxAge = 86400 } = {}) {
     const response = await fetchImpl(`${API}/${encodeURI(pathname)}`, {
       method: 'PUT',
       headers: {
@@ -124,7 +130,51 @@ export function createBlobStore(env = process.env, fetchImpl = fetch) {
     }
   }
 
-  return { put, get, getJson, locate, get configured() { return Boolean(token); } };
+  /**
+   * One page of the store under `prefix`.
+   *
+   * Paged rather than exhaustive because the sweeper is the only caller and it
+   * runs against a store of unknown size on a function with a deadline. It
+   * takes what it can and comes back tomorrow for the rest.
+   *
+   * @returns {Promise<{blobs: Array<{pathname: string, url: string, uploadedAt: string}>, cursor: string|null}>}
+   */
+  async function list(prefix, { cursor = null, limit = 500 } = {}) {
+    const url = new URL(API);
+    url.searchParams.set('prefix', prefix);
+    url.searchParams.set('limit', String(limit));
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const response = await fetchImpl(url, { headers: auth(), signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`Blob list failed (${response.status}).`);
+    const body = await response.json();
+    if (body.blobs?.[0]?.url) remember(body.blobs[0].url);
+    return { blobs: body.blobs ?? [], cursor: body.hasMore ? body.cursor : null };
+  }
+
+  /** Remove objects by public URL. Batched, because the sweeper deletes in runs. */
+  async function remove(urls) {
+    if (!urls.length) return 0;
+    const response = await fetchImpl(`${API}/delete`, {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({ urls }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) {
+      throw new Error(`Blob delete failed (${response.status}): ${await response.text().catch(() => '')}`);
+    }
+    return urls.length;
+  }
+
+  return {
+    put,
+    get,
+    getJson,
+    locate,
+    list,
+    remove,
+    get configured() { return Boolean(token); },
+  };
 }
 
 /** Where each kind of record lives. One place, so the two handlers agree. */

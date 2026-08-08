@@ -252,6 +252,8 @@ check('the list survives odd spacing',
 const {
   normaliseDisplayId, classifyKey, hashDocument, createRateLimiter,
   newEditToken, hashToken, tokenMatches, MAX_DOCUMENT_BYTES,
+  retentionDays, isExpired, shouldRefresh, expiryOf, cacheSeconds,
+  RETENTION_DEFAULT_DAYS, REFRESH_AFTER_DAYS,
 } = await import('../api/_lib/policy.js');
 const { resolveFlag, resolveAll } = await import('../api/_lib/flags.js');
 
@@ -325,6 +327,57 @@ check('every flag is off on a deployment with nothing configured', (() => {
     all.analytics.on === true;
 })());
 check('the document ceiling is stated in bytes, not vibes', MAX_DOCUMENT_BYTES === 2 * 1024 * 1024);
+
+/*
+ * Retention is sliding: the clock runs from the last time a link was opened,
+ * not from when it was published, so the links that die are the ones nobody is
+ * using. Everything below is that rule and the arithmetic under it.
+ */
+const DAY = 86_400_000;
+const now = 1_700_000_000_000;
+const ago = (days) => new Date(now - days * DAY).toISOString();
+
+check('retention defaults to ninety days', retentionDays({}) === RETENTION_DEFAULT_DAYS);
+check('retention is configurable, and zero switches it off', (() => {
+  return retentionDays({ MASSING_RETENTION_DAYS: '30' }) === 30 &&
+    retentionDays({ MASSING_RETENTION_DAYS: '0' }) === 0 &&
+    // Nonsense falls back rather than switching retention off by accident.
+    retentionDays({ MASSING_RETENTION_DAYS: 'soon' }) === RETENTION_DEFAULT_DAYS &&
+    retentionDays({ MASSING_RETENTION_DAYS: '' }) === RETENTION_DEFAULT_DAYS;
+})());
+
+check('a link expires only once it has gone unused past the window', (() => {
+  return !isExpired(ago(89), 90, now) && isExpired(ago(91), 90, now);
+})());
+check('switching retention off expires nothing', !isExpired(ago(400), 0, now));
+check('an unreadable timestamp is treated as fresh, never as expired',
+  !isExpired(undefined, 90, now) && !isExpired('not a date', 90, now),
+  'a bad record must not read as a dead link');
+
+check('a read refreshes a stale clock and leaves a fresh one alone', (() => {
+  return !shouldRefresh(ago(1), 90, now) &&
+    !shouldRefresh(ago(REFRESH_AFTER_DAYS - 1), 90, now) &&
+    shouldRefresh(ago(REFRESH_AFTER_DAYS + 1), 90, now) &&
+    // No timestamp at all is worth writing one.
+    shouldRefresh(undefined, 90, now) &&
+    !shouldRefresh(ago(400), 0, now);
+})());
+
+check('the expiry date is the window past the last use', (() => {
+  const at = ago(10);
+  return expiryOf(at, 90) === new Date(Date.parse(at) + 90 * DAY).toISOString() &&
+    expiryOf(at, 0) === null;
+})());
+
+check('nothing may be cached past the moment it stops resolving', (() => {
+  // The old header promised a year on a hash. The bytes still cannot change;
+  // the link can now be gone, so the promise has to shrink with it.
+  const nearlyDead = cacheSeconds(ago(89.5), 90, 31536000, now);
+  return nearlyDead <= 0.5 * 86400 && nearlyDead > 0 &&
+    cacheSeconds(ago(1), 90, 60, now) === 60 &&
+    cacheSeconds(ago(91), 90, 31536000, now) === 0 &&
+    cacheSeconds(ago(400), 0, 31536000, now) === 31536000;
+})());
 
 
 for (const failure of failures) console.error(`FAIL  ${failure}`);

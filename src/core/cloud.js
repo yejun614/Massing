@@ -101,8 +101,14 @@ export function createCloud({ store, toaster } = {}) {
           shortHash: body.shortHash,
           displayId: body.displayId,
           bytes: body.bytes,
+          expiresAt: body.expiresAt ?? null,
+          retentionDays: body.retentionDays ?? 0,
           url: new URL(publishedPath(body.displayId), location.origin).href,
-          hashUrl: new URL(publishedPath(body.shortHash), location.origin).href,
+          // Null on the vanishingly rare occasion the short link was already
+          // claimed by other content; the name and the full hash still work.
+          hashUrl: body.shortHash
+            ? new URL(publishedPath(body.shortHash), location.origin).href
+            : null,
         };
       } catch (err) {
         toaster?.error('Publishing failed — the deployment could not be reached.', {

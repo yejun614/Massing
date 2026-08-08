@@ -47,6 +47,102 @@ export const MAX_OUTPUT_TOKENS = 4096;
 export const CHAT_TIMEOUT_MS = 60_000;
 
 // ---------------------------------------------------------------------------
+// Retention
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a published link lives without being opened.
+ *
+ * Sliding rather than fixed: the clock runs from the last time the link was
+ * *used*, not from when it was published. A diagram linked in a document
+ * people still read never expires; one nobody has opened in three months does.
+ * Expiring by publication date instead would kill exactly the links that are
+ * working, which is the wrong half.
+ *
+ * Zero turns the whole thing off and nothing is ever swept.
+ */
+export const RETENTION_DEFAULT_DAYS = 90;
+
+/**
+ * How stale a record has to be before a read bothers to refresh it.
+ *
+ * Refreshing on every read would put a write behind every GET. A week's
+ * resolution is far finer than ninety days needs, and it means a link opened
+ * fifty times in an afternoon is written once.
+ */
+export const REFRESH_AFTER_DAYS = 7;
+
+/**
+ * Grace before a document with nothing pointing at it may be swept.
+ *
+ * A publish writes the document first and its records after, so a sweep that
+ * listed the documents and the records either side of that gap would find a
+ * brand-new document with no references and delete it. An hour is far longer
+ * than that window and far shorter than anything else here.
+ */
+export const SWEEP_GRACE_MS = 60 * 60 * 1000;
+
+const DAY_MS = 86_400_000;
+
+/** @returns {number} days, or 0 when retention is switched off. */
+export function retentionDays(env = process.env) {
+  const raw = env.MASSING_RETENTION_DAYS;
+  if (raw === undefined || String(raw).trim() === '') return RETENTION_DEFAULT_DAYS;
+  const days = Number(raw);
+  if (!Number.isFinite(days) || days < 0) return RETENTION_DEFAULT_DAYS;
+  return Math.floor(days);
+}
+
+/** Milliseconds since `at`, or null when it is missing or unreadable. */
+export function ageOf(at, now = Date.now()) {
+  const when = Date.parse(at ?? '');
+  return Number.isFinite(when) ? now - when : null;
+}
+
+/**
+ * Whether a link record has gone unused for longer than it is kept.
+ *
+ * A record with no readable timestamp counts as fresh, not expired. It is
+ * either older than this feature or written by something that went wrong, and
+ * neither is a reason to tell someone their link is dead.
+ */
+export function isExpired(at, days, now = Date.now()) {
+  if (!days) return false;
+  const age = ageOf(at, now);
+  return age !== null && age > days * DAY_MS;
+}
+
+export function shouldRefresh(at, days, now = Date.now()) {
+  if (!days) return false;
+  const age = ageOf(at, now);
+  return age === null || age > REFRESH_AFTER_DAYS * DAY_MS;
+}
+
+/** When a link last touched at `at` would expire, or null if never. */
+export function expiryOf(at, days) {
+  if (!days) return null;
+  const when = Date.parse(at ?? '');
+  if (!Number.isFinite(when)) return null;
+  return new Date(when + days * DAY_MS).toISOString();
+}
+
+/**
+ * Seconds a reply may be cached, never past the moment it stops being true.
+ *
+ * The document route used to send a year of `s-maxage` because a hash addresses
+ * bytes that cannot change. That is still true of the bytes and no longer true
+ * of the *link*, and an edge holding a year-old copy of something deleted three
+ * months ago would be serving a link this deployment has already retired.
+ */
+export function cacheSeconds(at, days, ceiling, now = Date.now()) {
+  if (!days) return ceiling;
+  const age = ageOf(at, now);
+  if (age === null) return ceiling;
+  const left = Math.floor((days * DAY_MS - age) / 1000);
+  return Math.max(0, Math.min(ceiling, left));
+}
+
+// ---------------------------------------------------------------------------
 // Rates
 // ---------------------------------------------------------------------------
 
