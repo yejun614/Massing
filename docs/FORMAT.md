@@ -17,9 +17,14 @@ The diagram lives on an integer grid, drawn in isometric projection.
 
 - `pos: [x, y]` is a block's **minimum corner**, not its centre.
 - `size: [width, depth]` in cells. Default `[2, 2]`.
-- `height` in cells. This is the visual weight of a block: `1` for a gateway,
-  `2` for a server, `3` for a database.
+- `height` in cells. The type supplies one, between 1 and 3; write `1` on
+  everything instead, because a block no taller than the one behind it can
+  never hide it (see below).
 - Everything is an integer. Never emit fractional coordinates.
+
+Two derived numbers decide where something lands on screen, and placing goes
+better if you think in them rather than in `x` and `y`: the horizontal position
+is `x - y`, and the depth — larger being nearer the viewer — is `x + y`.
 
 A `[2, 2]` block at `pos: [4, 4]` occupies `x` 4–6 and `y` 4–6, so the next
 block on the same row starts at `x: 7` if you want a one-cell gap.
@@ -43,29 +48,40 @@ fields fall back to the component type's defaults.
 
 ## Full example
 
+An excerpt of the diagram the editor opens with. Note what every block carries:
+one footprint, one height, one caption size, and a `labelPlane` — the default
+lays a caption flat on the ground at 45 degrees, which is the commonest way a
+diagram in this format comes out unreadable.
+
 ```json
 {
   "version": 1,
   "meta": { "title": "Three-tier web application" },
-  "canvas": {},
   "groups": [
-    { "id": "prod-vpc", "kind": "vpc", "label": "Production VPC", "rect": [0, 0, 18, 12] },
-    { "id": "public-subnet", "kind": "subnet", "label": "Public subnet", "rect": [1, 1, 7, 10], "parent": "prod-vpc" },
-    { "id": "private-subnet", "kind": "subnet", "label": "Private subnet", "rect": [10, 1, 7, 10], "parent": "prod-vpc" }
+    { "id": "prod-vpc", "kind": "vpc", "label": "Production", "rect": [10, 0, 29, 16],
+      "color": "#eab308", "labelSize": 96 },
+    { "id": "private-subnet", "kind": "subnet", "label": "Private", "rect": [21, 1, 17, 14],
+      "color": "#a855f7", "labelSize": 44, "labelPlane": "left", "parent": "prod-vpc" }
   ],
   "nodes": [
-    { "id": "alb", "type": "elb", "label": "Application LB", "pos": [2, 5], "group": "public-subnet" },
-    { "id": "web-1", "type": "ec2", "label": "Web 1", "pos": [11, 2], "group": "private-subnet" },
-    { "id": "db", "type": "rds", "label": "PostgreSQL", "pos": [11, 8], "height": 3, "group": "private-subnet" }
+    { "id": "web-1", "type": "ec2", "label": "Web 1", "pos": [24, 3], "size": [2, 2],
+      "height": 1, "color": "#12a37a", "labelSize": 40, "labelPlane": "right",
+      "group": "private-subnet" },
+    { "id": "jobs", "type": "sqs", "label": "Queue", "pos": [30, 12], "size": [2, 2],
+      "height": 1, "color": "#2c7de0", "labelSize": 40, "labelPlane": "right",
+      "group": "private-subnet" }
   ],
   "edges": [
-    { "id": "e-web1", "from": "alb", "to": "web-1" },
-    { "id": "e-db", "from": "web-1", "to": "db", "label": "5432", "style": "dashed" }
+    { "id": "e-enqueue", "from": "web-1", "to": "jobs", "route": "x", "color": "#2c7de0" }
+  ],
+  "texts": [
+    { "id": "note-private", "text": "Nothing in the private subnet\nhas a route in from the internet.",
+      "pos": [24, 19], "size": 50, "italic": true, "color": "#64748b" }
   ]
 }
 ```
 
-A complete, editor-generated document is in
+The whole thing, as the editor writes it, is in
 [`examples/three-tier.arch.json`](../examples/three-tier.arch.json).
 
 ### The canvas colour
@@ -172,14 +188,24 @@ that touches a zone is left out of that calculation and simply drawn.
 ## Text annotations
 
 `texts` are free-form notes for commentary — captions, callouts, explanations.
-They are drawn screen-horizontal, so unlike block labels they stay readable at
-every camera rotation.
+
+Leave one on the floor, which is where it goes by default. A block's caption
+has to stand up because it names one small thing and is read against it, but a
+note is a paragraph laid on the ground of the scene: it skews with everything
+else and turns with the camera, reading like writing on the floor plan rather
+than a sticker on the glass.
+
+Size is what makes that work. The ground takes a cut for the projection and
+another for the 45-degree skew, so a note left at the 14px default is a grey
+smudge. **Set `size` to 50** — it looks absurd in the file and is barely enough
+on screen — and keep the lines short, because at that size they are already
+wide.
 
 ```json
 {
   "texts": [
     { "id": "why", "text": "Retries land here\nafter 3 failures", "pos": [4, 9],
-      "size": 16, "bold": true, "align": "left", "color": "#334155" }
+      "size": 50, "italic": true, "align": "left", "color": "#64748b" }
   ]
 }
 ```
@@ -202,7 +228,7 @@ Text and pictures are both flat rectangles, so both are placed the same way.
 
 | Field | Meaning |
 |---|---|
-| `plane` | `screen` (square to the viewer), `floor` (lying on the ground), `right` or `left` (standing against a wall) |
+| `plane` | `floor` (lying on the ground, the default), `right` or `left` (standing against a wall), `screen` (square to the viewer) |
 | `spin` | `0`, `90`, `180` or `270` degrees, rotated within the plane |
 | `z` | Elevation above the ground in cells |
 | `behind` | Draw underneath the blocks and zones, e.g. a floorplan backdrop |
@@ -215,7 +241,7 @@ connection's flat along the line or standing above it:
 ```json
 { "id": "db", "type": "rds", "pos": [4, 0], "labelPlane": "right" }
 { "id": "prod-vpc", "kind": "vpc", "rect": [0, 0, 18, 12], "labelPlane": "floor" }
-{ "from": "api", "to": "db", "label": "5432", "labelPlane": "screen" }
+{ "from": "api", "to": "db", "label": "5432", "labelPlane": "left" }
 ```
 
 Blocks and connections default to `floor`. **Zones default to `right`** — a zone
@@ -227,6 +253,14 @@ edge.
 A connection's caption always sits at the halfway point of the run; the plane
 only decides which way it is offset from the line. `floor` lays it alongside,
 `right` and `left` stand it up above, `screen` floats it over the midpoint.
+
+Three of those four planes are in the world and one is not, which is the case
+against `screen`. It survives every camera rotation, and that is exactly what
+makes it read as an overlay stuck to the front of the picture rather than as
+part of it — and once one thing is pinned to the viewer, rotating the diagram
+slides it across everything else. Notes belong on the `floor`, captions on
+`left` or `right`. `screen` is there for the 2D view, which falls back to it
+because a wall seen from directly above has no height to stand on.
 
 `labelSize` sets the caption size in pixels on any of them, 6–96, default 12.
 
@@ -269,9 +303,9 @@ on.
 
 Text, pictures, block captions and connection captions default to `floor` —
 lying on the ground is what reads as part of the isometric scene rather than
-stuck on top of it. Zone
-captions default to `right`. Set `plane` (or `labelPlane`) to `screen` when
-something must stay square to the viewer whatever the camera is doing. Content never renders mirrored:
+stuck on top of it, and for a note that is also the placement to keep. Zone
+captions default to `right`. A block's caption is the one thing that wants
+moving: stand it against the wall its cluster faces. Content never renders mirrored:
 orbiting the camera eventually brings you to the back of a wall, and the
 editor flips the plane rather than showing you the reverse of your own text.
 In the 2D view the walls have no height to stand on, so anything on one falls
@@ -338,9 +372,36 @@ These are normalised to the canonical form on save.
 
 ## Writing a good layout
 
-- Leave a one-cell gap between blocks; adjacent blocks read as one mass.
+Diagrams get ugly because their authors try to make them varied. Start from
+these and depart only where you can name the reason.
+
+- One footprint, `[2, 2]`, and one height, `1`, on every block. Uniform height
+  is what makes occlusion impossible rather than merely unlikely.
+- One caption size, 40–50, on every block; build hierarchy out of a single
+  zone title at `labelSize: 96` instead. Two big titles compete.
+- Set `labelPlane` on every block: `left` or `right`, never the `floor`
+  default. Captions are proper nouns of ten characters or fewer — an
+  explanation belongs in `texts`, where it has the floor to itself.
+- Put blocks on a regular pitch, every five cells in `x` and four to six in
+  `y`, and leave a one-cell gap: adjacent blocks read as one mass.
 - Lay out left to right along `+x` for request flow, and use `+y` for tiers.
-- Vary `height` so the diagram has a silhouette: databases tall, gateways flat.
+  Spreading along `x - y` is free, since blocks side by side on screen never
+  hide each other.
+- Draw at most one connection per three blocks. Sharing a zone already states
+  the relationship, so lines are for what grouping cannot say: crossings of a
+  zone boundary, pipeline order, and exceptional paths.
+- Give the ones you do draw a caption at `labelSize: 30`; the 12px default is a
+  connection caption you have to go looking for.
+- Place a connection's two ends in the same row or the same column, so the run
+  is a straight line with nothing to follow. Routing is orthogonal and picks
+  between an x-first and a y-first elbow: if a block sits on both, the line
+  vanishes behind it and the eye joins it to the wrong thing. Two runs along
+  one row are a single thick line, and at this density a crossing means two
+  blocks are in the wrong order. Move a block, never add a line.
+- Give a nested zone a colour far from its parent's. A zone inside a zone is
+  painted over it and captioned in a shade of itself, so a subnet coloured near
+  its VPC loses its edge, loses its caption, and the two read as one. At least
+  a quarter turn of hue, and a difference in lightness too.
 - Put a zone's `rect` origin one cell outside its contents on every side.
 
 ### Tall blocks hide short ones

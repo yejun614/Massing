@@ -41,6 +41,69 @@ const BARE_IMPORT_RE = /^\s*import\s+['"]([^'"]+)['"];?\s*$/gm;
 const EXPORT_KEYWORD_RE = /^(\s*)export\s+(?=(?:async\s+)?(?:function|class|const|let|var)\b)/gm;
 const EXPORT_LIST_RE = /^\s*export\s*\{[^}]*\};?\s*$/gm;
 
+/**
+ * The source with every template literal's contents replaced by spaces.
+ *
+ * Everything below reads modules with line-oriented patterns, which cannot
+ * tell a line of code from a line of a string that happens to contain code.
+ * `data/prompt.js` holds an entire JavaScript file inside a template literal,
+ * and read literally it imports `node:fs` and declares a top-level `PLANES` --
+ * a bare import the bundle rejects, and a collision with `geom/plane.js`.
+ *
+ * Blanking is exactly length-preserving, newlines included, so a match found
+ * here can be spliced out of the real source at the same offsets. Ordinary
+ * quoted strings are tracked but left alone, because `from './doc.js'` is a
+ * string this file very much needs to read.
+ */
+function blankTemplates(source) {
+  const out = [];
+  // Each `${` inside a template opens a fresh code frame, which its matching
+  // `}` closes -- so the nesting has to be a stack rather than a flag.
+  const stack = [{ mode: 'code', depth: 0 }];
+  let i = 0;
+
+  const take = (n) => { out.push(source.slice(i, i + n)); i += n; };
+  const hide = (n) => {
+    for (let k = 0; k < n; k++) out.push(source[i + k] === '\n' ? '\n' : ' ');
+    i += n;
+  };
+
+  while (i < source.length) {
+    const frame = stack[stack.length - 1];
+    const c = source[i];
+    const pair = source.slice(i, i + 2);
+
+    switch (frame.mode) {
+      case 'template':
+        if (c === '\\') hide(2);
+        else if (c === '`') { stack.pop(); take(1); }
+        else if (pair === '${') { stack.push({ mode: 'code', depth: 0 }); take(2); }
+        else hide(1);
+        break;
+      case 'line':
+        if (c === '\n') stack.pop();
+        take(1);
+        break;
+      case 'block':
+        if (pair === '*/') { stack.pop(); take(2); } else take(1);
+        break;
+      case 'quote':
+        if (c === '\\') take(2);
+        else { if (c === frame.quote) stack.pop(); take(1); }
+        break;
+      default:
+        if (pair === '//') { stack.push({ mode: 'line' }); take(2); }
+        else if (pair === '/*') { stack.push({ mode: 'block' }); take(2); }
+        else if (c === "'" || c === '"') { stack.push({ mode: 'quote', quote: c }); take(1); }
+        else if (c === '`') { stack.push({ mode: 'template' }); take(1); }
+        else if (c === '{') { frame.depth++; take(1); }
+        else if (c === '}' && frame.depth === 0 && stack.length > 1) { stack.pop(); take(1); }
+        else { if (c === '}') frame.depth--; take(1); }
+    }
+  }
+  return out.join('');
+}
+
 /** Depth-first walk producing modules in dependency order. */
 function collect(entry) {
   const ordered = [];
@@ -54,8 +117,9 @@ function collect(entry) {
     state.set(path, 'visiting');
 
     const source = readFileSync(path, 'utf8');
-    checkModule(path, source);
-    for (const specifier of importsOf(source)) {
+    const code = blankTemplates(source);
+    checkModule(path, code);
+    for (const specifier of importsOf(code)) {
       if (!specifier.startsWith('.')) {
         throw new Error(`${rel(path)} imports "${specifier}"; the bundle allows only relative paths`);
       }
@@ -63,7 +127,7 @@ function collect(entry) {
     }
 
     state.set(path, 'done');
-    ordered.push({ path, source });
+    ordered.push({ path, source, code });
   }
 
   visit(entry, entry);
@@ -90,14 +154,33 @@ function checkModule(path, source) {
   }
 }
 
-/** Remove module syntax, leaving declarations that are valid in one scope. */
-function stripModuleSyntax(source) {
-  return source
-    .replace(IMPORT_RE, '')
-    .replace(BARE_IMPORT_RE, '')
-    .replace(EXPORT_LIST_RE, '')
-    .replace(EXPORT_KEYWORD_RE, '$1')
-    .trimEnd();
+/**
+ * Remove module syntax, leaving declarations that are valid in one scope.
+ *
+ * Matched against `code` -- the same text with template literals blanked --
+ * and spliced out of `source`, so a quoted example of an import survives into
+ * the bundle instead of being edited as if it were one. The two are the same
+ * length by construction, which is what makes the offsets interchangeable.
+ */
+function stripModuleSyntax(source, code) {
+  const cuts = [];
+  for (const re of [IMPORT_RE, BARE_IMPORT_RE, EXPORT_LIST_RE]) {
+    for (const m of code.matchAll(re)) cuts.push([m.index, m.index + m[0].length, '']);
+  }
+  // The keyword alone goes; the indentation in front of it stays.
+  for (const m of code.matchAll(EXPORT_KEYWORD_RE)) {
+    cuts.push([m.index, m.index + m[0].length, m[1]]);
+  }
+  cuts.sort((a, b) => a[0] - b[0]);
+
+  let out = '';
+  let at = 0;
+  for (const [start, end, text] of cuts) {
+    if (start < at) continue; // one match already covers this stretch
+    out += source.slice(at, start) + text;
+    at = end;
+  }
+  return (out + source.slice(at)).trimEnd();
 }
 
 /** Names declared at a module's top level, to catch collisions after merging. */
@@ -111,8 +194,8 @@ function topLevelNames(source) {
 function assertNoCollisions(modules) {
   const owner = new Map();
   const clashes = [];
-  for (const { path, source } of modules) {
-    for (const name of topLevelNames(source)) {
+  for (const { path, code } of modules) {
+    for (const name of topLevelNames(code)) {
       if (owner.has(name)) clashes.push(`${name} (${rel(owner.get(name))} and ${rel(path)})`);
       else owner.set(name, path);
     }
@@ -162,7 +245,7 @@ export function build({ docPath, fontPath, analytics = false } = {}) {
   assertNoCollisions(modules);
 
   const script = modules
-    .map(({ path, source }) => `// ---- ${rel(path)} ${'-'.repeat(Math.max(0, 60 - rel(path).length))}\n${stripModuleSyntax(source)}`)
+    .map(({ path, source, code }) => `// ---- ${rel(path)} ${'-'.repeat(Math.max(0, 60 - rel(path).length))}\n${stripModuleSyntax(source, code)}`)
     .join('\n\n');
 
   let appCss = readFileSync(resolve(ROOT, 'styles/app.css'), 'utf8');
