@@ -80,6 +80,13 @@ for a name that is demonstrably on the list. `gemini-flash-lite-latest` cannot
 be retired underneath you; it can move under you, which is the better half of
 that trade. Pin a version here if you would rather own the upgrade.
 
+**Thinking models are handled.** Everything from Gemini 3 on stamps each part it
+produces with a reasoning signature and refuses the *next* request if the parts
+come back without it — so a conversation works perfectly on its first turn and
+fails on its second. The proxy carries those through without reading them. A
+conversation saved before this was true cannot be continued, and says so rather
+than repeating Google's wording at someone who cannot act on it.
+
 **If a model call fails**, the message quotes Google and suggests what to use
 instead, asked from the key at the moment it failed:
 

@@ -217,6 +217,7 @@ function sanitiseMessages(raw) {
     if (!roles.has(message.role)) continue;
     const clean = { role: message.role };
     if (typeof message.content === 'string') clean.content = message.content;
+    if (typeof message.signature === 'string') clean.signature = message.signature;
     if (message.role === 'tool') {
       if (typeof message.tool_call_id !== 'string') continue;
       clean.tool_call_id = message.tool_call_id;
@@ -234,6 +235,7 @@ function sanitiseMessages(raw) {
               ? call.function.arguments
               : JSON.stringify(call.function.arguments ?? {}),
           },
+          ...(typeof call.signature === 'string' ? { signature: call.signature } : {}),
         }));
       // An assistant turn with neither words nor a call is nothing at all, and
       // a turn with no parts is rejected upstream.
@@ -249,11 +251,20 @@ function sanitiseMessages(raw) {
 /**
  * Our shape into Gemini's `contents`.
  *
- * Three things differ and all three are handled here. Gemini's assistant role
- * is `model`. A tool result is not its own role — it is a `functionResponse`
- * part in a *user* turn, and consecutive results belong in one turn. And there
- * are no call ids: a response is matched to its call by function name, so the
- * ids the client keeps are looked up here and dropped rather than sent.
+ * Four things differ and all four are handled here. Gemini's assistant role is
+ * `model`. A tool result is not its own role — it is a `functionResponse` part
+ * in a *user* turn, and consecutive results belong in one turn. There are no
+ * call ids: a response is matched to its call by function name, so the ids the
+ * client keeps are looked up here and dropped rather than sent.
+ *
+ * And the thinking models — everything from Gemini 3 on — stamp each part they
+ * produce with a `thoughtSignature`, and refuse the *next* request if the parts
+ * come back without it. The proxy neither reads nor understands those; it
+ * carries them, out through the tool call and back in again. That is what the
+ * `signature` field on our own message shape is for, and it is the one place
+ * this format is not purely ours: a conversation that dropped them worked
+ * perfectly on its first turn and 400'd on its second, which is the shape of
+ * bug worth a comment.
  */
 function toContents(messages) {
   const contents = [];
@@ -267,7 +278,12 @@ function toContents(messages) {
 
     if (message.role === 'assistant') {
       const parts = [];
-      if (message.content) parts.push({ text: message.content });
+      if (message.content) {
+        parts.push({
+          text: message.content,
+          ...(message.signature ? { thoughtSignature: message.signature } : {}),
+        });
+      }
       for (const call of message.tool_calls ?? []) {
         nameOfCall.set(call.id, call.function.name);
         let args = {};
@@ -276,7 +292,10 @@ function toContents(messages) {
         } catch {
           args = {};
         }
-        parts.push({ functionCall: { name: call.function.name, args } });
+        parts.push({
+          functionCall: { name: call.function.name, args },
+          ...(call.signature ? { thoughtSignature: call.signature } : {}),
+        });
       }
       if (parts.length) contents.push({ role: 'model', parts });
       continue;
@@ -311,7 +330,10 @@ function fromCandidate(candidate) {
   const calls = [];
 
   for (const [index, part] of parts.entries()) {
-    if (typeof part.text === 'string') message.content += part.text;
+    if (typeof part.text === 'string') {
+      message.content += part.text;
+      if (part.thoughtSignature) message.signature = part.thoughtSignature;
+    }
     if (part.functionCall) {
       calls.push({
         id: `${part.functionCall.name}-${index}`,
@@ -320,6 +342,8 @@ function fromCandidate(candidate) {
           name: part.functionCall.name,
           arguments: JSON.stringify(part.functionCall.args ?? {}),
         },
+        // Carried, not understood. See `toContents`.
+        ...(part.thoughtSignature ? { signature: part.thoughtSignature } : {}),
       });
     }
   }
@@ -332,8 +356,20 @@ function describeRefusal(status, body, model) {
   const message = body?.error?.message ?? '';
   if (status === 429) return [429, 'Gemini is rate limited right now, or the quota is spent. Try again in a moment.'];
   if (status === 400 && /API key not valid/i.test(message)) return [502, 'The Gemini API key is not valid.'];
+  if (status === 400 && /thought signature/i.test(message)) {
+    // A conversation saved before the proxy knew to keep these can never be
+    // continued, however many times it is retried. Saying so beats repeating
+    // Google's wording at someone who has no way to act on it.
+    return [502, 'This conversation was saved before the editor knew to keep the model\'s reasoning signatures, so it cannot be continued. Start a new one — your diagram is untouched.'];
+  }
   if (status === 403) return [502, 'The Gemini API key is not allowed to use this model.'];
-  return [502, `The model could not be reached (${status}).`];
+  // Everything else quotes Google. A 400 from this endpoint is almost always a
+  // request this proxy built wrongly, and the upstream message is the only
+  // thing that says which part -- so throwing it away in favour of "could not
+  // be reached" costs exactly the sentence that would have explained it.
+  return [502, message
+    ? `The model refused the request (${status}): ${message}`
+    : `The model could not be reached (${status}).`];
 }
 
 export default async function handler(req, res) {
