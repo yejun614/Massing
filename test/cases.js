@@ -47,7 +47,8 @@ import { encodeGif } from '../src/core/gif.js';
 import { splitTitle } from '../src/ui/tooltip.js';
 import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from '../src/data/components.js';
 import { iconMarkup } from '../src/data/icons.js';
-import { LLM_PROMPT } from '../src/data/prompt.js';
+import { LLM_PROMPT, ASSISTANT_PROMPT } from '../src/data/prompt.js';
+import { validateDrawing, validateDocument, formatReport } from '../src/core/validate.js';
 import { THREE_TIER } from '../src/data/samples.js';
 import { overConnected, underDrawn, misplaced, documentInReply } from '../src/core/assistant.js';
 import { MODEL_TIERS, DEFAULT_TIER, isTier, modelForTier, tiersPinned } from '../src/data/models.js';
@@ -77,6 +78,8 @@ export function runCases(check) {
   coverageCases(check);
   modelCases(check);
   movableCases(check);
+  validateCases(check);
+  assistantPromptCases(check);
   heightCases(check);
   tabCases(check);
   libraryCases(check);
@@ -792,6 +795,124 @@ function coverageCases(check) {
   check('a zone that does not exist is left to the loader',
     misplaced({ groups: [], nodes: [{ id: 'n', group: 'gone', pos: [0, 0], size: [2, 2] }] }) === null,
     'two complaints about one mistake is one complaint too many');
+}
+
+/**
+ * The checks that used to be 337 lines quoted in the prompt.
+ *
+ * They were never tested before, because they were a string. That is most of
+ * the reason for moving them: the assistant now calls them as a tool, and a
+ * check that silently stops firing is worse than no check — it reports PASSED
+ * on a broken drawing.
+ */
+function validateCases(check) {
+  const clean = {
+    groups: [{ id: 'z', kind: 'vpc', label: 'Prod', rect: [0, 0, 20, 20], color: '#eab308' }],
+    nodes: [
+      { id: 'a', label: 'API', pos: [2, 2], size: [2, 2], height: 1, labelPlane: 'right', group: 'z' },
+      { id: 'b', label: 'DB', pos: [8, 2], size: [2, 2], height: 1, labelPlane: 'right', group: 'z' },
+    ],
+    edges: [],
+  };
+
+  check('a sound drawing produces no errors', (() => {
+    const { errors } = validateDrawing(clean);
+    return errors.length === 0;
+  })(), validateDrawing(clean).errors.join(' | '));
+  check('the shipped sample passes its own validator',
+    validateDrawing(normalizeDoc(THREE_TIER).doc).errors.length === 0,
+    validateDrawing(normalizeDoc(THREE_TIER).doc).errors.join(' | '));
+
+  check('a duplicate id is an error', (() => {
+    const doc = { nodes: [{ id: 'a', pos: [0, 0] }, { id: 'a', pos: [4, 0] }] };
+    return validateDrawing(doc).errors.some((m) => m.includes('duplicate id'));
+  })());
+  check('an edge to nothing is an error', (() => {
+    const doc = { nodes: [{ id: 'a', pos: [0, 0] }], edges: [{ id: 'e', from: 'a', to: 'ghost' }] };
+    return validateDrawing(doc).errors.some((m) => m.includes('does not exist'));
+  })());
+  check('overlapping blocks are an error', (() => {
+    const doc = { nodes: [{ id: 'a', pos: [0, 0] }, { id: 'b', pos: [1, 1] }] };
+    return validateDrawing(doc).errors.some((m) => m.includes('blocks overlap'));
+  })());
+  check('a block outside the zone it names is an error', (() => {
+    const doc = {
+      groups: [{ id: 'z', rect: [0, 0, 8, 8] }],
+      nodes: [{ id: 'a', pos: [30, 30], size: [2, 2], group: 'z' }],
+    };
+    return validateDrawing(doc).errors.some((m) => m.includes('not inside zone'));
+  })());
+  check('a tall block in front hiding a short one behind is an error', (() => {
+    const doc = {
+      nodes: [
+        { id: 'back', pos: [0, 0], size: [2, 2], height: 0 },
+        { id: 'front', pos: [3, 3], size: [2, 2], height: 3 },
+      ],
+    };
+    return validateDrawing(doc).errors.some((m) => m.includes('hides'));
+  })());
+  check('a fractional coordinate is an error',
+    validateDrawing({ nodes: [{ id: 'a', pos: [1.5, 0] }] }).errors.some((m) => m.includes('not integral')));
+
+  check('a caption naming a group of things warns',
+    validateDrawing({ nodes: [{ id: 'x', label: 'External APIs', pos: [0, 0], labelPlane: 'right' }] })
+      .warnings.some((m) => m.includes('several components folded')));
+  check('a caption left on the floor warns',
+    validateDrawing({ nodes: [{ id: 'x', label: 'API', pos: [0, 0] }] })
+      .warnings.some((m) => m.includes('no labelPlane')));
+  check('too many connections warns', (() => {
+    const doc = {
+      nodes: Array.from({ length: 4 }, (_, i) => ({ id: `n${i}`, pos: [i * 4, 0], labelPlane: 'right' })),
+      edges: Array.from({ length: 3 }, (_, i) => ({ id: `e${i}`, from: 'n0', to: `n${i + 1}` })),
+    };
+    return validateDrawing(doc).warnings.some((m) => m.includes('aim for 0.33'));
+  })());
+
+  check('every drawing in a tabbed file is checked, and says which', (() => {
+    const bad = { nodes: [{ id: 'a', pos: [0, 0] }, { id: 'a', pos: [9, 0] }] };
+    const { errors } = validateDocument({ tabs: [{ name: 'Overview', ...clean }, { name: 'Detail', ...bad }] });
+    return errors.length === 1 && errors[0].startsWith('Detail: ');
+  })(), JSON.stringify(validateDocument({ tabs: [{ name: 'Overview', ...clean }, { name: 'Detail', ...{ nodes: [{ id: 'a', pos: [0, 0] }, { id: 'a', pos: [9, 0] }] } }] }).errors));
+  check('a flat document is not treated as a tab', (() => {
+    const { infos } = validateDocument(clean);
+    return infos.some((m) => m.startsWith('2 blocks'));
+  })());
+
+  check('the report says PASSED or FAILED, not only a count', (() => {
+    const passed = formatReport(validateDrawing(clean));
+    const failed = formatReport(validateDrawing({ nodes: [{ id: 'a', pos: [1.5, 0] }] }));
+    return passed.includes('PASSED') && failed.includes('FAILED') && failed.startsWith('ERROR');
+  })());
+}
+
+/**
+ * The prompt the editor's assistant is actually sent.
+ *
+ * It is `LLM_PROMPT` with the validator cut out, and the cut is worth a test
+ * because nothing about it is visible: get it wrong and the endpoint keeps
+ * working, just at a third more tokens on every turn for a script the model
+ * cannot run.
+ */
+function assistantPromptCases(check) {
+  check('the assistant prompt drops the quoted validator',
+    !ASSISTANT_PROMPT.includes('readFileSync') && LLM_PROMPT.includes('readFileSync'),
+    'the script is for a reader with a shell, and the assistant has tools instead');
+  check('it points at the tool that replaced it',
+    ASSISTANT_PROMPT.includes('validate_diagram'));
+  check('the saving is the size it is meant to be',
+    LLM_PROMPT.length - ASSISTANT_PROMPT.length > 12_000,
+    `saved ${LLM_PROMPT.length - ASSISTANT_PROMPT.length} characters`);
+  check('nothing but that section was cut', (() => {
+    // The headings either side of the cut have to survive, and so does the
+    // section after it -- an off-by-one in the slice would eat the rest.
+    return ASSISTANT_PROMPT.includes('## Then look at the render') &&
+      ASSISTANT_PROMPT.includes('## Common failures') &&
+      ASSISTANT_PROMPT.includes('## Drawing a codebase') &&
+      ASSISTANT_PROMPT.startsWith('You write Massing diagrams');
+  })());
+  check('the component catalogue survives the cut',
+    COMPONENTS.every((c) => ASSISTANT_PROMPT.includes('`' + c.type + '`')),
+    'a prompt that offers a type the loader does not know is worse than useless');
 }
 
 /**

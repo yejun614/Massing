@@ -16,6 +16,7 @@
  */
 
 import { serializeDoc, normalizeDoc } from './schema.js';
+import { validateDocument, formatReport, isCatchAllCaption } from './validate.js';
 import { DEFAULT_TIER, isTier, tierFor } from '../data/models.js';
 
 const SESSIONS_KEY = 'massing:chat:v1';
@@ -99,9 +100,6 @@ export function overConnected(doc) {
  * nothing — on an edit, three blocks is three blocks someone asked for, and
  * nagging about it would make "make these blue" grow the drawing.
  */
-const CATCH_ALL =
-  /^(external|externals|other|others|etc|misc|infra|3rd[- ]party|third[- ]party|various|integrations?)\b|(apis|services|systems|clients|providers|externals|integrations)$/i;
-
 /**
  * Where a first draft stops being plausible as a whole system.
  *
@@ -117,7 +115,7 @@ export function underDrawn(doc, { fromScratch = false } = {}) {
 
   const vague = doc.nodes
     .map((n) => String(n.label ?? '').trim())
-    .filter((label) => label && CATCH_ALL.test(label));
+    .filter((label) => isCatchAllCaption(label));
   if (vague.length) {
     said.push(
       `${vague.length} block(s) are captioned as a group of things rather than as one ` +
@@ -460,6 +458,18 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
   async function runTool(name, args) {
     if (name === 'get_diagram') {
       return serializeDoc(store.state.doc);
+    }
+
+    /*
+     * Run against the document on screen, never against one passed in.
+     *
+     * The point of checking is to find out about the drawing the person is
+     * looking at. A model that could hand over its own copy would be checking
+     * what it believes it sent, which is the belief in question — and the
+     * loader may have repaired what it sent on the way in.
+     */
+    if (name === 'validate_diagram') {
+      return formatReport(validateDocument(store.state.doc));
     }
 
     /*

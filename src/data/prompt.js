@@ -6,6 +6,15 @@
  * to the clipboard, so the file, the skill and the button can never drift
  * apart. Keep it self-contained: whoever pastes it has only this text.
  *
+ * There are two exports and only one document. `LLM_PROMPT` is the whole of it,
+ * for a model working outside the editor with nothing but a shell — that reader
+ * needs the validator quoted in full, and it is a third of the length.
+ * `ASSISTANT_PROMPT` is the same text with that section cut and replaced by a
+ * pointer to the `validate_diagram` tool, for the model inside the editor,
+ * which has the tool and pays for every character on every turn. It is derived
+ * at the foot of this file rather than written out, because two copies of a
+ * document this size is one copy that is wrong.
+ *
  * It is written from what actually goes wrong. Almost every ugly diagram fails
  * the same four ways -- captions left lying on the ground, captions written as
  * sentences, one connection per relationship, and size and height varied for
@@ -980,3 +989,53 @@ render, and check overlap, legibility and line tangle with your eyes.
 | one block reads \`External APIs\` | several systems folded into a catch-all | one block each, named for the vendor |
 | tidy, and wrong about the technology | drawn from a repository's name instead of its build file | ask for the dependency list rather than guessing |
 | the diagram answers a smaller question than the one asked | parts were dropped to stay under a count | nothing here permits dropping a component; split into two diagrams instead |`;
+
+/**
+ * The same guide, for a model that has tools instead of a shell.
+ *
+ * `LLM_PROMPT` is written for somebody pasting it into a chat window, where
+ * the only way to check a document is to run something — so a third of it, by
+ * character count, is a validator quoted in full. The assistant inside the
+ * editor is in the opposite position: it cannot run a shell, and it *can* call
+ * `validate_diagram`, which runs those same checks against the document on
+ * screen. Sending it the script was paying 15,000 characters a turn to teach a
+ * skill it has no way to use.
+ *
+ * Derived rather than written out. A second copy of a 46,000-character
+ * document is a second copy that is wrong within a release, so the section is
+ * cut by locating its headings — and the cut is asserted, because a heading
+ * that gets reworded should fail a test rather than silently ship the long
+ * prompt to the endpoint that is paying for it.
+ */
+const VALIDATOR_SECTION_START = '## Check it before you hand it over';
+const VALIDATOR_SECTION_END = '## Then look at the render';
+
+/** What replaces it: the same instruction, pointing at the tool. */
+const CHECK_WITH_TOOL = `${VALIDATOR_SECTION_START}
+
+Call \`validate_diagram\` after every edit, before you reply. It runs the
+geometry checks this document describes — blocks hidden behind other blocks,
+connections that vanish under one, zone membership, contrast, caption planes,
+uniformity, connection density — against what is actually on screen, and
+answers with what it found.
+
+An ERROR means the picture is visibly broken: fix it and send the document
+again rather than reporting success. A WARN makes the drawing uglier rather
+than broken, so fix it unless you can name the reason not to.
+
+`;
+
+export const ASSISTANT_PROMPT = (() => {
+  const start = LLM_PROMPT.indexOf(VALIDATOR_SECTION_START);
+  const end = LLM_PROMPT.indexOf(VALIDATOR_SECTION_END);
+  // Not a silent fallback: shipping the unabridged prompt to the endpoint that
+  // pays per token, because a heading moved, is exactly the failure this
+  // constant exists to prevent.
+  if (start < 0 || end < 0 || end <= start) {
+    throw new Error(
+      'prompt.js: the validator section could not be located, so ASSISTANT_PROMPT ' +
+      'cannot be derived. Update VALIDATOR_SECTION_START / _END to match the headings.'
+    );
+  }
+  return LLM_PROMPT.slice(0, start) + CHECK_WITH_TOOL + LLM_PROMPT.slice(end);
+})();

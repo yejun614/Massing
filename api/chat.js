@@ -21,7 +21,7 @@
  * Response: { message, finishReason, usage }
  */
 
-import { LLM_PROMPT } from '../src/data/prompt.js';
+import { ASSISTANT_PROMPT } from '../src/data/prompt.js';
 import { DEFAULT_TIER, isTier, modelForTier, TIER_IDS } from '../src/data/models.js';
 import { send, fail, readJson, callerKey, methodAllowed } from './_lib/http.js';
 import {
@@ -189,6 +189,37 @@ const FUNCTIONS = [
     },
   },
   {
+    /*
+     * The checks the prompt used to carry, as something to call instead.
+     *
+     * The authoring guide quotes a 337-line validator, because a model in a
+     * chat window has a shell and no tools. In here that is exactly backwards:
+     * the assistant cannot run anything, and 15,000 characters of a script it
+     * has no way to execute went out with every single turn — a third of the
+     * system prompt, paid for on each request, teaching a skill it could not
+     * use. `ASSISTANT_PROMPT` cuts that section; this tool is what replaces it.
+     *
+     * The description is doing real work rather than naming the function. It is
+     * the one piece of text about checking that a model in this editor still
+     * reads, so it carries what the section it replaced was for: what the
+     * checks catch, what the two levels mean, and — the part models get wrong —
+     * that a report is something to act on rather than to summarise back.
+     */
+    name: 'validate_diagram',
+    description:
+      'Check the diagram that is open for the faults that make one unreadable: a block ' +
+      'hidden behind a taller one in front, a connection that vanishes under a block, ' +
+      'blocks overlapping, a block outside the zone it claims, zones that half-overlap, ' +
+      'a nested zone too close in colour to its parent, captions left lying on the floor ' +
+      'or written as sentences, a caption naming a group of things rather than one, notes ' +
+      'too small to read on the ground, and too many connections for the number of blocks. ' +
+      'Call it after every edit, before you reply — none of this is visible in the JSON, ' +
+      'and you cannot see the screen. ERROR means the picture is visibly broken: fix it and ' +
+      'send the document again rather than telling the person it worked. WARN means it is ' +
+      'uglier than it needs to be: fix unless you can say why not. Reporting the findings ' +
+      'back to the person instead of acting on them is the one wrong way to use this.',
+  },
+  {
     name: 'get_diagram',
     description:
       'Read the diagram currently open in the editor, as a .arch.json document. ' +
@@ -226,7 +257,7 @@ const FUNCTIONS = [
  * generated from, so an assistant in the editor and a model in a chat window
  * are working from one specification rather than two that drift.
  */
-const SYSTEM = `${LLM_PROMPT}
+const SYSTEM = `${ASSISTANT_PROMPT}
 
 ---
 
@@ -271,6 +302,10 @@ here.
 - The tool result may say the diagram is thinner than the system described, or
   that a caption reads as a group of things rather than one thing. Both are
   real defects in what you sent. Fix them and send again.
+- After an edit lands, call \`validate_diagram\` and act on what it says before
+  you reply. You cannot see the drawing; that tool is the only thing here that
+  can. A turn that ends with an unfixed ERROR has reported success on a broken
+  picture.
 - Answer in the language the person is writing in.`;
 
 /** Only the fields we understand, and only from roles we understand. */
