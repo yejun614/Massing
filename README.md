@@ -52,7 +52,7 @@ the modules load unbundled.
 | Rename anything | Double-click it — the caret lands in its caption, whether that is a block, a zone, a connection or a note |
 | Edit many at once | Select several and the inspector offers what they have in common — caption size and plane, footprint, height, line style, note styling, placement |
 | Add a picture | The picture button, or drag an image file onto the canvas, or paste a screenshot |
-| Several drawings in one file | The `+` in the bottom-left corner. Double-click a tab to rename it; the strip only appears once there are two |
+| Several drawings in one file | The `+` on the tab strip in the bottom-left corner. Click the tab you are on to rename, duplicate or close it |
 | Tidy | `A` — nudge blocks apart until nothing is hidden, keeping your layout |
 | Auto layout | `Shift+A` — re-flow the whole diagram from its connections |
 | Rotate the view | `Q` / `E` |

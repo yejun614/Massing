@@ -559,10 +559,17 @@ body.is-resizing .resizer::after { opacity: 1; }
 
 /* --- tab strip ------------------------------------------------------------
  *
- * Several drawings in one file, along the bottom-left of the canvas. A file
- * with one drawing shows only the `+`, faint until it is pointed at: it is an
- * invitation rather than a control, and a strip of chrome naming the only tab
- * there is would be neither.
+ * Several drawings in one file, along the bottom-left of the canvas.
+ *
+ * The row is opaque, and that is the whole reason it is a row rather than a
+ * bare button: this floats over a drawing whose background is whatever someone
+ * chose, so a control tinted by the page behind it disappears the moment those
+ * two agree — a faint `+` over a white diagram in dark mode was invisible.
+ *
+ * A tab is a name and nothing else. Nothing about it changes width when it
+ * becomes the current one — no bolder text, no buttons appearing — because the
+ * row must not move under the pointer that is clicking through it. What marks
+ * the current tab is a pill behind it that slides between them instead.
  */
 
 .tab-strip {
@@ -572,88 +579,137 @@ body.is-resizing .resizer::after { opacity: 1; }
   z-index: 6;
   display: flex;
   align-items: flex-end;
-  gap: 4px;
   max-width: calc(100% - 20px);
 }
 
 .tab-list {
+  position: relative; /* the sliding marker is placed against this */
   display: flex;
-  align-items: flex-end;
-  gap: 3px;
+  align-items: stretch;
+  gap: 2px;
   padding: 3px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px rgb(15 23 42 / 0.1);
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(15 23 42 / 0.12);
   /* Twenty drawings in one file is unusual and should still be reachable. */
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.tab-list::-webkit-scrollbar { display: none; }
+
+/*
+ * The marker is placed in pixels by the script and moved by this transition.
+ * It starts without one, so the first paint is where the marker is rather than
+ * a slide in from the left edge on every reload.
+ */
+.tab-marker {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+.tab-marker.is-ready {
+  transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
+              width 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
-.tab-strip.is-single .tab-list { display: none; }
-.tab-strip.is-single .tab-add { opacity: 0.35; }
-.tab-strip.is-single:hover .tab-add,
-.tab-strip.is-single .tab-add:focus-visible { opacity: 1; }
-
 .tab {
+  position: relative; /* above the marker */
   display: flex;
   align-items: center;
-  gap: 4px;
   max-width: 190px;
-  padding: 5px 8px;
-  border: 1px solid transparent;
+  padding: 5px 10px;
+  border: none;
   border-radius: 7px;
   background: none;
   color: var(--ink-muted);
   font: inherit;
   font-size: 12.5px;
+  font-weight: 550; /* the same whether or not it is the current one */
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
 
-.tab:hover { background: var(--surface-2); color: var(--ink); }
-
-.tab.is-active {
-  border-color: var(--border);
-  background: var(--accent-soft);
-  color: var(--ink);
-  font-weight: 600;
-}
+.tab:hover { color: var(--ink); }
+.tab.is-active { color: var(--ink); }
+.tab.is-editing { color: var(--accent); }
 
 .tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Small, and not so small they cannot be hit: 18px of box around a 10px mark. */
-.tab-act {
+.tab-add {
+  position: relative;
+  flex: none;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-radius: 5px;
+  width: 26px;
+  border: none;
+  border-radius: 7px;
+  background: none;
   color: var(--ink-muted);
-  opacity: 0.6;
+  cursor: pointer;
 }
+.tab-add svg { width: 13px; height: 13px; display: block; }
+.tab-add:hover { background: var(--surface-2); color: var(--ink); }
 
-.tab-act svg { width: 10px; height: 10px; }
-.tab-act:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
+/*
+ * Everything you can do to a drawing, in one place above its tab.
+ *
+ * A popover rather than buttons on the tab itself: there are three commands and
+ * two of them are rare, so putting them on the row costs it its stability for
+ * something nobody clicks twice a session.
+ */
+.tab-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  width: 208px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(15 23 42 / 0.22);
+}
+.tab-pop.is-hidden { display: none; }
 
-.tab-rename {
-  width: 120px;
-  padding: 5px 7px;
-  border: 1px solid var(--accent);
+.tab-pop-name {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--bg);
   color: var(--ink);
   font: inherit;
   font-size: 12.5px;
 }
+.tab-pop-name:focus { outline: none; border-color: var(--accent); }
 
-.tab-add { flex: none; transition: opacity 0.12s ease; }
+.tab-pop-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.tab-pop-btn {
+  flex: 1;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.tab-pop-btn .tab-pop-icon { display: block; }
+.tab-pop-btn svg { width: 12px; height: 12px; display: block; }
+.tab-pop-btn.is-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 /* --- shortcuts sheet ------------------------------------------------------ */
 
