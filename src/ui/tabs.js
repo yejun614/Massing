@@ -78,7 +78,31 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     list.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
   }, { passive: false });
 
-  const overflowing = () => list.scrollWidth - list.clientWidth > 1;
+  /**
+   * How wide the row's contents are — measured from the tabs, not from
+   * `scrollWidth`.
+   *
+   * The marker is absolutely positioned and slides between tabs over a fifth
+   * of a second, and while it is in flight it counts towards the scrollable
+   * area. Pressing New with four drawings open therefore left the marker
+   * travelling back from the fourth tab across a row that now held one, and the
+   * overflow check believed the row was three tabs wider than it was: a scroll
+   * button appeared beside a single tab and stayed there, since nothing scrolls
+   * afterwards to correct it.
+   *
+   * Layout offsets are also immune to the transforms a drag applies, which is
+   * the other place this is read from.
+   */
+  function contentWidth() {
+    const all = list.querySelectorAll('.tab');
+    const last = all[all.length - 1];
+    if (!last) return 0;
+    // The gap before the pinned `+`, and the button itself, which is part of
+    // the row's scrollable width even though it never scrolls out of view.
+    return last.offsetLeft + last.offsetWidth + 2 + addBtn.offsetWidth;
+  }
+
+  const overflowing = () => contentWidth() - list.clientWidth > 1;
 
   /**
    * A button at each end, for the people who will never think to use a wheel.
@@ -106,7 +130,7 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
 
   /** Say which way there is more, so the edges can be faded. */
   function paintOverflow() {
-    const max = list.scrollWidth - list.clientWidth;
+    const max = Math.max(0, contentWidth() - list.clientWidth);
     strip.classList.toggle('can-scroll-left', list.scrollLeft > 1);
     strip.classList.toggle('can-scroll-right', list.scrollLeft < max - 1);
   }
