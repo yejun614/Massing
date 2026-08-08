@@ -57,7 +57,7 @@ function isPlatformRefusal(err) {
  *   diagram change while looking at one part of it, and moving the camera is
  *   the opposite of that.
  */
-export function createIO({ store, toaster, onOpened }) {
+export function createIO({ store, toaster, onOpened, onFile }) {
   /**
    * Not a constant: some browsers expose the whole File System Access API and
    * only refuse at the moment of use. Once that happens there is no point
@@ -134,6 +134,7 @@ export function createIO({ store, toaster, onOpened }) {
       // reload should read -- which matters after a Save As, where the handle
       // has just moved to somewhere the document was never opened from.
       source = { handle };
+      onFile?.({ fileName: handle.name, handle });
       toaster?.info(`Saved ${handle.name}`);
       return 'saved';
     } catch (err) {
@@ -263,6 +264,9 @@ export function createIO({ store, toaster, onOpened }) {
     try {
       if (!loadText(await file.text(), file.name)) return false;
       source = bound ? { handle: bound } : { file };
+      // The library records which file this document came from, so the entry
+      // can offer to reopen it rather than only remembering that it existed.
+      onFile?.({ fileName: file.name, handle: bound ?? null });
       return true;
     } catch (err) {
       toaster?.error(`Could not read ${file.name}: ${err.message}`, { detail: describeError(err) });

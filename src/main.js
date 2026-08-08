@@ -41,6 +41,9 @@ import { createAssistantPanel } from './ui/assistant.js';
 import { createFeatures } from './core/features.js';
 import { createCloud, publishedKeyFrom } from './core/cloud.js';
 import { createAssistant } from './core/assistant.js';
+import { createLibrary } from './core/library.js';
+import { createHandleStore } from './core/handles.js';
+import { createLibraryDialog } from './ui/library.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
 
@@ -109,8 +112,25 @@ const overlay = createOverlay(scene.overlay);
 // `commands` does not exist yet, and does not need to: opening a file is the
 // one thing that happens long after start-up, and a diagram that arrives from
 // outside has no reason to land under the camera the last one left behind.
-const io = createIO({ store, toaster, onOpened: () => commands.zoomFit() });
-const commands = createCommands({ store, scene, toaster, io });
+const handles = createHandleStore();
+const library = createLibrary({ store, files: handles });
+const io = createIO({
+  store,
+  toaster,
+  onOpened: () => commands.zoomFit(),
+  // Whichever way a file arrived, the library learns which file it was — and
+  // keeps the handle, so the entry can reopen it rather than only name it.
+  onFile: async ({ fileName, handle }) => {
+    // The same file reopens its own record rather than spawning a second one,
+    // and a different file is a different diagram rather than an edit to this.
+    const known = library.matching({ fileName });
+    if (!known) library.startFresh();
+    const entry = library.remember(store.state.doc, { id: known?.id, source: 'file', fileName });
+    if (handle) await handles.keep(entry.id, handle);
+    library.remember(store.state.doc, { id: entry.id, handleKey: handle ? entry.id : null });
+  },
+});
+const commands = createCommands({ store, scene, toaster, io, library });
 const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);
@@ -119,13 +139,24 @@ const feedback = createFeedbackPrompt(document.body);
 // and in a build without the hosted marker it never asks.
 const features = createFeatures();
 const cloud = createCloud({ store, toaster });
-const assistant = createAssistant({ store, commands });
+const assistant = createAssistant({ store, commands, library });
 const exportDialog = createExportDialog(document.body, {
   store,
   exporter,
   onExported: () => feedback.maybeAsk(),
 });
-const publishDialog = createPublishDialog(document.body, { cloud, store, toaster });
+const publishDialog = createPublishDialog(document.body, {
+  cloud,
+  store,
+  toaster,
+  onPublished: (result) => library.recordPublish(result),
+});
+const libraryDialog = createLibraryDialog(document.body, {
+  library,
+  toaster,
+  onDelete: (entry) => library.forget(entry.id),
+  onOpen: (entry) => openFromLibrary(entry),
+});
 const assistantPanel = createAssistantPanel(document.body, {
   assistant,
   store,
@@ -151,6 +182,7 @@ const toolbar = createToolbar({
   onCopyLink: copyShareLink,
   onPublish: () => publishDialog.open(),
   onAssistant: () => assistantPanel.toggle(),
+  onLibrary: () => libraryDialog.open(),
   theme,
   panels,
 });
@@ -197,6 +229,20 @@ window.addEventListener('paste', (e) => {
   e.stopPropagation();
   io.insertImage(file, store.state.hover ?? { x: 0, y: 0 });
 }, true);
+/*
+ * The library follows the document, debounced like the autosave beside it.
+ *
+ * Not on every keystroke -- writing the whole list that often would be the most
+ * expensive thing in the editor -- and not only on save, because a diagram
+ * someone worked on for an hour and never saved is exactly the one worth
+ * finding in a list tomorrow.
+ */
+let libraryTimer = 0;
+store.subscribe((state, what) => {
+  if (what !== 'doc') return;
+  clearTimeout(libraryTimer);
+  libraryTimer = setTimeout(() => library.remember(state.doc), 1500);
+});
 io.startAutosave();
 
 // Does nothing at all unless this build was made with analytics in it, which
@@ -252,22 +298,64 @@ features.load().then((flags) => {
 });
 
 /**
+ * Open something out of the library, by whichever route it still has.
+ *
+ * Stored text first, because it is instant and needs nobody's permission. Then
+ * the file, which is a real prompt on a real click — and is exactly why this is
+ * not attempted at start-up. Then the published link, which is the only route
+ * left for a diagram too large to have kept its text.
+ */
+async function openFromLibrary(entry) {
+  library.setCurrent(entry.id);
+
+  const stored = library.read(entry.id);
+  if (stored?.doc) {
+    store.replaceDoc(stored.doc, 'Open', { markSaved: true });
+    io.forget();
+    commands.zoomFit();
+    toaster.info(`Opened ${entry.title}`);
+    return;
+  }
+
+  if (entry.handleKey) {
+    const handle = await handles.recall(entry.handleKey);
+    const file = handle && (await handles.fileFrom(handle));
+    if (file) return void io.loadFile(file, { handle });
+    toaster.warn(`${entry.fileName ?? 'That file'} could not be reopened — it may have moved.`);
+  }
+
+  if (entry.published && !entry.published.gone) {
+    return void openPublishedDiagram(entry.published.displayId, entry.id);
+  }
+
+  toaster.error(`"${entry.title}" has nothing left to open it from.`, {
+    detail: 'Its contents were too large to keep here, its file cannot be reached, and it has no live published link.',
+  });
+}
+
+/**
  * Open a diagram published to this deployment.
  *
  * The failure that matters is a link someone was given that does not work, so
  * it is reported with the key in it rather than swallowed — and the sample
  * stays on screen, which at least leaves something to work with.
  */
-async function openPublishedDiagram(key) {
+async function openPublishedDiagram(key, entryId = null) {
   try {
     const result = await cloud.fetchDiagram(key);
     if (result.rejection) throw new Error(result.rejection);
     store.replaceDoc(result.doc, 'Open', { markSaved: true });
     io.forget();
     commands.zoomFit();
+    const known = entryId ? { id: entryId } : library.matching({ displayId: key });
+    if (!known) library.startFresh();
+    library.remember(store.state.doc, { id: known?.id, source: 'published' });
     toaster.warnings(result.warnings);
     if (!result.warnings.length) toaster.info(`Opened ${key}`);
   } catch (err) {
+    // Expired or swept: the library stops offering the link, without a fuss
+    // about it. The record stays, because the document may still be here.
+    if (err.gone && entryId) library.markPublishGone(entryId, err.gone);
     toaster.error(`Could not open the published diagram "${key}": ${err.message}`, {
       detail: [describeError(err), '', describeEnvironment()].join('\n'),
     });
@@ -287,6 +375,11 @@ function offerRecovery() {
   el.style.cursor = 'pointer';
   el.addEventListener('click', () => {
     io.loadText(saved.text, 'recovered draft'); // frames itself
+    // The draft and the library's newest entry are the same document by two
+    // routes. Reuniting them is what keeps a restore from arriving as an
+    // untitled stranger with none of its conversations attached.
+    const known = library.matchingText(serializeDoc(store.state.doc));
+    if (known) library.setCurrent(known.id);
     el.remove();
   });
 }

@@ -165,9 +165,18 @@ export function writeSessions(sessions) {
 /**
  * @param {{store: object, commands?: object}} deps
  */
-export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
+export function createAssistant({ store, commands, library, fetchImpl = fetch } = {}) {
   let sessions = readSessions();
-  let currentId = sessions[0]?.id ?? null;
+  /**
+   * Conversations belong to the diagram they were about.
+   *
+   * A chat that says "move the database left" is meaningless against a
+   * different document, and a flat list of every conversation ever held is a
+   * list you scroll rather than one you use. Sessions carry the library entry
+   * they were started against, and the panel only offers that diagram's.
+   */
+  const mine = () => sessions.filter((s) => !library || s.diagramId === library.currentId);
+  let currentId = mine()[0]?.id ?? null;
   let busy = false;
   const listeners = new Set();
 
@@ -178,6 +187,15 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
   function current() {
     return sessions.find((s) => s.id === currentId) ?? null;
   }
+
+  /** Follow the open diagram: its conversations, and none of anyone else's. */
+  function retarget() {
+    const belongs = current()?.diagramId;
+    if (belongs !== undefined && belongs === library?.currentId) return;
+    currentId = mine()[0]?.id ?? null;
+    announce();
+  }
+  library?.subscribe?.(retarget);
 
   function persist() {
     writeSessions(sessions);
@@ -205,6 +223,7 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
       id: newId(),
       title: titleFrom(firstMessage),
       at: Date.now(),
+      diagramId: library?.currentId ?? null,
       messages: [],
     };
     sessions = [session, ...sessions].slice(0, MAX_SESSIONS);
@@ -296,7 +315,7 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
       return busy;
     },
     get sessions() {
-      return sessions;
+      return mine();
     },
     get currentId() {
       return currentId;
@@ -309,7 +328,7 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
     },
 
     select(id) {
-      if (sessions.some((s) => s.id === id)) {
+      if (mine().some((s) => s.id === id)) {
         currentId = id;
         announce();
       }
@@ -320,7 +339,7 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
     },
     remove(id) {
       sessions = sessions.filter((s) => s.id !== id);
-      if (currentId === id) currentId = sessions[0]?.id ?? null;
+      if (currentId === id) currentId = mine()[0]?.id ?? null;
       persist();
     },
 

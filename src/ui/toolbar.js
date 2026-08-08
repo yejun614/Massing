@@ -7,7 +7,7 @@ import { h, clear, setClass, setAttrs } from '../util/dom.js';
 import { UI_ICONS } from './icons-ui.js';
 import { REPO_URL } from '../data/links.js';
 
-export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, theme, panels }) {
+export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, onLibrary, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
 
   const btn = (icon, title, onClick, extra = {}) =>
@@ -54,6 +54,11 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   // --- file ----------------------------------------------------------------
   const newBtn = btn('file', 'New diagram (Ctrl+N)', () => commands.newDoc());
   const openBtn = btn('open', 'Open… (Ctrl+O)', () => io.open());
+  const libraryBtn = btn(
+    'library',
+    'Your diagrams — everything saved, opened or published from this browser',
+    () => onLibrary?.()
+  );
   const reloadBtn = btn('refresh', 'Reload from disk (R)', () => io.reload());
   const saveBtn = btn('save', 'Save (Ctrl+S)', () => io.save());
   const copyBtn = btn('clipboard', 'Copy diagram JSON to clipboard', () => io.copyDocumentJson());
@@ -102,7 +107,7 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   for (const button of [publishBtn, assistantBtn]) button.hidden = true;
 
   clear(region('file')).append(
-    newBtn, openBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn,
+    newBtn, openBtn, libraryBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn,
     publishBtn, assistantBtn, promptBtn, exportBtn
   );
 

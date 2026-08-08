@@ -40,6 +40,7 @@ export const UI_ICONS = {
   help: wrap('<circle cx="8" cy="8" r="6"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4"/><path d="M8 11.6h.01"/>'),
   panelLeft: wrap('<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.4"/><path d="M6.4 2.8v10.4"/>'),
   panelRight: wrap('<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.4"/><path d="M9.6 2.8v10.4"/>'),
+  library: wrap('<path d="M2.4 3.6h4l1.2 1.6h6a1 1 0 0 1 1 1v6.2a1 1 0 0 1-1 1H2.4a1 1 0 0 1-1-1V4.6a1 1 0 0 1 1-1Z"/><path d="M4.4 8.4h7.2M4.4 10.8h4.6"/>'),
   cloud: wrap('<path d="M4.6 12.6a3.1 3.1 0 0 1-.3-6.2 4 4 0 0 1 7.6-1 2.9 2.9 0 0 1-.5 5.7"/><path d="M8 8.4v5.4M6.1 10.3 8 8.4l1.9 1.9"/>'),
   chat: wrap('<path d="M13.6 9.4a1.4 1.4 0 0 1-1.4 1.4H6l-3 2.4v-2.4H3.8a1.4 1.4 0 0 1-1.4-1.4V3.8a1.4 1.4 0 0 1 1.4-1.4h8.4a1.4 1.4 0 0 1 1.4 1.4Z"/><path d="M5.6 5.6h4.8M5.6 7.8h3"/>'),
   share: wrap('<circle cx="11.8" cy="3.6" r="1.9"/><circle cx="11.8" cy="12.4" r="1.9"/><circle cx="4.2" cy="8" r="1.9"/><path d="m5.9 7.1 4.2-2.5M5.9 8.9l4.2 2.5"/>'),

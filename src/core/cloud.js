@@ -138,7 +138,13 @@ export function createCloud({ store, toaster } = {}) {
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? `Could not read "${key}" (${response.status}).`);
+        const err = new Error(body.error ?? `Could not read "${key}" (${response.status}).`);
+        // 404 and 410 are the two that mean "stop offering this link": swept,
+        // deleted, or expired. Anything else is a bad moment, not a verdict.
+        if (response.status === 404 || response.status === 410) {
+          err.gone = response.status === 410 ? 'expired' : 'missing';
+        }
+        throw err;
       }
       const text = await response.text();
       return parseDoc(text);

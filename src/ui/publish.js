@@ -11,7 +11,7 @@
 
 import { h, clear, copyText } from '../util/dom.js';
 
-export function createPublishDialog(root, { cloud, store, toaster }) {
+export function createPublishDialog(root, { cloud, store, toaster, onPublished }) {
   const dialog = h('dialog', { class: 'sheet sheet-narrow' });
   const name = h('input', {
     type: 'text',
@@ -67,6 +67,9 @@ export function createPublishDialog(root, { cloud, store, toaster }) {
       status.textContent = 'It was not published. The message above says why.';
       return;
     }
+    // The library keeps the address, so it can be found again without this
+    // sheet -- and so republishing under the same name updates in place.
+    onPublished?.(result);
     const kb = Math.max(1, Math.round(result.bytes / 1024));
     // The lifetime is said here or it is not said anywhere, and a link whose
     // expiry nobody mentioned is one people find out about from a document

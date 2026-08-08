@@ -49,6 +49,15 @@ import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
 import { THREE_TIER } from '../src/data/samples.js';
 import { overConnected } from '../src/core/assistant.js';
+import {
+  createLibrary,
+  withinBudget,
+  writeLibrary,
+  readLibrary,
+  MAX_TOTAL_BYTES,
+  MAX_ENTRIES,
+} from '../src/core/library.js';
+import { createEmptyDoc as emptyDoc } from '../src/core/schema.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -60,6 +69,7 @@ export function runCases(check) {
   depthCases(check);
   documentCases(check);
   densityCases(check);
+  libraryCases(check);
   textCases(check);
   arrangeCases(check);
   planarCases(check);
@@ -251,6 +261,155 @@ function depthCases(check) {
  * anyway, six diagrams out of six. Said back in the tool result -- after the
  * mistake, with the arithmetic done -- it fixes it and sends again.
  */
+/*
+ * The library lives in a five-megabyte box shared with the chat sessions, and a
+ * diagram with a screenshot pasted into it is megabytes on its own. What it
+ * does when it runs out is the whole design, so it is the part under test.
+ */
+function libraryCases(check) {
+  const entry = (id, at, textBytes) => ({
+    id,
+    at,
+    title: id,
+    text: textBytes ? 'x'.repeat(textBytes) : null,
+    fileName: `${id}.arch.json`,
+  });
+
+  check('entries come back newest first', (() => {
+    const kept = withinBudget([entry('a', 10, 100), entry('b', 30, 100), entry('c', 20, 100)]);
+    return kept.map((e) => e.id).join('') === 'bca';
+  })());
+
+  check('the list is capped', withinBudget(
+    Array.from({ length: MAX_ENTRIES + 12 }, (_, i) => entry(`e${i}`, i, 10))
+  ).length === MAX_ENTRIES);
+
+  // Six diagrams of 400 kB: each is under the per-diagram cap, together they
+  // are over the total. Age is what decides.
+  const crowded = () => Array.from({ length: 6 }, (_, i) => entry(`e${i}`, i, 400_000));
+
+  check('text is dropped before records are', (() => {
+    const kept = withinBudget(crowded());
+    return kept.length === 6 && kept.filter((e) => e.text).length < 6;
+  })());
+
+  check('the newest keeps its text longest', (() => {
+    const kept = withinBudget(crowded());
+    const byId = Object.fromEntries(kept.map((e) => [e.id, e]));
+    // Whatever had to go, it was not the one opened most recently.
+    return Boolean(byId.e5.text) && !byId.e0.text;
+  })());
+
+  check('an evicted entry says so, and keeps the way back', (() => {
+    const gone = withinBudget(crowded()).find((e) => !e.text);
+    return gone.evicted === true && typeof gone.fileName === 'string';
+  })());
+
+  check('a diagram past the per-diagram cap never keeps its text', (() => {
+    // Even with the whole budget free: the same rule `remember` applies on the
+    // way in, so the two cannot disagree about what is stored.
+    const kept = withinBudget([entry('huge', 1, 900_000)]);
+    return kept.length === 1 && kept[0].text === null && kept[0].evicted === true;
+  })());
+
+  check('records go only once every text already has', (() => {
+    // Forty entries with no text at all still fit; nothing should be dropped.
+    const kept = withinBudget(Array.from({ length: 20 }, (_, i) => entry(`e${i}`, i, 0)));
+    return kept.length === 20;
+  })());
+
+  check('one diagram cannot fill the whole budget', (() => {
+    const kept = withinBudget([entry('huge', 5, MAX_TOTAL_BYTES * 2), entry('small', 4, 100)]);
+    return kept.find((e) => e.id === 'small')?.text !== null;
+  })(), 'a pasted screenshot must not evict everything else');
+
+  // Storage that refuses everything, which is a real configuration.
+  const broken = {
+    getItem() { throw new Error('blocked'); },
+    setItem() { throw new Error('blocked'); },
+    removeItem() { throw new Error('blocked'); },
+  };
+  check('storage that throws reads as an empty library', readLibrary(broken).length === 0);
+  check('storage that throws does not take the editor down with it', (() => {
+    writeLibrary([entry('a', 1, 100)], broken);
+    return true;
+  })());
+
+  const map = new Map();
+  const fake = {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+  };
+  check('what is written is what comes back', (() => {
+    writeLibrary([entry('a', 2, 50), entry('b', 1, 50)], fake);
+    const back = readLibrary(fake);
+    return back.length === 2 && back[0].id === 'a' && back[0].text.length === 50;
+  })());
+  /*
+   * The round trip, through the real thing rather than its parts.
+   *
+   * Every unit below passed while the library did not survive a reload at all:
+   * a patch spread `id: undefined` over the id it had just been given, and
+   * `readLibrary` drops anything without one. Nothing that tested a single
+   * function could see it.
+   */
+  check('diagrams persist, and stay separate', (() => {
+    const shelf = new Map();
+    const store = {
+      getItem: (k) => shelf.get(k) ?? null,
+      setItem: (k, v) => shelf.set(k, String(v)),
+      removeItem: (k) => shelf.delete(k),
+    };
+    const lib = createLibrary({ storage: store });
+    const first = lib.remember(emptyDoc('First'));
+    lib.startFresh();
+    const second = lib.remember(emptyDoc('Second'));
+
+    if (typeof first.id !== 'string' || typeof second.id !== 'string') return false;
+    if (first.id === second.id) return false;
+    // The proof: a second library reading the same storage sees both.
+    const reopened = createLibrary({ storage: store });
+    const titles = reopened.entries.map((e) => e.title).sort().join(',');
+    return titles === 'First,Second';
+  })(), 'the library has to outlive the page it was built on');
+
+  check('editing the open diagram updates it rather than duplicating it', (() => {
+    const shelf = new Map();
+    const store = {
+      getItem: (k) => shelf.get(k) ?? null,
+      setItem: (k, v) => shelf.set(k, String(v)),
+      removeItem: (k) => shelf.delete(k),
+    };
+    const lib = createLibrary({ storage: store });
+    lib.remember(emptyDoc('Draft'));
+    lib.remember(emptyDoc('Draft, renamed'));
+    return lib.entries.length === 1 && lib.entries[0].title === 'Draft, renamed';
+  })());
+
+  check('a file is matched by its name, not by its contents', (() => {
+    const shelf = new Map();
+    const store = {
+      getItem: (k) => shelf.get(k) ?? null,
+      setItem: (k, v) => shelf.set(k, String(v)),
+      removeItem: (k) => shelf.delete(k),
+    };
+    const lib = createLibrary({ storage: store });
+    lib.remember(emptyDoc('A'), { fileName: 'a.arch.json' });
+    lib.startFresh();
+    lib.remember(emptyDoc('B'), { fileName: 'b.arch.json' });
+    return lib.matching({ fileName: 'a.arch.json' })?.title === 'A' &&
+      lib.matching({ fileName: 'nope.arch.json' }) === null;
+  })());
+
+  check('anything that is not a list of entries reads as empty', (() => {
+    fake.setItem('massing:library:v1', '{"not":"a list"}');
+    const a = readLibrary(fake).length === 0;
+    fake.setItem('massing:library:v1', 'not json at all');
+    return a && readLibrary(fake).length === 0;
+  })());
+}
+
 function densityCases(check) {
   const doc = (blocks, lines) => ({
     nodes: Array.from({ length: blocks }, (_, i) => ({ id: `n${i}` })),
