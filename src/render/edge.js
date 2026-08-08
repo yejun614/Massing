@@ -52,6 +52,8 @@ export function updateEdgeView(view, edge, ctx) {
   setAttr(view.el, 'data-id', edge.id);
   setClass(view.el, 'is-selected', ctx.selected);
   setClass(view.el, 'is-hovered', ctx.hovered);
+  // Marks what the assistant just changed, for a couple of seconds.
+  setClass(view.el, 'is-ai-touched', ctx.touched === true);
 
   setAttr(view.hit, 'points', points);
   setAttr(view.line, 'points', points);

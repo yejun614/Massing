@@ -241,3 +241,52 @@
   stroke-width: 1.4;
   stroke-dasharray: 3 3;
 }
+
+/* --- what the assistant just changed -------------------------------------- */
+
+/*
+ * The assistant replaces the whole document, so without this the diagram simply
+ * *is* different and working out how is left to the reader. Everything it added
+ * or altered pulses for a few seconds; everything it carried across unchanged
+ * stays quiet, which is what makes the pulse mean something.
+ *
+ * Drawn as a stroke rather than a fill so it reads on a block of any colour,
+ * and on the outline rather than behind it so a zone the size of the screen
+ * does not flash the whole canvas.
+ */
+@keyframes ai-touched {
+  0%   { stroke-opacity: 0; stroke-width: 1; }
+  18%  { stroke-opacity: 1; stroke-width: 3.5; }
+  100% { stroke-opacity: 0; stroke-width: 1; }
+}
+
+.block.is-ai-touched .face,
+.zone.is-ai-touched .zone-fill,
+.annotation.is-ai-touched .text-hit {
+  stroke: #7c3aed;
+  animation: ai-touched 1.6s ease-out 2;
+}
+.edge.is-ai-touched .edge-line {
+  stroke: #7c3aed;
+  animation: ai-touched 1.6s ease-out 2;
+}
+
+/*
+ * Caption included, because a change that only renames something would
+ * otherwise pulse an outline around a block that looks identical.
+ */
+.block.is-ai-touched .block-label,
+.zone.is-ai-touched .zone-label {
+  fill: #7c3aed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block.is-ai-touched .face,
+  .zone.is-ai-touched .zone-fill,
+  .annotation.is-ai-touched .text-hit,
+  .edge.is-ai-touched .edge-line {
+    animation: none;
+    stroke: #7c3aed;
+    stroke-opacity: 0.9;
+  }
+}

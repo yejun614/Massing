@@ -128,6 +128,7 @@ const exportDialog = createExportDialog(document.body, {
 const publishDialog = createPublishDialog(document.body, { cloud, store, toaster });
 const assistantPanel = createAssistantPanel(document.body, {
   assistant,
+  store,
   toaster,
   onToggle: (open) => toolbar.setAssistantOpen(open),
 });
@@ -213,6 +214,9 @@ function scheduleRender() {
     toolbar.render(state);
     palette.render(state);
     inspector.render(state);
+    // The assistant panel reads the selection, so it repaints with everything
+    // else rather than only when the conversation changes.
+    assistantPanel.render(state);
   });
 }
 store.subscribe(scheduleRender);

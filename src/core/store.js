@@ -40,6 +40,14 @@ export function createStore(doc = createEmptyDoc()) {
     hover: null,
     /** Id of the entity under the pointer, or null. */
     hoverId: null,
+    /**
+     * Ids the assistant has just touched, so the render can point at them.
+     *
+     * Not part of the document and not part of the selection: it is a fact
+     * about the last few seconds rather than about the diagram, which is why it
+     * lives here and clears itself.
+     */
+    aiTouched: [],
     /** Document revision; bumped on every committed change. */
     revision: 0,
     /** True when the document differs from the last saved copy. */

@@ -66,6 +66,58 @@ export function overConnected(doc) {
   );
 }
 
+/** How long a change stays lit after the assistant makes it. */
+const HIGHLIGHT_MS = 3200;
+
+/**
+ * What actually changed between two documents, by id.
+ *
+ * The assistant replaces the whole document every time, so "what did it do"
+ * cannot be read off the call — it has to be worked out by comparing. Anything
+ * new, and anything whose contents differ, is something to point at; everything
+ * else was carried across unchanged and pointing at it would be noise.
+ */
+export function touchedIds(before, after) {
+  const index = (doc) => {
+    const map = new Map();
+    for (const kind of ['nodes', 'groups', 'edges', 'texts', 'images']) {
+      for (const entity of doc?.[kind] ?? []) map.set(entity.id, JSON.stringify(entity));
+    }
+    return map;
+  };
+  const was = index(before);
+  const now = index(after);
+  const changed = [];
+  for (const [id, shape] of now) {
+    if (was.get(id) !== shape) changed.push(id);
+  }
+  // A document rewritten from nothing is entirely new, and lighting every
+  // block up says less than lighting none of them.
+  return changed.length === now.size && was.size === 0 ? [] : changed;
+}
+
+/**
+ * The selection, described for a model that cannot see the screen.
+ *
+ * Sent with the question rather than fetched by a tool call: "make these three
+ * blue" is unanswerable without it, and a round trip to ask which ones were
+ * meant is a round trip the person is waiting through.
+ */
+export function describeSelection(doc, selection) {
+  if (!selection?.length) return null;
+  const find = (id) => {
+    for (const [kind, list] of [
+      ['block', doc.nodes], ['zone', doc.groups], ['connection', doc.edges],
+      ['note', doc.texts], ['picture', doc.images],
+    ]) {
+      const found = list?.find((e) => e.id === id);
+      if (found) return `${id} (${kind}${found.label ? `, "${found.label}"` : ''})`;
+    }
+    return id;
+  };
+  return selection.map(find).join(', ');
+}
+
 /** A short, stable id without pulling in anything to generate one. */
 function newId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -132,6 +184,22 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
     announce();
   }
 
+  /**
+   * Point at what just changed, then stop pointing at it.
+   *
+   * The assistant replaces the whole document, so without this the diagram
+   * simply *is* different and finding out how is on the reader. The timer is
+   * replaced rather than stacked: two edits in a row should leave the second
+   * one lit for its full time, not the remainder of the first one's.
+   */
+  let highlightTimer = 0;
+  function highlight(ids) {
+    clearTimeout(highlightTimer);
+    store.setUI({ aiTouched: ids });
+    if (!ids.length) return;
+    highlightTimer = setTimeout(() => store.setUI({ aiTouched: [] }), HIGHLIGHT_MS);
+  }
+
   function startSession(firstMessage) {
     const session = {
       id: newId(),
@@ -179,9 +247,12 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
       if (parsed.rejection) {
         return `Refused: that is not a diagram — ${parsed.rejection}`;
       }
+      // Worked out before the swap, or there is nothing left to compare with.
+      const touched = touchedIds(store.state.doc, parsed.doc);
       // Through the store, so it is one undo away like any other edit.
       store.replaceDoc(parsed.doc, 'Assistant edit');
       commands?.zoomFit?.();
+      highlight(touched);
       const counts =
         `${parsed.doc.nodes.length} blocks, ${parsed.doc.groups.length} zones, ` +
         `${parsed.doc.edges.length} connections, ${parsed.doc.texts.length} notes`;
@@ -258,13 +329,23 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
      *
      * @returns {Promise<{ok: boolean, error?: string}>}
      */
-    async ask(text) {
+    /**
+     * @param {{selection?: string[]}} context  what was selected when asked.
+     */
+    async ask(text, { selection } = {}) {
       const question = String(text ?? '').trim();
       if (!question || busy) return { ok: false };
       busy = true;
 
+      const attached = describeSelection(store.state.doc, selection);
       const session = current() ?? startSession(question);
-      session.messages.push({ role: 'user', content: question });
+      // Appended to the question rather than sent as its own turn: it is part
+      // of what was asked, and a conversation reloaded tomorrow should still
+      // show why the answer was about those particular blocks.
+      session.messages.push({
+        role: 'user',
+        content: attached ? `${question}\n\n[Selected in the editor: ${attached}]` : question,
+      });
       session.at = Date.now();
       persist();
 

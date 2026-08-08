@@ -1461,3 +1461,68 @@ kbd {
 @media (max-width: 720px) {
   .chat { right: 8px; bottom: 8px; left: 8px; width: auto; height: min(60vh, 460px); }
 }
+
+/* --- what the assistant is working on ------------------------------------- */
+
+/*
+ * The selection travels with the question, so the panel says which one.
+ *
+ * Between the transcript and the box, because that is where the eye is on the
+ * way to typing, and it answers the question the message is about to raise.
+ */
+.chat-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+.chat-context.is-hidden { display: none; }
+.chat-context-label { flex: 1; min-width: 0; color: var(--ink); }
+.chat-context-drop {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.chat-context-drop:hover { background: var(--surface); color: var(--ink); }
+
+/* A turn in flight, on the panel that started it. */
+.chat.is-working { border-color: var(--accent); }
+.chat.is-working .chat-head { position: relative; overflow: hidden; }
+.chat.is-working .chat-head::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 40%;
+  background: var(--accent);
+  animation: chat-working 1.4s ease-in-out infinite;
+}
+@keyframes chat-working {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat.is-working .chat-head::after { animation: none; width: 100%; opacity: 0.5; }
+}
+.chat-attached {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}

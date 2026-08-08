@@ -49,6 +49,8 @@ export function updateBlockView(view, node, ctx) {
   setAttr(view.el, 'data-id', node.id);
   setClass(view.el, 'is-selected', ctx.selected);
   setClass(view.el, 'is-hovered', ctx.hovered);
+  // Marks what the assistant just changed, for a couple of seconds.
+  setClass(view.el, 'is-ai-touched', ctx.touched === true);
 
   const faces = boxFaces(proj, r.w, r.h, ht);
   const base = node.color;

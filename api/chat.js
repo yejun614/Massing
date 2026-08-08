@@ -199,6 +199,10 @@ here.
 - Count the connections before you send: at most one per three blocks. The tool
   result says so when you have overspent, and that is a thing to fix and send
   again — not a note to acknowledge in your reply.
+- A question may end with \`[Selected in the editor: …]\`. Those are the things
+  the person had selected when they asked, and the request is almost certainly
+  about them — "make these blue" means those. Change what they name and leave
+  the rest of the document alone.
 - The tool result lists what the loader repaired and what it refused. Those are
   real problems in what you sent — fix them and send again rather than telling
   the person it worked.

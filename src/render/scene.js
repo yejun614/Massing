@@ -107,7 +107,8 @@ export function createScene(container, { onResize } = {}) {
 
     updateGridView(grid, { cam: camera, proj, viewport: cover ?? viewport, hover: state.hover });
 
-    const ctxBase = { proj, rot, doc };
+    const touched = new Set(state.aiTouched ?? []);
+    const ctxBase = { proj, rot, doc, touched };
 
     // --- zones -------------------------------------------------------------
     const orderedGroups = groupsInPaintOrder(doc);
@@ -116,6 +117,7 @@ export function createScene(container, { onResize } = {}) {
         ...ctxBase,
         selected: selected.has(group.id),
         hovered: hoverId === group.id,
+        touched: touched.has(group.id),
       })
     );
     reorder(zones, orderedGroups, zoneViews);
@@ -129,6 +131,7 @@ export function createScene(container, { onResize } = {}) {
         ...ctxBase,
         selected: selected.has(edge.id),
         hovered: hoverId === edge.id,
+        touched: touched.has(edge.id),
       })
     );
 
@@ -143,6 +146,7 @@ export function createScene(container, { onResize } = {}) {
         ...ctxBase,
         selected: selected.has(node.id),
         hovered: hoverId === node.id,
+        touched: touched.has(node.id),
       })
     );
     reorder(blocks, ordered, blockViews);

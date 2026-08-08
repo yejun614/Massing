@@ -12,7 +12,23 @@
 
 import { h, clear, setClass } from '../util/dom.js';
 
-export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
+/**
+ * A question, and what was selected when it was asked.
+ *
+ * The two travel as one string so a conversation reopened tomorrow still says
+ * why the answer was about those particular blocks. They are shown apart,
+ * because only the first half is what anybody typed.
+ */
+function splitAttachment(content) {
+  const at = String(content ?? '').indexOf('\n\n[Selected in the editor: ');
+  if (at < 0) return [content, null];
+  return [
+    content.slice(0, at),
+    content.slice(at).replace(/^\s*\[Selected in the editor: /, '').replace(/\]\s*$/, ''),
+  ];
+}
+
+export function createAssistantPanel(root, { assistant, store, toaster, onToggle }) {
   let open = false;
 
   const log = h('div', { class: 'chat-log' });
@@ -34,6 +50,22 @@ export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
   });
 
   const sendBtn = h('button', { class: 'btn btn-primary', type: 'button', text: 'Send', onClick: () => submit() });
+  const contextLabel = h('span', { class: 'chat-context-label' });
+  const context = h('div', { class: 'chat-context is-hidden' }, [
+    contextLabel,
+    h('button', {
+      class: 'chat-context-drop',
+      type: 'button',
+      title: 'Ask without the selection',
+      'aria-label': 'Ask without the selection',
+      text: '✕',
+      onClick: () => {
+        attachSelection = false;
+        render();
+        input.focus();
+      },
+    }),
+  ]);
   const newBtn = h('button', {
     class: 'btn',
     type: 'button',
@@ -67,6 +99,7 @@ export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
   const picked = h('div', { class: 'chat-picker-wrap' }, [picker, menu]);
 
   let menuOpen = false;
+  let lastSelection = '';
 
   /** Close on anything that is not this menu: a click elsewhere, or Escape. */
   const onOutside = (e) => {
@@ -167,15 +200,27 @@ export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
       }),
     ]),
     log,
+    context,
     h('div', { class: 'chat-compose' }, [input, sendBtn]),
   ]);
   root.append(panel);
 
+  /*
+   * What is selected travels with the question.
+   *
+   * "Make these blue" is unanswerable without it, and asking the model to fetch
+   * the selection would put a round trip between the question and the answer.
+   * Detachable, because sometimes what is selected is simply what was last
+   * clicked and has nothing to do with what is being asked.
+   */
+  let attachSelection = true;
+
   async function submit() {
     const text = input.value.trim();
     if (!text || assistant.busy) return;
+    const selection = attachSelection ? store?.state.selection ?? [] : [];
     input.value = '';
-    const result = await assistant.ask(text);
+    const result = await assistant.ask(text, { selection });
     if (!result.ok && result.error) toaster?.error(result.error);
   }
 
@@ -194,9 +239,13 @@ export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
           'It edits the diagram directly, so undo works on whatever it does.' }));
       }
       for (const message of messages) {
+        // The selection travelled inside the question, which is right for the
+        // record and wrong for the bubble: it is not what the person typed.
+        const [said, attached] = splitAttachment(message.content);
         log.append(h('div', { class: `chat-turn is-${message.role}` }, [
           h('span', { class: 'chat-who', text: message.role === 'user' ? 'You' : 'Assistant' }),
-          h('p', { class: 'chat-text', text: message.content }),
+          h('p', { class: 'chat-text', text: said }),
+          ...(attached ? [h('span', { class: 'chat-attached', text: `with ${attached}` })] : []),
         ]));
       }
       if (assistant.busy) log.append(h('div', { class: 'chat-turn is-working', text: 'Working…' }));
@@ -210,8 +259,23 @@ export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
     // shown does not leave a stale list behind.
     if (menuOpen) buildMenu();
 
+    const selection = store?.state.selection ?? [];
+    // Re-arms itself whenever the selection changes: detaching applies to the
+    // thing that was selected then, not to everything selected afterwards.
+    if (selection.join() !== lastSelection) {
+      lastSelection = selection.join();
+      attachSelection = true;
+    }
+    const showing = attachSelection && selection.length > 0;
+    context.classList.toggle('is-hidden', !showing);
+    if (showing) {
+      contextLabel.textContent =
+        `${selection.length} selected — sent with your message`;
+    }
+
     sendBtn.disabled = assistant.busy;
     input.disabled = assistant.busy;
+    panel.classList.toggle('is-working', assistant.busy);
   }
 
   assistant.subscribe(render);
