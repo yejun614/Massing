@@ -334,16 +334,42 @@ check('the document ceiling is stated in bytes, not vibes', MAX_DOCUMENT_BYTES =
  * gateway, and an environment variable that was right last week must not be a
  * 404 today -- which is exactly what it was.
  */
-const { modelId } = await import('../api/chat.js');
+const { modelId, suggestModels } = await import('../api/chat.js');
 for (const [given, want] of [
   ['gemini-2.5-flash-lite', 'gemini-2.5-flash-lite'],
   ['google/gemini-2.5-flash-lite', 'gemini-2.5-flash-lite'],
   ['models/gemini-2.5-flash-lite', 'gemini-2.5-flash-lite'],
   ['  gemini-2.5-pro  ', 'gemini-2.5-pro'],
-  ['', 'gemini-2.5-flash-lite'],
-  [undefined, 'gemini-2.5-flash-lite'],
+  ['', 'gemini-flash-lite-latest'],
+  [undefined, 'gemini-flash-lite-latest'],
 ]) {
   check(`model ${JSON.stringify(given)} resolves to ${want}`, modelId(given) === want, modelId(given));
+}
+check('the default is an alias, not a version that can be retired',
+  modelId(undefined).endsWith('-latest'),
+  'a pinned id is what closed this deployment out of its own model');
+
+/*
+ * A real key lists forty-odd models. Suggesting all of them buries the answer,
+ * and most of them cannot hold a conversation about a diagram anyway.
+ */
+{
+  const listed = [
+    'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemma-4-31b-it',
+    'gemini-2.5-flash-preview-tts', 'gemini-flash-latest', 'gemini-flash-lite-latest',
+    'gemini-3-pro-image', 'nano-banana-pro-preview', 'lyria-3-pro-preview',
+    'gemini-robotics-er-2-preview', 'deep-research-pro-preview-12-2025',
+    'gemini-2.5-computer-use-preview-10-2025', 'gemini-3.1-flash-lite',
+  ];
+  const suggested = suggestModels(listed);
+  check('suggestions drop everything that cannot hold a conversation',
+    !suggested.some((id) => /tts|image|lyria|robotics|deep-research|computer-use|banana|gemma/.test(id)),
+    suggested.join(', '));
+  check('suggestions put the aliases first, since those do not go stale',
+    suggested[0] === 'gemini-flash-latest' && suggested[1] === 'gemini-flash-lite-latest',
+    suggested.join(', '));
+  check('suggestions stay short enough to read', suggestModels(listed).length <= 8);
+  check('no models to suggest is an empty list, not a crash', suggestModels([]).length === 0);
 }
 
 /*

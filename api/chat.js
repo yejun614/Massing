@@ -33,7 +33,42 @@ import {
 } from './_lib/policy.js';
 
 const HOST = 'https://generativelanguage.googleapis.com';
-const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+
+/**
+ * An alias rather than a pinned id, and that is the lesson of how this got
+ * here.
+ *
+ * This defaulted to `gemini-2.5-flash-lite`, which is exactly the model the
+ * project was asked to use — and which Google has since closed to new keys. It
+ * still *appears* in the model listing, so a deployment configured today gets a
+ * 404 for a name that is demonstrably on the list, with nothing to suggest the
+ * name was ever the problem.
+ *
+ * `gemini-flash-lite-latest` cannot be retired underneath a deployment nobody
+ * is watching. It can shift under one, which is the opposite trade and the
+ * better one to take by default: anyone who needs the version fixed sets
+ * `MASSING_AI_MODEL` and owns the upgrade.
+ */
+const DEFAULT_MODEL = 'gemini-flash-lite-latest';
+
+/**
+ * The handful worth suggesting, out of everything a key can call.
+ *
+ * A real key lists forty-odd models, most of which cannot hold a conversation
+ * about a diagram — text-to-speech, image generation, robotics, music, deep
+ * research. Printing all of them is a wall of text with the answer buried in
+ * it. Aliases come first because they are the ones that do not go stale.
+ */
+export function suggestModels(available = []) {
+  const chatty = (id) =>
+    id.startsWith('gemini-') &&
+    /(flash|pro)/.test(id) &&
+    !/(tts|image|embedding|robotics|lyria|computer-use|deep-research|omni|customtools|nano-banana|antigravity)/.test(id);
+  const usable = available.filter(chatty);
+  const aliases = usable.filter((id) => id.endsWith('-latest'));
+  const rest = usable.filter((id) => !id.endsWith('-latest'));
+  return [...aliases, ...rest].slice(0, 8);
+}
 
 /**
  * Which API generation to call.
@@ -356,12 +391,25 @@ export default async function handler(req, res) {
        */
       if (upstream.status === 404) {
         const models = await listModels(key, version);
-        const usable = models?.length
-          ? `This key can use: ${models.join(', ')}.`
-          : 'This key could not list any models at all, which usually means the key itself is the problem rather than the model name.';
-        return fail(res, 502, `No model called "${model}" on ${version}. ${usable}`, {
+        const suggested = suggestModels(models ?? []);
+        /*
+         * Google's own words first when it gave any. A retired model is the
+         * case that reads as nonsense otherwise: it is still in the listing, so
+         * "no model called that" is plainly untrue, and the reason -- closed to
+         * new keys -- is a thing only this message says.
+         */
+        const why = result?.error?.message
+          ? result.error.message.replace(/^\s*/, '')
+          : `No model called "${model}" on ${version}.`;
+        const next = suggested.length
+          ? ` Set MASSING_AI_MODEL to one of: ${suggested.join(', ')}.`
+          : models?.length
+            ? ' None of the models this key lists can hold a conversation.'
+            : ' This key could not list any models at all, which usually means the key itself is the problem rather than the model name.';
+        return fail(res, 502, `${why}${next}`, {
           model,
           apiVersion: version,
+          suggested,
           available: models ?? undefined,
           upstream: result?.error?.message ?? undefined,
         });

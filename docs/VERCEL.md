@@ -70,19 +70,29 @@ and add it to the project.
 | Variable | Set by | Notes |
 |---|---|---|
 | `GEMINI_API_KEY` | You | Its presence is what makes the assistant flag default to on. |
-| `MASSING_AI_MODEL` | Optional | Defaults to `gemini-2.5-flash-lite`, which is the only model this has been built and tested against. A vendor prefix is tolerated — `google/gemini-2.5-flash-lite` and `models/gemini-2.5-flash-lite` both resolve to the same thing, since the first is what this project asked for while it went through a gateway. |
+| `MASSING_AI_MODEL` | Optional | Defaults to `gemini-flash-lite-latest`. A vendor prefix is tolerated — `google/…` and `models/…` both resolve to the bare id. |
 | `GEMINI_API_VERSION` | Optional | Defaults to `v1beta`, which carries the newest models. Try `v1` if a model 404s on it. |
 
-**If the assistant answers "No model called …"**, the message lists what that key
-*can* call, asked from Google at the moment it failed:
+**The default is an alias on purpose.** A pinned version can be closed to new
+keys while staying in the model listing, which is exactly what happened to
+`gemini-2.5-flash-lite` — a deployment configured after the cutoff gets a 404
+for a name that is demonstrably on the list. `gemini-flash-lite-latest` cannot
+be retired underneath you; it can move under you, which is the better half of
+that trade. Pin a version here if you would rather own the upgrade.
 
-> No model called "gemini-2.5-flash-lite" on v1beta. This key can use:
-> gemini-2.0-flash, gemini-2.5-pro, …
+**If a model call fails**, the message quotes Google and suggests what to use
+instead, asked from the key at the moment it failed:
 
-Set `MASSING_AI_MODEL` to one of those. A model id is right or wrong for a
-particular key, project and API version, and none of the three is visible from
-the code — so the deployment asks rather than guessing. If it says the key could
-list *no* models at all, the key is the problem rather than the model name.
+> This model models/gemini-2.5-flash-lite is no longer available to new users.
+> … Set MASSING_AI_MODEL to one of: gemini-flash-latest,
+> gemini-flash-lite-latest, gemini-pro-latest, …
+
+A model is available or not for a particular key, project and API version, and
+none of the three is visible from the code — so the deployment asks rather than
+guessing. The full list comes back in `available`; the suggestions drop the
+models that cannot hold a conversation, which on a real key is most of them
+(speech, images, music, robotics, deep research). If the key could list *no*
+models at all, the key is the problem rather than the model name.
 
 The key is only ever read on the server and goes upstream in an `x-goog-api-key`
 header rather than the query string, so it stays out of access logs.
