@@ -123,9 +123,22 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
     }
 
     if (name === 'replace_diagram') {
-      const incoming = args?.document;
-      if (!incoming || typeof incoming !== 'object') {
-        return 'Refused: `document` must be a complete .arch.json object.';
+      /*
+       * The document arrives as JSON text, because that is the only way to ask
+       * for "a document of the shape you were taught" through a function schema
+       * that cannot express it. An object is accepted too: a model that sends
+       * one has done nothing wrong, and refusing it would be pedantry.
+       */
+      let incoming = args?.document;
+      if (typeof incoming === 'string') {
+        try {
+          incoming = JSON.parse(incoming);
+        } catch (err) {
+          return `Refused: \`document\` is not valid JSON — ${err.message}`;
+        }
+      }
+      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+        return 'Refused: `document` must be a complete .arch.json document.';
       }
       const parsed = normalizeDoc(incoming);
       if (parsed.rejection) {

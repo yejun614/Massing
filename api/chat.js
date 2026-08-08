@@ -1,16 +1,21 @@
 /**
- * POST /api/chat — one turn of the assistant, through Vercel AI Gateway.
+ * POST /api/chat — one turn of the assistant, against the Gemini API.
  *
- * The gateway speaks the OpenAI chat-completions shape, so this is a proxy with
- * three jobs: keep the key off the client, put the house rules in front of
- * every conversation, and describe the tools. It holds no state — the
+ * The proxy has three jobs: keep the key off the client, put the house rules in
+ * front of every conversation, and describe the tools. It holds no state — the
  * conversation lives in the browser, and so does the diagram.
  *
  * That last point is the design. The tools are *not* executed here. The model
  * asks to read or replace the diagram, this endpoint hands the request back,
  * and the editor carries it out against the document actually on screen before
- * asking again. A server that edited its own copy would be editing a document
+ * asking again. A server editing its own copy would be editing a document
  * nobody is looking at.
+ *
+ * The wire format between the browser and here is ours, not Google's: the
+ * client speaks in `{role, content, tool_calls, tool_call_id}` and this file
+ * translates both ways. That is worth the fifty lines it costs. Conversations
+ * are already sitting in people's `localStorage`, and a provider's request
+ * shape is not something to write into storage that has to outlive it.
  *
  * Request:  { messages: [{role, content, tool_calls?, tool_call_id?}] }
  * Response: { message, finishReason, usage }
@@ -27,8 +32,8 @@ import {
   createRateLimiter,
 } from './_lib/policy.js';
 
-const GATEWAY = 'https://ai-gateway.vercel.sh/v1/chat/completions';
-const DEFAULT_MODEL = 'google/gemini-2.5-flash-lite';
+const API = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
 
 const limiter = createRateLimiter(RATE_LIMITS.chat);
 
@@ -42,46 +47,42 @@ const limiter = createRateLimiter(RATE_LIMITS.chat);
  * to get that wrong. `get_diagram` is what makes that safe: read what is there,
  * then send back all of it with the change in place.
  *
- * The document is not described here beyond "the format you were taught". The
- * system prompt is the specification, and repeating a schema next to it is how
- * the two come to disagree.
+ * The document goes across as *text* rather than as a declared object. Gemini's
+ * function schema is an OpenAPI subset with no `additionalProperties`, so there
+ * is no way to say "an object of the shape you were taught" — and writing the
+ * whole `.arch.json` schema out here would be a second specification to keep in
+ * step with the one in the system prompt. A string sidesteps both: the model is
+ * already being told to write this document, and malformed JSON comes back as a
+ * tool result it can correct rather than as a schema violation it cannot see.
  */
-const TOOLS = [
+const FUNCTIONS = [
   {
-    type: 'function',
-    function: {
-      name: 'get_diagram',
-      description:
-        'Read the diagram currently open in the editor, as a .arch.json document. ' +
-        'Call this before any edit so you are changing what is actually on screen, ' +
-        'and so you keep the ids that already exist.',
-      parameters: { type: 'object', properties: {}, additionalProperties: false },
-    },
+    name: 'get_diagram',
+    description:
+      'Read the diagram currently open in the editor, as a .arch.json document. ' +
+      'Call this before any edit so you are changing what is actually on screen, ' +
+      'and so you keep the ids that already exist.',
   },
   {
-    type: 'function',
-    function: {
-      name: 'replace_diagram',
-      description:
-        'Replace what is open in the editor with a complete .arch.json document. ' +
-        'Send the whole document, never a fragment: anything left out is deleted. ' +
-        'The result reports whatever the loader had to repair, so read it and fix ' +
-        'what it names rather than assuming the edit landed as written.',
-      parameters: {
-        type: 'object',
-        properties: {
-          document: {
-            type: 'object',
-            description: 'A complete .arch.json document, in the format described above.',
-          },
-          summary: {
-            type: 'string',
-            description: 'One short line naming what changed, shown to the person watching.',
-          },
+    name: 'replace_diagram',
+    description:
+      'Replace what is open in the editor with a complete .arch.json document. ' +
+      'Send the whole document, never a fragment: anything left out is deleted. ' +
+      'The result reports whatever the loader had to repair, so read it and fix ' +
+      'what it names rather than assuming the edit landed as written.',
+    parameters: {
+      type: 'object',
+      properties: {
+        document: {
+          type: 'string',
+          description: 'A complete .arch.json document as JSON text, in the format described above.',
         },
-        required: ['document'],
-        additionalProperties: false,
+        summary: {
+          type: 'string',
+          description: 'One short line naming what changed, shown to the person watching.',
+        },
       },
+      required: ['document'],
     },
   },
 ];
@@ -105,8 +106,8 @@ here.
 - The person you are talking to is looking at a diagram. Call \`get_diagram\`
   before your first edit of a conversation, and again whenever they might have
   changed it themselves.
-- Make changes with \`replace_diagram\`, sending the complete document. Keep the
-  ids that already exist.
+- Make changes with \`replace_diagram\`, passing the complete document as JSON
+  text. Keep the ids that already exist.
 - The tool result lists what the loader repaired and what it refused. Those are
   real problems in what you sent — fix them and send again rather than telling
   the person it worked.
@@ -118,7 +119,7 @@ here.
   ambiguous in a way that does not, choose and say which way you went.
 - Answer in the language the person is writing in.`;
 
-/** Only the fields the upstream accepts, and only from roles we understand. */
+/** Only the fields we understand, and only from roles we understand. */
 function sanitiseMessages(raw) {
   if (!Array.isArray(raw)) return { error: '`messages` must be a list.' };
   const roles = new Set(['user', 'assistant', 'tool']);
@@ -147,7 +148,7 @@ function sanitiseMessages(raw) {
           },
         }));
       // An assistant turn with neither words nor a call is nothing at all, and
-      // some providers reject it outright.
+      // a turn with no parts is rejected upstream.
       if (!clean.tool_calls.length && !clean.content) continue;
     }
     if (clean.content === undefined && !clean.tool_calls) continue;
@@ -157,10 +158,101 @@ function sanitiseMessages(raw) {
   return { messages: out };
 }
 
+/**
+ * Our shape into Gemini's `contents`.
+ *
+ * Three things differ and all three are handled here. Gemini's assistant role
+ * is `model`. A tool result is not its own role — it is a `functionResponse`
+ * part in a *user* turn, and consecutive results belong in one turn. And there
+ * are no call ids: a response is matched to its call by function name, so the
+ * ids the client keeps are looked up here and dropped rather than sent.
+ */
+function toContents(messages) {
+  const contents = [];
+  const nameOfCall = new Map();
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      contents.push({ role: 'user', parts: [{ text: message.content ?? '' }] });
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const parts = [];
+      if (message.content) parts.push({ text: message.content });
+      for (const call of message.tool_calls ?? []) {
+        nameOfCall.set(call.id, call.function.name);
+        let args = {};
+        try {
+          args = JSON.parse(call.function.arguments || '{}');
+        } catch {
+          args = {};
+        }
+        parts.push({ functionCall: { name: call.function.name, args } });
+      }
+      if (parts.length) contents.push({ role: 'model', parts });
+      continue;
+    }
+
+    // A tool result. `response` has to be an object, so a plain string result
+    // is wrapped rather than sent bare.
+    const part = {
+      functionResponse: {
+        name: nameOfCall.get(message.tool_call_id) ?? 'unknown',
+        response: { result: message.content ?? '' },
+      },
+    };
+    const last = contents[contents.length - 1];
+    if (last?.role === 'user' && last.parts.every((p) => p.functionResponse)) last.parts.push(part);
+    else contents.push({ role: 'user', parts: [part] });
+  }
+  return contents;
+}
+
+/**
+ * Gemini's candidate back into our shape.
+ *
+ * Call ids are invented here because the client's loop is built around them and
+ * Gemini has none. They only have to be unique within the turn: the client uses
+ * one to label the result it sends back, and `toContents` turns it into a name
+ * again on the way out.
+ */
+function fromCandidate(candidate) {
+  const parts = candidate?.content?.parts ?? [];
+  const message = { role: 'assistant', content: '' };
+  const calls = [];
+
+  for (const [index, part] of parts.entries()) {
+    if (typeof part.text === 'string') message.content += part.text;
+    if (part.functionCall) {
+      calls.push({
+        id: `${part.functionCall.name}-${index}`,
+        type: 'function',
+        function: {
+          name: part.functionCall.name,
+          arguments: JSON.stringify(part.functionCall.args ?? {}),
+        },
+      });
+    }
+  }
+  if (calls.length) message.tool_calls = calls;
+  return message;
+}
+
+/** The refusals worth telling someone apart from "it did not work". */
+function describeRefusal(status, body) {
+  const message = body?.error?.message ?? '';
+  if (status === 429) return [429, 'Gemini is rate limited right now, or the quota is spent. Try again in a moment.'];
+  if (status === 400 && /API key not valid/i.test(message)) return [502, 'The Gemini API key is not valid.'];
+  if (status === 403) return [502, 'The Gemini API key is not allowed to use this model.'];
+  if (status === 404) return [502, 'That model does not exist, or the key cannot see it.'];
+  return [502, `The model could not be reached (${status}).`];
+}
+
 export default async function handler(req, res) {
   if (!methodAllowed(req, res, ['POST'])) return;
 
-  const key = process.env.AI_GATEWAY_API_KEY;
+  const key = process.env.GEMINI_API_KEY;
   if (!key) return fail(res, 503, 'The assistant is not configured on this deployment.');
 
   const allowed = limiter.check(callerKey(req));
@@ -179,45 +271,63 @@ export default async function handler(req, res) {
   const model = process.env.MASSING_AI_MODEL || DEFAULT_MODEL;
 
   try {
-    const upstream = await fetch(GATEWAY, {
+    const upstream = await fetch(`${API}/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${key}`,
+        // In the header rather than the query string: a key in a URL ends up in
+        // access logs, proxies and error reports.
+        'x-goog-api-key': key,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model,
-        messages: [{ role: 'system', content: SYSTEM }, ...sanitised.messages],
-        tools: TOOLS,
-        tool_choice: 'auto',
-        max_tokens: MAX_OUTPUT_TOKENS,
-        temperature: 0.4,
+        systemInstruction: { parts: [{ text: SYSTEM }] },
+        contents: toContents(sanitised.messages),
+        tools: [{ functionDeclarations: FUNCTIONS }],
+        toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+        generationConfig: {
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          temperature: 0.4,
+        },
       }),
       signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
     });
 
+    const result = await upstream.json().catch(() => null);
     if (!upstream.ok) {
-      const detail = await upstream.text().catch(() => '');
-      console.error('gateway refused', upstream.status, detail);
-      // The two the person can act on, told apart from everything else.
-      if (upstream.status === 429) {
-        return fail(res, 429, 'The model is rate limited right now. Try again in a moment.');
-      }
-      if (upstream.status === 402) {
-        return fail(res, 402, 'The AI Gateway account is out of credit.');
-      }
-      return fail(res, 502, `The model could not be reached (${upstream.status}).`);
+      console.error('gemini refused', upstream.status, result?.error?.message ?? '');
+      const [status, message] = describeRefusal(upstream.status, result);
+      return fail(res, status, message);
     }
 
-    const result = await upstream.json();
-    const choice = result.choices?.[0];
-    if (!choice?.message) return fail(res, 502, 'The model returned nothing usable.');
+    // A prompt refused outright answers with no candidate at all, which would
+    // otherwise read as an empty reply.
+    if (result?.promptFeedback?.blockReason) {
+      return fail(res, 422, `The model declined to answer (${result.promptFeedback.blockReason}).`);
+    }
+    const candidate = result?.candidates?.[0];
+    if (!candidate) return fail(res, 502, 'The model returned nothing usable.');
+
+    const message = fromCandidate(candidate);
+    if (!message.content && !message.tool_calls) {
+      // Running out of room mid-answer is the common cause, and saying which it
+      // was beats an empty bubble.
+      const why = candidate.finishReason === 'MAX_TOKENS'
+        ? 'The answer was longer than the reply limit. Ask for a smaller change.'
+        : `The model stopped without answering (${candidate.finishReason ?? 'no reason given'}).`;
+      return fail(res, 502, why);
+    }
 
     return send(res, 200, {
-      message: choice.message,
-      finishReason: choice.finish_reason ?? null,
-      usage: result.usage ?? null,
-      model: result.model ?? model,
+      message,
+      finishReason: candidate.finishReason ?? null,
+      usage: result.usageMetadata
+        ? {
+            prompt_tokens: result.usageMetadata.promptTokenCount ?? null,
+            completion_tokens: result.usageMetadata.candidatesTokenCount ?? null,
+            total_tokens: result.usageMetadata.totalTokenCount ?? null,
+          }
+        : null,
+      model: result.modelVersion ?? model,
     });
   } catch (err) {
     console.error('chat failed', err);

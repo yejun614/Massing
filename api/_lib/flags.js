@@ -36,7 +36,7 @@ const FLAGS = [
     key: 'assistant',
     env: 'MASSING_FLAG_ASSISTANT',
     edge: 'massing_assistant',
-    available: (env) => Boolean(env.AI_GATEWAY_API_KEY),
+    available: (env) => Boolean(env.GEMINI_API_KEY),
   },
 ];
 

@@ -526,13 +526,13 @@ default and both individually switchable on a live deployment:
 | | |
 |---|---|
 | **Publish** | Store the diagram and get `/d/<name>` and `/d/<hash>` back. The name can be re-pointed at a newer version by whoever claimed it; the hash never moves. Links are kept for 90 days after they are last opened, so the ones in use stay and the ones nobody opens are swept. |
-| **Assistant** | Describe a change and have it made. It runs through Vercel AI Gateway, reads and rewrites the document through tool calls, and edits go through the normal store — so undo works on whatever it does. |
+| **Assistant** | Describe a change and have it made. It calls the Gemini API, reads and rewrites the document through tool calls, and edits go through the normal store — so undo works on whatever it does. |
 
 Each is only there if the deployment says so, and the button is absent rather
 than disabled when it is not. Conversations live in this browser's
 `localStorage`, not on a server.
 
-Everything to configure — the Blob store, the AI Gateway key, the Edge Config
+Everything to configure — the Blob store, the Gemini API key, the Edge Config
 flags, the size and rate limits and what they were chosen for — is in
 [`docs/VERCEL.md`](docs/VERCEL.md).
 
