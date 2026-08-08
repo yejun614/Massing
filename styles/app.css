@@ -782,9 +782,14 @@ kbd {
     top: 0;
     bottom: 0;
     left: 0;
-    width: var(--rail-w);
-    padding: 6px 0 max(6px, env(safe-area-inset-bottom, 0));
-    padding-left: env(safe-area-inset-left, 0);
+    /*
+     * --rail-w is the lane the buttons get, so a notch widens the rail instead
+     * of eating into it: padding here squeezes a 44px button inside a 52px box
+     * and `overflow-x: hidden` then shaves the far edge off it.
+     */
+    width: calc(var(--rail-w) + env(safe-area-inset-left, 0px));
+    padding: 6px 0 max(6px, env(safe-area-inset-bottom, 0px));
+    padding-left: env(safe-area-inset-left, 0px);
     flex-direction: column;
     gap: 2px;
     background: transparent;
@@ -834,8 +839,8 @@ kbd {
     /* The bar's sticky rule pins these to the left; with both edges set the
        left one wins and the corner is never reached. */
     left: auto;
-    top: max(8px, env(safe-area-inset-top, 0));
-    right: max(8px, env(safe-area-inset-right, 0));
+    top: max(8px, env(safe-area-inset-top, 0px));
+    right: max(8px, env(safe-area-inset-right, 0px));
     flex-direction: row;
     z-index: 9;
   }
@@ -864,16 +869,16 @@ kbd {
   .toolbar.is-expanded { padding-bottom: 56px; }
   .toolbar.is-expanded .btn.is-rail-only {
     position: fixed;
-    left: env(safe-area-inset-left, 0);
-    bottom: max(6px, env(safe-area-inset-bottom, 0));
+    left: env(safe-area-inset-left, 0px);
+    bottom: max(6px, env(safe-area-inset-bottom, 0px));
     z-index: 2;
     width: var(--rail-w);
   }
 
   .zoom-dock {
     position: fixed;
-    right: max(12px, env(safe-area-inset-right, 0));
-    bottom: max(12px, env(safe-area-inset-bottom, 0));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
     z-index: 8;
     display: flex;
     flex-direction: column;
@@ -889,7 +894,7 @@ kbd {
      reachable — pressing it is one of the ways out of an open drawer. */
   .panel-scrim { inset: 0 0 0 var(--rail-w); }
   /* Clear of the zoom dock in the corner. */
-  .consent { bottom: max(78px, env(safe-area-inset-bottom, 0)); }
+  .consent { bottom: max(78px, env(safe-area-inset-bottom, 0px)); }
 
   .app { grid-template-columns: 0 1fr 0; }
 
@@ -903,11 +908,11 @@ kbd {
     z-index: 6;
     box-shadow: 0 0 40px rgb(15 23 42 / 0.28);
     transition: transform 0.18s ease-out;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   /* Beside the rail, not over it: pressing the rail is one of the ways out. */
-  .panel-left { left: var(--rail-w); padding-left: env(safe-area-inset-left, 0); }
-  .panel-right { right: 0; padding-right: env(safe-area-inset-right, 0); }
+  .panel-left { left: var(--rail-w); padding-left: env(safe-area-inset-left, 0px); }
+  .panel-right { right: 0; padding-right: env(safe-area-inset-right, 0px); }
   .panel-left.is-collapsed { transform: translateX(-101%); }
   .panel-right.is-collapsed { transform: translateX(101%); }
   /*
@@ -933,7 +938,6 @@ kbd {
 
   /* The title is the first thing worth losing when the row is this tight. */
   .doc-title { width: 74px; }
-  .toolbar { padding-left: max(10px, env(safe-area-inset-left, 0)); }
   .sheet { max-width: min(94vw, 520px); }
   .export-preview { height: 150px; }
 }
@@ -961,8 +965,8 @@ kbd {
  */
 .consent {
   position: fixed;
-  right: max(18px, env(safe-area-inset-right, 0));
-  bottom: max(18px, env(safe-area-inset-bottom, 0));
+  right: max(18px, env(safe-area-inset-right, 0px));
+  bottom: max(18px, env(safe-area-inset-bottom, 0px));
   z-index: 12;
   width: min(340px, calc(100vw - 36px));
   padding: 14px 16px;
@@ -991,8 +995,8 @@ kbd {
 /* A phone has no corner to spare: it spans the width instead. */
 @media (max-width: 559px) {
   .consent {
-    left: max(12px, env(safe-area-inset-left, 0));
-    right: max(12px, env(safe-area-inset-right, 0));
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
     width: auto;
   }
 }
