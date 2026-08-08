@@ -48,6 +48,12 @@ deployments too. **Redeploy after adding it** — it is read at build time.
 Storage → Create Database → **Blob**, then connect it to the project. That adds
 `BLOB_READ_WRITE_TOKEN` by itself; nothing else is needed.
 
+> **The store has to be public.** A private store refuses the write outright,
+> and would refuse the read too: published diagrams are fetched straight from
+> their public URL with no token, which is what keeps a read off the function's
+> bill entirely. Nothing here is private in any case — anyone with a link can
+> read it — so a private store buys nothing and breaks both halves.
+
 | Variable | Set by | Notes |
 |---|---|---|
 | `BLOB_READ_WRITE_TOKEN` | Connecting the store | Its presence is what makes the storage flag default to on. |
@@ -65,6 +71,18 @@ and add it to the project.
 |---|---|---|
 | `GEMINI_API_KEY` | You | Its presence is what makes the assistant flag default to on. |
 | `MASSING_AI_MODEL` | Optional | Defaults to `gemini-2.5-flash-lite`, which is the only model this has been built and tested against. A vendor prefix is tolerated — `google/gemini-2.5-flash-lite` and `models/gemini-2.5-flash-lite` both resolve to the same thing, since the first is what this project asked for while it went through a gateway. |
+| `GEMINI_API_VERSION` | Optional | Defaults to `v1beta`, which carries the newest models. Try `v1` if a model 404s on it. |
+
+**If the assistant answers "No model called …"**, the message lists what that key
+*can* call, asked from Google at the moment it failed:
+
+> No model called "gemini-2.5-flash-lite" on v1beta. This key can use:
+> gemini-2.0-flash, gemini-2.5-pro, …
+
+Set `MASSING_AI_MODEL` to one of those. A model id is right or wrong for a
+particular key, project and API version, and none of the three is visible from
+the code — so the deployment asks rather than guessing. If it says the key could
+list *no* models at all, the key is the problem rather than the model name.
 
 The key is only ever read on the server and goes upstream in an `x-goog-api-key`
 header rather than the query string, so it stays out of access logs.

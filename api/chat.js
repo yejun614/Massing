@@ -32,8 +32,44 @@ import {
   createRateLimiter,
 } from './_lib/policy.js';
 
-const API = 'https://generativelanguage.googleapis.com/v1beta/models';
+const HOST = 'https://generativelanguage.googleapis.com';
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+
+/**
+ * Which API generation to call.
+ *
+ * `v1beta` carries the newest models and the widest feature set, and is what
+ * the Gemini docs use. `v1` exists and lags. Configurable because "that model
+ * does not exist" and "that model does not exist *on this version*" are the
+ * same 404, and being able to try the other one without a deploy is the
+ * difference between a minute and an afternoon.
+ */
+const apiVersion = (env) => String(env.GEMINI_API_VERSION ?? 'v1beta').trim() || 'v1beta';
+
+/**
+ * What this key is actually allowed to call.
+ *
+ * Only asked after a 404, and it is the whole answer to one: a model id is
+ * right or wrong for a particular key, project and API version, and none of
+ * those is visible from here. Listing them turns "no model called X" into
+ * something someone can act on without guessing.
+ */
+async function listModels(key, version) {
+  try {
+    const response = await fetch(`${HOST}/${version}/models?pageSize=100`, {
+      headers: { 'x-goog-api-key': key },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return (body.models ?? [])
+      .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+      .map((m) => String(m.name ?? '').replace(/^models\//, ''))
+      .filter(Boolean);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The bare model id, whatever form it was configured in.
@@ -262,11 +298,6 @@ function describeRefusal(status, body, model) {
   if (status === 429) return [429, 'Gemini is rate limited right now, or the quota is spent. Try again in a moment.'];
   if (status === 400 && /API key not valid/i.test(message)) return [502, 'The Gemini API key is not valid.'];
   if (status === 403) return [502, 'The Gemini API key is not allowed to use this model.'];
-  if (status === 404) {
-    // Naming it is the whole point: this is nearly always a model id that is
-    // right for some other provider, and unnameable it looks like an outage.
-    return [502, `No model called "${model}" — check MASSING_AI_MODEL, or leave it unset for ${DEFAULT_MODEL}.`];
-  }
   return [502, `The model could not be reached (${status}).`];
 }
 
@@ -292,7 +323,8 @@ export default async function handler(req, res) {
   const model = modelId(process.env.MASSING_AI_MODEL);
 
   try {
-    const upstream = await fetch(`${API}/${encodeURIComponent(model)}:generateContent`, {
+    const version = apiVersion(process.env);
+    const upstream = await fetch(`${HOST}/${version}/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: {
         // In the header rather than the query string: a key in a URL ends up in
@@ -315,7 +347,25 @@ export default async function handler(req, res) {
 
     const result = await upstream.json().catch(() => null);
     if (!upstream.ok) {
-      console.error('gemini refused', model, upstream.status, result?.error?.message ?? '');
+      console.error('gemini refused', model, version, upstream.status, result?.error?.message ?? '');
+      /*
+       * A 404 is the one refusal worth a second request. It means this key
+       * cannot call this model on this API version, and which of those three is
+       * wrong is not visible from here -- so ask, and put the answer in the
+       * message rather than leaving someone to guess at model ids.
+       */
+      if (upstream.status === 404) {
+        const models = await listModels(key, version);
+        const usable = models?.length
+          ? `This key can use: ${models.join(', ')}.`
+          : 'This key could not list any models at all, which usually means the key itself is the problem rather than the model name.';
+        return fail(res, 502, `No model called "${model}" on ${version}. ${usable}`, {
+          model,
+          apiVersion: version,
+          available: models ?? undefined,
+          upstream: result?.error?.message ?? undefined,
+        });
+      }
       const [status, message] = describeRefusal(upstream.status, result, model);
       return fail(res, status, message);
     }

@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/d/:key",
-      "destination": "/index.html"
+      "destination": "/"
     }
   ],
   "crons": [
