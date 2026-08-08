@@ -7,7 +7,7 @@ import { h, clear, setClass, setAttrs } from '../util/dom.js';
 import { UI_ICONS } from './icons-ui.js';
 import { REPO_URL } from '../data/links.js';
 
-export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, theme, panels }) {
+export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
 
   const btn = (icon, title, onClick, extra = {}) =>
@@ -77,7 +77,30 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     'Export an image (Ctrl+E) — format, projection, grid and size',
     () => onExport?.()
   );
-  clear(region('file')).append(newBtn, openBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn, promptBtn, exportBtn);
+  /*
+   * The two hosted buttons.
+   *
+   * Hidden from the markup rather than disabled, and only revealed once the
+   * deployment has said the feature is on. A control whose only purpose is to
+   * explain that it does not work here is worse than no control, and every
+   * build that is not the hosted one has no server to ask.
+   */
+  const publishBtn = btn(
+    'cloud',
+    'Publish — store the diagram and get a short link to it',
+    () => onPublish?.()
+  );
+  const assistantBtn = btn(
+    'chat',
+    'Assistant — describe a change and have it made',
+    () => setClass(assistantBtn, 'is-active', onAssistant?.() === true)
+  );
+  for (const button of [publishBtn, assistantBtn]) button.hidden = true;
+
+  clear(region('file')).append(
+    newBtn, openBtn, reloadBtn, saveBtn, imageBtn, copyBtn, shareBtn,
+    publishBtn, assistantBtn, promptBtn, exportBtn
+  );
 
   /**
    * Name the file the button will actually read. Which file a reload picks up
@@ -243,5 +266,19 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     }
   }
 
-  return { render };
+  return {
+    render,
+    /**
+     * Reveal the buttons the deployment has switched on.
+     *
+     * Called once the flags have arrived, which is after the first paint --
+     * so the toolbar someone sees for a moment is the offline one, and it
+     * gains buttons rather than losing them. That way round is the safe one:
+     * a button that appears late is a surprise, one that vanishes is a bug.
+     */
+    setHostedFeatures(flags) {
+      publishBtn.hidden = !flags?.storage;
+      assistantBtn.hidden = !flags?.assistant;
+    },
+  };
 }

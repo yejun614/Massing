@@ -36,6 +36,11 @@ import { createTooltips } from './ui/tooltip.js';
 import { createConsent } from './ui/consent.js';
 import { createExportDialog } from './ui/export-dialog.js';
 import { createFeedbackPrompt } from './ui/feedback.js';
+import { createPublishDialog } from './ui/publish.js';
+import { createAssistantPanel } from './ui/assistant.js';
+import { createFeatures } from './core/features.js';
+import { createCloud, publishedKeyFrom } from './core/cloud.js';
+import { createAssistant } from './core/assistant.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
 
@@ -110,11 +115,18 @@ const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);
 const feedback = createFeedbackPrompt(document.body);
+// Nothing here reaches the network until `features.load()` has been answered,
+// and in a build without the hosted marker it never asks.
+const features = createFeatures();
+const cloud = createCloud({ store, toaster });
+const assistant = createAssistant({ store, commands });
 const exportDialog = createExportDialog(document.body, {
   store,
   exporter,
   onExported: () => feedback.maybeAsk(),
 });
+const publishDialog = createPublishDialog(document.body, { cloud, store, toaster });
+const assistantPanel = createAssistantPanel(document.body, { assistant, toaster });
 // The theme decides the canvas colour for any document that has not named one,
 // so what it resolves to has to reach the store the render reads.
 const theme = createTheme((state) => {
@@ -132,6 +144,8 @@ const toolbar = createToolbar({
   onCopyPrompt: copyPrompt,
   onAddImage: () => io.pickImage(store.state.hover ?? { x: 0, y: 0 }),
   onCopyLink: copyShareLink,
+  onPublish: () => publishDialog.open(),
+  onAssistant: () => assistantPanel.toggle(),
   theme,
   panels,
 });
@@ -181,7 +195,7 @@ window.addEventListener('paste', (e) => {
 io.startAutosave();
 
 // Does nothing at all unless this build was made with analytics in it, which
-// is every build except one made deliberately with MASSING_ANALYTICS=1.
+// is every build except one made deliberately with MASSING_VERCEL_FEATURES=1.
 createConsent();
 
 // --- render loop -----------------------------------------------------------
@@ -209,11 +223,48 @@ commands.zoomFit();
 store.markSaved();
 scheduleRender();
 
-// A shared link is an explicit request for one particular diagram, so it wins
-// over the autosaved draft. Offering both would put two competing documents on
-// screen with no obvious answer; the draft is still in storage either way.
-if (sharePayloadFrom()) openSharedDiagram();
+/*
+ * What to open, in order of how specific the request was.
+ *
+ * A published key in the path and a diagram inside the fragment are both
+ * someone asking for one particular document, and they beat a draft this
+ * browser happens to have. The draft is still in storage either way, and
+ * putting two competing documents on screen with no obvious answer is the
+ * failure worth avoiding.
+ */
+const publishedKey = publishedKeyFrom();
+if (publishedKey) openPublishedDiagram(publishedKey);
+else if (sharePayloadFrom()) openSharedDiagram();
 else offerRecovery();
+
+// Last, because it is the only thing here that touches the network, and the
+// editor has to be usable before the answer arrives — or without one.
+features.load().then((flags) => {
+  toolbar.setHostedFeatures(flags);
+});
+
+/**
+ * Open a diagram published to this deployment.
+ *
+ * The failure that matters is a link someone was given that does not work, so
+ * it is reported with the key in it rather than swallowed — and the sample
+ * stays on screen, which at least leaves something to work with.
+ */
+async function openPublishedDiagram(key) {
+  try {
+    const result = await cloud.fetchDiagram(key);
+    if (result.rejection) throw new Error(result.rejection);
+    store.replaceDoc(result.doc, 'Open', { markSaved: true });
+    io.forget();
+    commands.zoomFit();
+    toaster.warnings(result.warnings);
+    if (!result.warnings.length) toaster.info(`Opened ${key}`);
+  } catch (err) {
+    toaster.error(`Could not open the published diagram "${key}": ${err.message}`, {
+      detail: [describeError(err), '', describeEnvironment()].join('\n'),
+    });
+  }
+}
 
 /**
  * Surface an autosaved draft without hijacking the session: the sample stays

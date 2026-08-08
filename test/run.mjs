@@ -17,7 +17,7 @@ import {
   sharePayloadFrom,
 } from '../src/core/share.js';
 
-import { build, analyticsWanted } from '../build.js';
+import { build, vercelFeaturesWanted } from '../build.js';
 import { readConsent, writeConsent, analyticsSources } from '../src/ui/consent.js';
 
 let passed = 0;
@@ -141,10 +141,11 @@ check(
   'analytics ended up in a build that never asked for it'
 );
 
-const measured = build({ analytics: true });
-const TAG = '<meta name="massing-analytics" content="/_vercel/insights/script.js /_vercel/speed-insights/script.js">';
+const measured = build({ vercel: true });
+const TAG = '<meta name="massing-analytics" content="/_vercel/insights/script.js /_vercel/speed-insights/script.js">'
+  + '\n<meta name="massing-vercel" content="1">';
 check(
-  'asking for analytics names both scripts in the head',
+  'a hosted build names both scripts in the head',
   measured.includes(TAG) && measured.indexOf(TAG) < measured.indexOf('</head>'),
   'the tag did not make it into the head, or does not name both'
 );
@@ -157,7 +158,7 @@ check(
   'the build fetches them without waiting for consent'
 );
 check(
-  'analytics is the only difference between the two builds',
+  'the hosted marker is the only difference between the two builds',
   (() => {
     // Cut out exactly what was added and the two builds must be the same file.
     // Anything else the switch touched shows up here.
@@ -166,7 +167,7 @@ check(
     // The tag arrives on a line of its own, so its newline goes with it.
     return measured.slice(0, from - 1) + measured.slice(from + TAG.length) === plain;
   })(),
-  'enabling analytics changed something else as well'
+  'the hosted switch changed something else as well'
 );
 
 /*
@@ -175,15 +176,18 @@ check(
  * script -- the failure that matters is shipping it by accident.
  */
 for (const value of ['1', 'true', 'TRUE', ' yes ', 'on']) {
-  check(`MASSING_ANALYTICS=${JSON.stringify(value)} enables it`,
-    analyticsWanted({ MASSING_ANALYTICS: value }));
+  check(`MASSING_VERCEL_FEATURES=${JSON.stringify(value)} enables it`,
+    vercelFeaturesWanted({ MASSING_VERCEL_FEATURES: value }));
 }
 for (const value of ['', '0', 'false', 'no', 'off', 'maybe', undefined]) {
-  check(`MASSING_ANALYTICS=${JSON.stringify(value)} leaves it off`,
-    !analyticsWanted({ MASSING_ANALYTICS: value }));
+  check(`MASSING_VERCEL_FEATURES=${JSON.stringify(value)} leaves it off`,
+    !vercelFeaturesWanted({ MASSING_VERCEL_FEATURES: value }));
 }
-check('no variable at all leaves it off', !analyticsWanted({}));
-check('the --analytics flag is the same switch', analyticsWanted({}, ['--analytics']));
+check('no variable at all leaves it off', !vercelFeaturesWanted({}));
+check('the --vercel flag is the same switch', vercelFeaturesWanted({}, ['--vercel']));
+check('the old variable no longer turns anything on',
+  !vercelFeaturesWanted({ MASSING_ANALYTICS: '1' }),
+  'MASSING_ANALYTICS was renamed and must not keep working silently');
 
 /*
  * Consent. The banner is only worth anything if the answer sticks, so the
@@ -234,6 +238,94 @@ check('both scripts are read out of the one tag', (() => {
 })(), 'the pair is one decision, so they travel in one tag');
 check('the list survives odd spacing',
   analyticsSources(fakeDoc(['  a.js', '  b.js  '].join('\n'))).join() === 'a.js,b.js');
+
+
+/*
+ * The hosted endpoints.
+ *
+ * Only the parts that decide things are exercised here -- what a key is, what a
+ * name may be, what the flags resolve to, when a caller has had enough. The
+ * network calls around them are thin by design and cannot be reached from a
+ * test without a deployment; keeping the judgement out of them is what makes
+ * that acceptable.
+ */
+const {
+  normaliseDisplayId, classifyKey, hashDocument, createRateLimiter,
+  newEditToken, hashToken, tokenMatches, MAX_DOCUMENT_BYTES,
+} = await import('../api/_lib/policy.js');
+const { resolveFlag, resolveAll } = await import('../api/_lib/flags.js');
+
+for (const good of ['payments', 'my-diagram-2', 'a-b', 'x9z']) {
+  check(`"${good}" is an acceptable display id`, normaliseDisplayId(good).id === good);
+}
+for (const bad of ['', 'ab', '-lead', 'trail-', 'Has Space', 'api', 'UPPER-ok?', 'a'.repeat(65)]) {
+  check(`"${bad}" is refused as a display id`, Boolean(normaliseDisplayId(bad).error));
+}
+check('a display id is lower-cased rather than refused for case alone',
+  normaliseDisplayId('  Payments-API  ').id === 'payments-api');
+check('a name that looks like a hash is refused',
+  Boolean(normaliseDisplayId('deadbeefcafe').error),
+  'it would be indistinguishable from a lookup by hash');
+
+const { full, short } = hashDocument('{"nodes":[]}');
+check('a full hash is 64 hex characters', /^[0-9a-f]{64}$/.test(full));
+check('the short hash is the front of the full one', full.startsWith(short) && short.length === 10);
+check('the same bytes hash the same way', hashDocument('{"nodes":[]}').full === full);
+check('a key is classified by its shape', (() => {
+  return classifyKey(full).kind === 'hash' &&
+    classifyKey(short).kind === 'short' &&
+    classifyKey('payments').kind === 'display' &&
+    Boolean(classifyKey('no spaces here').error);
+})());
+
+check('an edit token matches only itself', (() => {
+  const token = newEditToken();
+  const stored = hashToken(token);
+  return tokenMatches(token, stored) &&
+    !tokenMatches(newEditToken(), stored) &&
+    !tokenMatches('', stored) &&
+    !tokenMatches(token, null) &&
+    // Length differs, which is the case a naive compare throws on.
+    !tokenMatches(token, 'abcd');
+})());
+check('the stored form is not the token itself', (() => {
+  const token = newEditToken();
+  return hashToken(token) !== token;
+})());
+
+check('a rate limiter refuses past its ceiling and forgets afterwards', (() => {
+  const limiter = createRateLimiter([[1000, 2]]);
+  const t = 10_000;
+  if (!limiter.check('a', t).ok) return false;
+  if (!limiter.check('a', t + 10).ok) return false;
+  const third = limiter.check('a', t + 20);
+  if (third.ok || third.retryAfter < 1) return false;
+  // A different caller is unaffected, and the window slides.
+  return limiter.check('b', t + 20).ok && limiter.check('a', t + 1100).ok;
+})());
+
+check('a flag needs its credentials before anything else', (() => {
+  const flag = { key: 'x', env: 'F', edge: 'f', available: (env) => Boolean(env.KEY) };
+  // Asked for in every way, and still off, because it cannot work.
+  return !resolveFlag(flag, { env: { F: '1' } }).on &&
+    !resolveFlag(flag, { env: {}, edge: { f: 'true' } }).on &&
+    resolveFlag(flag, { env: { KEY: 'k' } }).on;
+})());
+check('Edge Config outranks the environment', (() => {
+  const flag = { key: 'x', env: 'F', edge: 'f', available: () => true };
+  return !resolveFlag(flag, { env: { F: '1' }, edge: { f: '0' } }).on &&
+    resolveFlag(flag, { env: { F: '0' }, edge: { f: '1' } }).on &&
+    // An absent or blank Edge Config value defers rather than deciding.
+    !resolveFlag(flag, { env: { F: '0' }, edge: { f: '' } }).on;
+})());
+check('every flag is off on a deployment with nothing configured', (() => {
+  const all = resolveAll({ env: {} });
+  return all.storage.on === false && all.assistant.on === false &&
+    // Analytics is served by the deployment itself, so it needs no key.
+    all.analytics.on === true;
+})());
+check('the document ceiling is stated in bytes, not vibes', MAX_DOCUMENT_BYTES === 2 * 1024 * 1024);
+
 
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`${passed} passed, ${failures.length} failed`);

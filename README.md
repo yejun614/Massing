@@ -31,7 +31,7 @@ node test/run.mjs                 # geometry + document suite (143 checks)
 node build.js                     # → dist/index.html, plus the Claude skill
 node build.js --doc my.arch.json   # the same, with a diagram baked in
 node build.js --font Pretendard.woff2   # inline the font: no network at all
-MASSING_ANALYTICS=1 node build.js  # include Vercel Analytics (off by default)
+MASSING_VERCEL_FEATURES=1 node build.js  # the hosted build (off by default)
 ```
 
 `test/iso.test.html` runs the identical suite in a browser, which also proves
@@ -63,6 +63,8 @@ the modules load unbundled.
 | Reload from disk | `R`, or the refresh button — re-reads the open file after something else edited it, without moving the camera |
 | Export an image | `Ctrl+E` — SVG, PNG, JPG, WebP or GIF, with or without the grid, isometric or 2D, at 1× to 4× |
 | Share a diagram | The share button copies a link with the whole diagram inside it |
+| Publish a diagram | Deployed builds only — stores it and hands back a short link |
+| Ask for a change | Deployed builds only — the assistant edits the diagram, and undo works on what it does |
 | Everything else | The `?` button in the toolbar |
 
 ### On a phone
@@ -466,14 +468,15 @@ cannot start doing so by accident: it is one **build** switch, off unless asked
 for.
 
 ```sh
-node build.js                      # no analytics, no third-party request
-MASSING_ANALYTICS=1 node build.js  # dist/index.html names both Vercel scripts
+node build.js                            # nothing hosted, no third-party request
+MASSING_VERCEL_FEATURES=1 node build.js  # the hosted build
 ```
 
-`--analytics` is the same switch on the command line. Anything other than a
+`--vercel` is the same switch on the command line. Anything other than a
 deliberate yes — unset, empty, `0`, `false`, `off` — means off, and the build
-prints `with Vercel Analytics` when it is on, so a build that started phoning
-home says so. The tests pin both halves.
+prints `with the hosted features` when it is on, so a build that started phoning
+home says so. The tests pin both halves, including that the old
+`MASSING_ANALYTICS` no longer turns anything on.
 
 ### Nothing is fetched until someone agrees
 
@@ -511,9 +514,27 @@ requests to a third party, which is the whole reason this is a switch rather
 than a line in `index.html`.
 
 [`vercel.json`](vercel.json) points a Vercel project at `node build.js` and
-`dist/`; set `MASSING_ANALYTICS` in the project's environment variables to turn
-the snippet on for that deployment only. Nothing about it affects anyone who is
-not deploying to Vercel.
+`dist/`; set `MASSING_VERCEL_FEATURES` in the project's environment variables to
+turn this on for that deployment only. Nothing about it affects anyone who is not
+deploying to Vercel.
+
+## Deployed on Vercel
+
+The same switch turns on two more things a deployment can do, both off by
+default and both individually switchable on a live deployment:
+
+| | |
+|---|---|
+| **Publish** | Store the diagram and get `/d/<name>` and `/d/<hash>` back. The name can be re-pointed at a newer version by whoever claimed it; the hash never moves. |
+| **Assistant** | Describe a change and have it made. It runs through Vercel AI Gateway, reads and rewrites the document through tool calls, and edits go through the normal store — so undo works on whatever it does. |
+
+Each is only there if the deployment says so, and the button is absent rather
+than disabled when it is not. Conversations live in this browser's
+`localStorage`, not on a server.
+
+Everything to configure — the Blob store, the AI Gateway key, the Edge Config
+flags, the size and rate limits and what they were chosen for — is in
+[`docs/VERCEL.md`](docs/VERCEL.md).
 
 ## Not included
 

@@ -15,7 +15,7 @@
  * who has already declined is the behaviour that makes these banners hated.
  *
  * Nothing here runs in a build without the meta tag, which is every build
- * except the one deliberately made with `MASSING_ANALYTICS=1`.
+ * except the one deliberately made with `MASSING_VERCEL_FEATURES=1`.
  */
 
 import { h } from '../util/dom.js';

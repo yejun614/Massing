@@ -445,10 +445,16 @@ one scope.
 That check has already earned its place: it caught nine duplicated helpers
 (`round`, `clamp`, `download` …) that became `util/num.js` and `util/dom.js`.
 
-### The one thing that phones home
+### The things that phone home
 
-Analytics is a build switch, `MASSING_ANALYTICS`, and it is off unless asked
-for. That is not caution for its own sake: the bundle's headline property is
+Everything that reaches a server sits behind one build switch,
+`MASSING_VERCEL_FEATURES`, and it is off unless asked for. Analytics is the
+oldest of them; stored diagrams and the assistant joined it, and share the
+switch rather than adding one each — the property being protected is the same
+one, and a second variable per feature is how a deployment ends up
+half-configured. Which of the three a deployment actually offers is a separate,
+runtime question, answered by `/api/flags`; see
+[`VERCEL.md`](VERCEL.md). That is not caution for its own sake: the bundle's headline property is
 that it opens from a file with no network traffic, and a runtime flag would put
 the burden of trusting it on everyone who clones the repo. `grep _vercel` over
 the output settles the question, which is why the URL lives in `build.js` and

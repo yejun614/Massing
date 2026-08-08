@@ -17,7 +17,7 @@
  *   node build.js --doc example.json -> the same, with a diagram baked in
  *   node build.js --font Pretendard.woff2 -> inline the font, no network at all
  *   node build.js --skill            -> regenerate the Claude skill from prompt.js
- *   MASSING_ANALYTICS=1 node build.js -> include Vercel Web Analytics
+ *   MASSING_VERCEL_FEATURES=1 node build.js -> include the hosted features
  *
  * `build()` is exported and the command line only runs when this file is the
  * program, so the tests can assemble a bundle and read it without writing
@@ -237,10 +237,22 @@ function assertNoCollisions(modules) {
  * the page carries on.
  */
 const VERCEL_SCRIPTS = ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js'];
-const VERCEL_ANALYTICS =
-  `<meta name="massing-analytics" content="${VERCEL_SCRIPTS.join(' ')}">`;
 
-export function build({ docPath, fontPath, analytics = false } = {}) {
+/**
+ * What a hosted build carries: the measurement script names, and a marker
+ * saying there are functions behind this deployment.
+ *
+ * The marker is what the client tests before asking `/api/flags` which of the
+ * hosted features are switched on. Without it nothing calls anything, and that
+ * is the property worth keeping: a bundle someone downloaded, or opened from a
+ * file, makes no requests because there is nothing in it that would.
+ */
+const VERCEL_META = [
+  `<meta name="massing-analytics" content="${VERCEL_SCRIPTS.join(' ')}">`,
+  '<meta name="massing-vercel" content="1">',
+].join('\n');
+
+export function build({ docPath, fontPath, vercel = false } = {}) {
   const modules = collect(ENTRY);
   assertNoCollisions(modules);
 
@@ -287,7 +299,7 @@ export function build({ docPath, fontPath, analytics = false } = {}) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massing — Isometric architecture diagrams</title>
-${favicon}${analytics ? `\n${VERCEL_ANALYTICS}` : ''}
+${favicon}${vercel ? `\n${VERCEL_META}` : ''}
 <style>
 ${appCss}
 </style>
@@ -310,16 +322,22 @@ ${script}
 }
 
 /**
- * Whether a build should carry analytics.
+ * Whether a build should carry the hosted features at all.
+ *
+ * One switch for all of them — analytics, stored diagrams, the assistant —
+ * because they share the property that makes a switch worth having: they are
+ * the only things in the project that talk to a server. *Which* of them are
+ * live is decided at runtime by the flags, and that is a different question
+ * from whether this bundle can reach a server in the first place.
  *
  * Deliberately strict about what counts as yes. An environment variable that
  * is present but empty, or left at `0` or `false` by someone turning it off,
- * has to mean off — the failure that matters here is shipping the script by
- * accident, never leaving it out by accident.
+ * has to mean off — the failure that matters here is shipping the network code
+ * by accident, never leaving it out by accident.
  */
-export function analyticsWanted(env = process.env, args = []) {
-  if (args.includes('--analytics')) return true;
-  const value = String(env.MASSING_ANALYTICS ?? '').trim().toLowerCase();
+export function vercelFeaturesWanted(env = process.env, args = []) {
+  if (args.includes('--vercel')) return true;
+  const value = String(env.MASSING_VERCEL_FEATURES ?? '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'on'].includes(value);
 }
 
@@ -409,8 +427,8 @@ if (isProgram) {
     if (!args.includes('--skill')) {
       const docPath = flag('--doc');
       const fontPath = flag('--font');
-      const analytics = analyticsWanted(process.env, args);
-      const html = build({ docPath, fontPath, analytics });
+      const vercel = vercelFeaturesWanted(process.env, args);
+      const html = build({ docPath, fontPath, vercel });
       mkdirSync(dirname(OUT), { recursive: true });
       writeFileSync(OUT, html);
       const kb = (Buffer.byteLength(html) / 1024).toFixed(1);
@@ -419,7 +437,7 @@ if (isProgram) {
         fontPath && 'with the font inlined',
         // Said out loud, every time. A build that quietly started phoning home
         // is exactly the surprise this switch exists to prevent.
-        analytics && 'with Vercel Analytics',
+        vercel && 'with the hosted features',
       ]
         .filter(Boolean)
         .join(', ');
