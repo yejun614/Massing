@@ -633,8 +633,27 @@ body.is-resizing .resizer::after { opacity: 1; }
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 0.15s ease;
+  touch-action: none; /* a finger drag reorders rather than scrolling the row */
+  transition: color 0.15s ease,
+              transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
+
+.tab-list.is-dragging { cursor: grabbing; }
+.tab-list.is-dragging .tab-marker,
+.tab.is-dragged { transition: none; }
+
+/*
+ * The tab being dragged takes no background of its own, so the pill marking the
+ * current drawing still shows through it -- an opaque one hid exactly the thing
+ * the drag is carrying. Its neighbours dim instead, which is the affordance for
+ * dragging a tab you are not looking at.
+ */
+.tab.is-dragged {
+  z-index: 3;
+  cursor: grabbing;
+  color: var(--ink);
+}
+.tab-list.is-dragging .tab:not(.is-dragged) { opacity: 0.6; }
 
 .tab:hover { color: var(--ink); }
 .tab.is-active { color: var(--ink); }
@@ -671,7 +690,7 @@ body.is-resizing .resizer::after { opacity: 1; }
   position: absolute;
   bottom: calc(100% + 6px);
   z-index: 2;
-  width: 208px;
+  width: 244px;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -680,8 +699,15 @@ body.is-resizing .resizer::after { opacity: 1; }
 }
 .tab-pop.is-hidden { display: none; }
 
+.tab-pop-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .tab-pop-name {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -691,6 +717,18 @@ body.is-resizing .resizer::after { opacity: 1; }
   font-size: 12.5px;
 }
 .tab-pop-name:focus { outline: none; border-color: var(--accent); }
+
+/* Icon-sized, because the two of them are the keyboard's way to do what
+   dragging the tab does, not the headline. */
+.tab-pop-move {
+  flex: none;
+  width: 28px;
+  height: auto;
+  border-color: var(--border);
+  color: var(--ink-muted);
+}
+.tab-pop-move:hover:not(:disabled) { color: var(--ink); }
+.tab-pop-move svg { width: 12px; height: 12px; }
 
 .tab-pop-actions {
   display: flex;

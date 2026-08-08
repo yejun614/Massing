@@ -587,11 +587,11 @@ function tabCases(check) {
     store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
     return tabs.all()[0].doc.nodes.length === 1 && tabs.all()[1].doc.nodes.length === 2;
   })());
-  check('the last tab cannot be closed', (() => {
+  check('the last tab cannot be deleted', (() => {
     const { tabs } = controller();
     return Boolean(tabs.remove(0)) && tabs.remove(0) === null && tabs.count === 1;
   })());
-  check('a closed tab comes back where it was, with its history', (() => {
+  check('a deleted tab comes back where it was, with its history', (() => {
     const { store, tabs } = controller();
     tabs.select(1);
     store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
@@ -600,20 +600,51 @@ function tabCases(check) {
     return tabs.count === 2 && tabs.active === 1 &&
       store.state.doc.nodes.some((n) => n.id === 'z') && store.canUndo();
   })());
-  check('closing the tab before the open one keeps the open one', (() => {
+  check('deleting the tab before the open one keeps the open one', (() => {
     const { store, tabs } = controller();
     tabs.select(1);
     tabs.remove(0);
     return tabs.active === 0 && store.state.doc.nodes.length === 2;
   })());
-  check('a closed tab takes its history with it', (() => {
+  check('a drawing can be moved along the strip', (() => {
+    const { tabs } = controller();
+    tabs.rename(0, 'One');
+    tabs.rename(1, 'Two');
+    return tabs.move(0, 1) && tabs.list.map((t) => t.name).join(',') === 'Two,One';
+  })());
+  check('moving a drawing does not change the one on screen', (() => {
+    const { store, tabs } = controller();
+    const showing = store.state.doc;
+    tabs.move(0, 1);
+    // The tab that was open is still the open one, at its new index.
+    return store.state.doc === showing && tabs.active === 1 && store.canUndo() === false;
+  })());
+  check('the open tab is chased across when another moves past it', (() => {
+    const { tabs } = controller();
+    tabs.add(); // three drawings, the third showing
+    tabs.select(1);
+    tabs.move(2, 0);
+    return tabs.active === 2;
+  })(), 'a moved tab must not take the highlight with it');
+  check('a move that goes nowhere is refused', (() => {
+    const { tabs } = controller();
+    return tabs.move(0, 0) === false && tabs.move(0, 5) === false && tabs.move(-1, 0) === false;
+  })());
+  check('the file is written in the order the strip shows', (() => {
+    const { tabs } = controller();
+    tabs.rename(0, 'One');
+    tabs.rename(1, 'Two');
+    tabs.move(1, 0);
+    return tabs.document().tabs.map((t) => t.name).join(',') === 'Two,One';
+  })());
+  check('a deleted tab takes its history with it', (() => {
     const { store, tabs } = controller();
     store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
     tabs.remove(0);
     // Undoing here would put the closed drawing back on top of this one.
     return store.canUndo() === false && store.state.doc.nodes.length === 2;
   })());
-  check('closing another tab leaves this one and its history alone', (() => {
+  check('deleting another tab leaves this one and its history alone', (() => {
     const { store, tabs } = controller();
     tabs.select(1);
     store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));

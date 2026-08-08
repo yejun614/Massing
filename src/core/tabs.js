@@ -197,7 +197,7 @@ export function createTabs({ store, initial = null, onSwitch } = {}) {
     },
 
     /**
-     * Remove one, never the last, and hand it back.
+     * Delete one, never the last, and hand it back.
      *
      * A file with no drawings in it is not a state worth being able to reach:
      * emptying the only tab is what New is for, and it says so.
@@ -205,7 +205,7 @@ export function createTabs({ store, initial = null, onSwitch } = {}) {
      * What comes back is the whole drawing, history included, which is what
      * makes `insert` an undo for this rather than an approximation of one.
      *
-     * @returns {{name: string, doc: object}|null} the closed tab, or null
+     * @returns {{name: string, doc: object}|null} the deleted tab, or null
      */
     remove(index) {
       if (tabs.length <= 1 || index < 0 || index >= tabs.length) return null;
@@ -221,7 +221,7 @@ export function createTabs({ store, initial = null, onSwitch } = {}) {
         return gone;
       }
 
-      // `null`, so the closed tab's history goes with it rather than being
+      // `null`, so the deleted tab's history goes with it rather than being
       // handed to whichever tab takes its place — undoing into a drawing that
       // no longer exists would replace the one that does.
       gone.history = store.detachHistory();
@@ -229,7 +229,29 @@ export function createTabs({ store, initial = null, onSwitch } = {}) {
       return gone;
     },
 
-    /** Put a closed tab back where it was, and show it. */
+    /**
+     * Move a drawing along the strip.
+     *
+     * Nothing about the document changes and neither does what is on screen —
+     * only where its tab sits — so this never touches the store and never
+     * costs an undo entry. `active` is an index into a list that just moved,
+     * so it is chased across rather than left pointing at whatever slid into
+     * its place.
+     */
+    move(from, to) {
+      const last = tabs.length - 1;
+      if (from < 0 || from > last || to < 0 || to > last || from === to) return false;
+      capture();
+      const [moved] = tabs.splice(from, 1);
+      tabs.splice(to, 0, moved);
+      if (active === from) active = to;
+      else if (from < active && to >= active) active -= 1;
+      else if (from > active && to <= active) active += 1;
+      announce();
+      return true;
+    },
+
+    /** Put a deleted tab back where it was, and show it. */
     insert(index, tab) {
       if (!tab) return;
       capture();
