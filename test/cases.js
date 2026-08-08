@@ -26,6 +26,8 @@ import {
   CANVAS_BACKGROUNDS,
   canvasBackground,
   createEmptyDoc,
+  docRejection,
+  CONTENT_KEYS,
 } from '../src/core/schema.js';
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
@@ -316,7 +318,7 @@ function documentCases(check) {
   // kind follows the theme, and the difference has to survive the file.
 
   check('a document that names no colour follows the theme', (() => {
-    const doc = normalizeDoc({ canvas: {} }).doc;
+    const doc = normalizeDoc({ nodes: [], canvas: {} }).doc;
     return doc.canvas.background === null &&
       canvasBackground(doc, false) === CANVAS_BACKGROUNDS.light &&
       canvasBackground(doc, true) === CANVAS_BACKGROUNDS.dark;
@@ -328,19 +330,19 @@ function documentCases(check) {
   })());
 
   check('a colour someone chose is honoured whatever the theme is doing', (() => {
-    const light = normalizeDoc({ canvas: { background: '#ffffff' } }).doc;
-    const dark = normalizeDoc({ canvas: { background: '#0f172a' } }).doc;
+    const light = normalizeDoc({ nodes: [], canvas: { background: '#ffffff' } }).doc;
+    const dark = normalizeDoc({ nodes: [], canvas: { background: '#0f172a' } }).doc;
     return canvasBackground(light, true) === '#ffffff' &&
       canvasBackground(dark, false) === '#0f172a';
   })());
 
   check('a colour nobody can read is no opinion, not a broken one',
-    normalizeDoc({ canvas: { background: 'chartreuse' } }).doc.canvas.background === null);
+    normalizeDoc({ nodes: [], canvas: { background: 'chartreuse' } }).doc.canvas.background === null);
 
   check('"no opinion" is written by not being written', (() => {
     // Writing the resolved colour would turn whatever theme happened to be on
     // at save time into a preference the file then carries forever.
-    const doc = normalizeDoc({ canvas: {} }).doc;
+    const doc = normalizeDoc({ nodes: [], canvas: {} }).doc;
     const text = serializeDoc(doc);
     return !text.includes('background') &&
       parseDoc(text).doc.canvas.background === null &&
@@ -348,7 +350,7 @@ function documentCases(check) {
   })());
 
   check('a chosen colour survives the round trip', (() => {
-    const doc = normalizeDoc({ canvas: { background: '#e2e8f0' } }).doc;
+    const doc = normalizeDoc({ nodes: [], canvas: { background: '#e2e8f0' } }).doc;
     const text = serializeDoc(doc);
     return text.includes('"background": "#e2e8f0"') &&
       parseDoc(text).doc.canvas.background === '#e2e8f0' &&
@@ -360,6 +362,19 @@ function documentCases(check) {
     'the built-in diagram would be a white rectangle in a dark room');
 
   // --- caption alignment ----------------------------------------------------
+
+  check('a pinned axis with no crossover stays uncrossed', (() => {
+    // `Number(null)` is 0, so reading a null bend back used to invent a
+    // crossover at zero and the connection moved on the second normalisation.
+    const once = normalizeDoc({
+      nodes: [
+        { id: 'a', type: 'ec2', pos: [0, 0] },
+        { id: 'b', type: 'rds', pos: [6, 6] },
+      ],
+      edges: [{ id: 'e', from: 'a', to: 'b', route: 'x' }],
+    }).doc;
+    return once.edges[0].bend === null && normalizeDoc(once).doc.edges[0].bend === null;
+  })());
 
   check('a caption alignment round-trips on blocks and connections', (() => {
     const doc = normalizeDoc({
@@ -441,7 +456,7 @@ function documentCases(check) {
   });
   check(
     'edges with a missing endpoint are dropped, not fatal',
-    dangling.doc.edges.length === 0 && dangling.warnings.length === 1
+    dangling.doc.edges.length === 0 && dangling.warnings.some((w) => w.includes('ghost'))
   );
 
   const cyclic = normalizeDoc({
@@ -456,7 +471,61 @@ function documentCases(check) {
   );
 
   const junk = normalizeDoc('not a document');
-  check('a non-object root degrades to an empty diagram', junk.doc.nodes.length === 0 && junk.warnings.length === 1);
+  check(
+    'a non-object root is rejected rather than opened',
+    junk.doc.nodes.length === 0 && /top level is text/.test(junk.rejection ?? '')
+  );
+
+  // --- JSON that is not a diagram -------------------------------------------
+  // Normalisation reads any object at all, so without a gate in front of it
+  // opening a package.json threw the drawing away for a blank canvas and said
+  // nothing. Recognition has to happen before the repairing starts.
+
+  check('JSON that describes something else is rejected', (() => {
+    const foreign = normalizeDoc({
+      name: 'massing',
+      version: '1.0.0',
+      scripts: { build: 'node build.js' },
+      dependencies: {},
+    });
+    // The keys it does have belong in the message: told only "not a diagram",
+    // the first thing anyone does is go and open the file to see what it is.
+    return foreign.rejection?.includes('name, version, scripts, dependencies') === true;
+  })());
+
+  check('every collection on its own is enough to be recognised', () =>
+    CONTENT_KEYS.every((key) => docRejection({ [key]: [] }) === null));
+
+  check('a saved empty diagram still opens', (() => {
+    // It writes all five collections as [], and refusing to reopen the file
+    // you have just saved would be its own bug.
+    const text = serializeDoc(createEmptyDoc());
+    return parseDoc(text).rejection === null;
+  })());
+
+  check('a diagram is rejected whole, never half-read', (() => {
+    const rejected = normalizeDoc({ meta: { title: 'Looks promising' }, version: 1 });
+    return rejected.rejection !== null && rejected.doc.meta.title === 'Untitled diagram';
+  })());
+
+  check('a collection written as something other than a list is reported', (() => {
+    const wrong = normalizeDoc({ nodes: [], edges: { from: 'a', to: 'b' } });
+    return wrong.rejection === null && wrong.warnings.some((w) => w.includes('"edges" is an object'));
+  })());
+
+  check('an entry that is not an object is dropped by name and index', (() => {
+    const ragged = normalizeDoc({ nodes: [{ id: 'a', type: 'ec2', pos: [0, 0] }, null, 7] });
+    return ragged.doc.nodes.length === 1 &&
+      ragged.warnings.some((w) => w.includes('nodes[1]')) &&
+      ragged.warnings.some((w) => w.includes('nodes[2]'));
+  })());
+
+  check('a block that forgot where it goes says so', (() => {
+    // Not a neutral default: every block that omits pos lands on the same cell
+    // and the diagram opens as one lump.
+    const placeless = normalizeDoc({ nodes: [{ id: 'a', type: 'ec2' }] });
+    return placeless.warnings.some((w) => w.includes('no pos'));
+  })());
 
   const loose = normalizeDoc({
     nodes: [{ id: 'w', type: 'ec2', x: 3, y: 4, w: 3, h: 2, name: 'Web' }],
@@ -476,8 +545,18 @@ function documentCases(check) {
     })()
   );
 
+  // Derived from the sample rather than written out, so redrawing the starter
+  // diagram cannot quietly turn this into an assertion about nothing.
   const bounds = docBounds(sample);
-  check('docBounds covers every entity', bounds.x0 <= -9 && bounds.x1 >= 18 && bounds.zmax >= 3);
+  check('docBounds covers every entity', (() => {
+    const inside = (x, y) => x >= bounds.x0 && y >= bounds.y0 && x <= bounds.x1 && y <= bounds.y1;
+    return sample.nodes.every((n) =>
+      inside(n.pos[0], n.pos[1]) && inside(n.pos[0] + n.size[0], n.pos[1] + n.size[1]) &&
+      bounds.zmax >= n.height) &&
+      sample.groups.every((g) => inside(g.rect[0], g.rect[1]) &&
+        inside(g.rect[0] + g.rect[2], g.rect[1] + g.rect[3])) &&
+      sample.texts.every((t) => inside(t.pos[0], t.pos[1]));
+  })());
 }
 
 function textCases(check) {

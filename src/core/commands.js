@@ -150,6 +150,12 @@ export function createCommands({ store, scene, toaster, io }) {
       });
       return false;
     }
+    if (parsed.rejection) {
+      toaster?.error('Clipboard does not contain a diagram fragment.', {
+        detail: `The pasted text is JSON, but ${parsed.rejection}`,
+      });
+      return false;
+    }
     const { doc: incoming, warnings } = parsed;
     if (!incoming.nodes.length && !incoming.groups.length && !incoming.texts.length &&
         !incoming.images.length) {

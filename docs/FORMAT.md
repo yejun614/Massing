@@ -363,8 +363,17 @@ error:
 | `labelSize` out of range | Clamped to 6–96 |
 | Text `size` or `align` out of range | Clamped to the default |
 | Coordinate outside ±400 | Clamped |
+| An entry in a collection that is not an object | Dropped, named with its index |
+| A collection written as something other than a list | Ignored |
 
-The only hard failure is text that is not JSON.
+Each of those is reported as a warning when the file opens.
+
+There are two hard failures. Text that is not JSON is one. The other is JSON
+that is not a diagram: an object carrying none of `nodes`, `groups`, `edges`,
+`texts` or `images` is refused rather than opened, since reading it as an empty
+canvas would throw away the drawing already on screen and say nothing about
+why. An empty collection is enough to be recognised, so a saved empty diagram
+still opens.
 
 Shorthand accepted for convenience: `x`/`y` instead of `pos`, `w`/`h` instead
 of `size`, `name` instead of `label`, `source`/`target` instead of `from`/`to`.

@@ -80,9 +80,13 @@ function startingDocument() {
   const embedded = document.getElementById('embedded-diagram')?.textContent?.trim();
   if (embedded && embedded !== 'null') {
     try {
-      return normalizeDoc(JSON.parse(embedded)).doc;
+      // Unparseable, or parseable but not a diagram: either way the bundle was
+      // built around something that is not a document, and the sample beats
+      // opening to a blank page with no explanation for it.
+      const embeddedDoc = normalizeDoc(JSON.parse(embedded));
+      if (!embeddedDoc.rejection) return embeddedDoc.doc;
     } catch {
-      // Fall through to the sample rather than opening to a blank page.
+      /* fall through to the sample */
     }
   }
   return normalizeDoc(THREE_TIER).doc;

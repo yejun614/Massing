@@ -263,16 +263,33 @@ export function createIO({ store, toaster }) {
     }
   }
 
-  /** Parse, reporting failure the way the rest of the app expects. Null if bad. */
+  /**
+   * Parse, reporting failure the way the rest of the app expects. Null if bad.
+   *
+   * Two ways to be bad, and they read very differently to whoever picked the
+   * file. Text that is not JSON is a typo, and the caret in the detail is the
+   * answer. JSON that is not a *diagram* is the wrong file -- and it used to be
+   * the worse of the two, because the loader would take any object at all and
+   * hand back an empty diagram, so choosing a package.json wiped the drawing
+   * and said "Opened package.json" while doing it.
+   */
   function parseOrReport(text, label) {
+    let result;
     try {
-      return parseDoc(text);
+      result = parseDoc(text);
     } catch (err) {
       toaster?.error(`${label} is not valid JSON: ${err.message}`, {
         detail: describeParseFailure(label, err, text),
       });
       return null;
     }
+    if (result.rejection) {
+      toaster?.error(`${label} is not a Massing diagram — ${result.rejection}`, {
+        detail: `${label} parsed as JSON, but nothing in it describes a diagram.\n\n${result.rejection}\n\nThe document on screen was left alone.`,
+      });
+      return null;
+    }
+    return result;
   }
 
   /** Replace the document from raw text. Returns false on unparseable JSON. */

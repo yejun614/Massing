@@ -13,6 +13,13 @@
  * 2. Writing is deterministic. Fixed key order, two-space indent, short
  *    numeric arrays kept on one line. Save -> load -> save is byte-identical,
  *    so diffs stay readable in version control.
+ *
+ * Forgiving is not the same as silent, and the two have to be separated by a
+ * gate. Normalisation will read *any* object as a diagram, so a package.json
+ * used to open as a blank canvas with nothing said -- the drawing on screen
+ * thrown away for a file that was never a diagram at all. `docRejection` is
+ * that gate: it answers whether this JSON is a diagram before the forgiving
+ * part is allowed to start repairing it.
  */
 
 import { componentFor, isKnownType, groupKindFor, FALLBACK_TYPE } from '../data/components.js';
@@ -130,7 +137,46 @@ function readPlanar(raw, defaultPlane) {
 // ---------------------------------------------------------------------------
 
 /**
- * @returns {{doc: object, warnings: string[]}}
+ * The five collections that make an object a diagram rather than merely JSON.
+ *
+ * An empty one still counts. A saved empty diagram writes all five as `[]`,
+ * and refusing to reopen the file you just saved would be its own bug.
+ */
+export const CONTENT_KEYS = ['nodes', 'groups', 'edges', 'texts', 'images'];
+
+/** What a value is, in the words the error message wants. */
+function jsonKind(v) {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'a list';
+  if (typeof v === 'object') return 'an object';
+  if (typeof v === 'string') return 'text';
+  return `a ${typeof v}`;
+}
+
+/**
+ * Why `raw` cannot be read as a diagram, or null when it can.
+ *
+ * The message is the whole point of the function, so it names what was found
+ * instead: told only "this is not a diagram", the first thing anyone does is
+ * open the file to see what it *is*.
+ *
+ * @returns {string | null}
+ */
+export function docRejection(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return `the top level is ${jsonKind(raw)}, and a diagram is an object.`;
+  }
+  if (CONTENT_KEYS.some((key) => Array.isArray(raw[key]))) return null;
+
+  const keys = Object.keys(raw);
+  const found = keys.length
+    ? `its top-level keys are ${keys.slice(0, 8).join(', ')}${keys.length > 8 ? ', …' : ''}`
+    : 'it has no keys at all';
+  return `it carries none of ${CONTENT_KEYS.join(', ')} — ${found}.`;
+}
+
+/**
+ * @returns {{doc: object, warnings: string[], rejection: string | null}}
  * @throws {SyntaxError} only when the text is not JSON at all.
  */
 export function parseDoc(text) {
@@ -138,13 +184,17 @@ export function parseDoc(text) {
   return normalizeDoc(raw);
 }
 
-/** @returns {{doc: object, warnings: string[]}} */
+/**
+ * @returns {{doc: object, warnings: string[], rejection: string | null}}
+ *   A rejection still comes with an empty `doc`, so a caller that has already
+ *   decided to open something regardless has one to open. Callers that have
+ *   not must check it -- replacing a drawing with a blank canvas is exactly
+ *   the failure this exists to stop.
+ */
 export function normalizeDoc(raw) {
   const warnings = [];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    warnings.push('Document root is not an object; started an empty diagram instead.');
-    return { doc: createEmptyDoc(), warnings };
-  }
+  const rejection = docRejection(raw);
+  if (rejection) return { doc: createEmptyDoc(), warnings, rejection };
 
   const version = int(raw.version, FORMAT_VERSION);
   if (version > FORMAT_VERSION) {
@@ -165,8 +215,7 @@ export function normalizeDoc(raw) {
   // --- groups (parents resolved in a second pass) ---------------------------
   const groupIndex = new Map();
   const pendingParents = [];
-  for (const g of array(raw.groups)) {
-    if (!g || typeof g !== 'object') continue;
+  for (const g of readCollection(raw, 'groups', warnings)) {
     const kindDef = groupKindFor(str(g.kind));
     if (g.kind && kindDef.kind !== g.kind) {
       warnings.push(`Group kind "${g.kind}" is unknown; used "group".`);
@@ -174,6 +223,9 @@ export function normalizeDoc(raw) {
     const label = readLabel(g.label, kindDef.label);
     const id = takeId(g.id, label || kindDef.kind, usedIds, warnings, 'Group');
     const rect = readRect(g.rect ?? [g.x, g.y, g.w, g.h]);
+    if (!Array.isArray(g.rect) && !Number.isFinite(Number(g.x))) {
+      warnings.push(`Group "${id}" has no rect; gave it ${rect.join(', ')}.`);
+    }
     const group = {
       id,
       kind: kindDef.kind,
@@ -201,8 +253,7 @@ export function normalizeDoc(raw) {
 
   // --- nodes ----------------------------------------------------------------
   const nodeIndex = new Map();
-  for (const n of array(raw.nodes)) {
-    if (!n || typeof n !== 'object') continue;
+  for (const n of readCollection(raw, 'nodes', warnings)) {
     let type = str(n.type) || FALLBACK_TYPE;
     if (!isKnownType(type)) {
       warnings.push(`Node type "${type}" is unknown; drawn as a generic block.`);
@@ -215,6 +266,11 @@ export function normalizeDoc(raw) {
     const id = takeId(n.id, label || type, usedIds, warnings, 'Node');
     const pos = readPair(n.pos ?? [n.x, n.y], [0, 0]);
     const size = readPair(n.size ?? [n.w, n.h], def.size, 1);
+    // Worth saying, because the default is not a neutral one: every block that
+    // forgot its position lands on the same cell and stacks into one lump.
+    if (!Array.isArray(n.pos) && !Number.isFinite(Number(n.x))) {
+      warnings.push(`Node "${id}" has no pos; placed it at 0, 0.`);
+    }
 
     const node = {
       id,
@@ -242,8 +298,7 @@ export function normalizeDoc(raw) {
   }
 
   // --- edges ----------------------------------------------------------------
-  for (const e of array(raw.edges)) {
-    if (!e || typeof e !== 'object') continue;
+  for (const e of readCollection(raw, 'edges', warnings)) {
     const from = str(e.from) ?? str(e.source);
     const to = str(e.to) ?? str(e.target);
     // Either end may be a block or a zone: both are rectangles on the grid,
@@ -281,8 +336,7 @@ export function normalizeDoc(raw) {
   }
 
   // --- text annotations -----------------------------------------------------
-  for (const t of array(raw.texts)) {
-    if (!t || typeof t !== 'object') continue;
+  for (const t of readCollection(raw, 'texts', warnings)) {
     // Leading and trailing whitespace is kept -- it may be deliberate
     // indentation -- but a note that is *only* whitespace renders as nothing
     // and would sit in the document as an invisible, unfindable entity.
@@ -307,8 +361,7 @@ export function normalizeDoc(raw) {
   }
 
   // --- pictures -------------------------------------------------------------
-  for (const im of array(raw.images)) {
-    if (!im || typeof im !== 'object') continue;
+  for (const im of readCollection(raw, 'images', warnings)) {
     const src = typeof im.src === 'string' ? im.src.trim() : '';
     if (!src) {
       warnings.push('Dropped an image with no src.');
@@ -325,7 +378,28 @@ export function normalizeDoc(raw) {
     });
   }
 
-  return { doc, warnings };
+  return { doc, warnings, rejection: null };
+}
+
+/**
+ * The entries of one collection, complaining about anything unusable.
+ *
+ * Skipping a malformed entry is right -- one bad block should not cost you the
+ * other seventeen -- but skipping it *quietly* is how a file half-written by
+ * hand opens missing most of itself with nothing said. Every skip is named,
+ * with its index, because "nodes[4]" is what makes it findable in the file.
+ */
+function* readCollection(raw, key, warnings) {
+  const value = raw[key];
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    warnings.push(`"${key}" is ${jsonKind(value)}, not a list; ignored it.`);
+    return;
+  }
+  for (const [index, entry] of value.entries()) {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) yield entry;
+    else warnings.push(`Dropped ${key}[${index}]: it is ${jsonKind(entry)}, not an object.`);
+  }
 }
 
 /** Parent chains must be a forest; snap any cycle back to a root. */
@@ -506,10 +580,6 @@ function takeId(raw, fallback, used, warnings, kind) {
 // Field coercion
 // ---------------------------------------------------------------------------
 
-function array(v) {
-  return Array.isArray(v) ? v : [];
-}
-
 function str(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
@@ -553,6 +623,10 @@ function readPair(v, fallback, min = -MAX_SPAN) {
  * from.
  */
 function halfCell(v) {
+  // `Number(null)` is 0, not NaN, so "no crossover" would come back as a
+  // crossover at zero -- and an edge with a pinned axis and no bend would jump
+  // the first time its document was normalised again.
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return clamp(Math.round(n * 2) / 2, -MAX_SPAN, MAX_SPAN);
