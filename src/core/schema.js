@@ -23,7 +23,7 @@
  */
 
 import { componentFor, isKnownType, groupKindFor, FALLBACK_TYPE } from '../data/components.js';
-import { clamp, clampInt } from '../util/num.js';
+import { clamp, clampInt, clampTenth } from '../util/num.js';
 import { isPlane, normaliseSpin, SPINS } from '../geom/plane.js';
 
 export const FORMAT_VERSION = 1;
@@ -278,7 +278,8 @@ export function normalizeDoc(raw) {
       label,
       pos,
       size,
-      height: clampInt(n.height, 0, 40, def.height),
+      // The one measurement on this grid that is not whole cells.
+      height: clampTenth(n.height, 0, 40, def.height),
       color: color(n.color) || def.color,
       // A block's caption is a flat rectangle like any other, so it can be
       // laid on the ground or written onto one of the block's own faces.

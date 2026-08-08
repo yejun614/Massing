@@ -67,6 +67,7 @@ export function runCases(check) {
   projectionCases(check);
   cameraCases(check);
   depthCases(check);
+  heightCases(check);
   documentCases(check);
   densityCases(check);
   libraryCases(check);
@@ -407,6 +408,43 @@ function libraryCases(check) {
     const a = readLibrary(fake).length === 0;
     fake.setItem('massing:library:v1', 'not json at all');
     return a && readLibrary(fake).length === 0;
+  })());
+}
+
+function heightCases(check) {
+  const heightOf = (raw) => normalizeDoc({
+    nodes: [{ id: 'n', type: 'ec2', pos: [0, 0], height: raw }],
+  }).doc.nodes[0].height;
+
+  check('a tenth of a cell survives the loader', heightOf(1.5) === 1.5 && heightOf(0.3) === 0.3);
+  check('finer than a tenth is rounded to one', heightOf(1.15) === 1.2 && heightOf(2.04) === 2);
+  check('a tenth survives the round trip through a file', (() => {
+    const doc = normalizeDoc({ nodes: [{ id: 'n', type: 'ec2', pos: [0, 0], height: 1.5 }] }).doc;
+    const text = serializeDoc(doc);
+    return text.includes('"height": 1.5') && parseDoc(text).doc.nodes[0].height === 1.5;
+  })());
+  check('a tenth does not arrive with a tail of nines', (() => {
+    // 1.1 + 0.1 is not 1.2 in binary; the loader counts in tenths so a file
+    // never ends up carrying 1.2000000000000002.
+    const text = serializeDoc(normalizeDoc({
+      nodes: [{ id: 'n', type: 'ec2', pos: [0, 0], height: 1.1 + 0.1 }],
+    }).doc);
+    return text.includes('"height": 1.2');
+  })());
+  check('height is still bounded', heightOf(-4) === 0 && heightOf(400) === 40);
+  check('nonsense still falls back to the type default', (() => {
+    const def = componentFor('ec2').height;
+    return heightOf('tall') === def && heightOf(undefined) === def;
+  })());
+  check('footprints stay whole cells', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ id: 'n', type: 'ec2', pos: [0, 0], size: [2.4, 1.7] }],
+    }).doc;
+    return doc.nodes[0].size.every(Number.isInteger);
+  })());
+  check('positions stay whole cells', (() => {
+    const doc = normalizeDoc({ nodes: [{ id: 'n', type: 'ec2', pos: [1.5, 2.5] }] }).doc;
+    return doc.nodes[0].pos.every(Number.isInteger);
   })());
 }
 

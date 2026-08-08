@@ -171,6 +171,7 @@ function buildNode(root, store, id) {
       label: 'Height',
       min: 0,
       max: 40,
+      step: 0.1,
       get: (s) => nodeById(s.doc, id)?.height ?? 1,
       set: (value) => withNode((n) => (n.height = value)),
     })
@@ -748,6 +749,7 @@ function buildMulti(root, store, commands, selection) {
         label: 'Height',
         min: 0,
         max: 40,
+        step: 0.1,
         get: (s) => shared(split(s.doc).nodes, (n) => n.height),
         set: (value) => each(['node'], (n) => (n.height = value)),
       })
@@ -932,16 +934,20 @@ function areaField(parent, store, { label, get, set, rows = 3 }) {
   };
 }
 
-function numberField(parent, store, { label, get, set, min = -400, max = 400 }) {
+/**
+ * @param {{step?: number}} options  1 for everything on this grid except block
+ *   height, which is the one measurement a tenth of a cell means something in.
+ */
+function numberField(parent, store, { label, get, set, min = -400, max = 400, step = 1 }) {
   const input = h('input', {
     type: 'number',
     min,
     max,
-    step: 1,
+    step,
     onFocus: () => store.beginGesture(`Edit ${label.toLowerCase()}`),
     onBlur: () => store.endGesture(),
     onInput: (e) => {
-      const value = parseGridInt(e.target.value, min, max);
+      const value = parseGridNumber(e.target.value, min, max, step);
       if (value !== null) commitWith(store, `Edit ${label.toLowerCase()}`, set, value);
     },
   });
@@ -1120,7 +1126,20 @@ function swatchField(parent, store, { label, colors, get, set, auto }) {
 
 /** Null for a half-typed value like "-", so the commit is skipped entirely. */
 function parseGridInt(raw, min, max) {
+  return parseGridNumber(raw, min, max, 1);
+}
+
+/**
+ * The same, to whatever precision the field works in.
+ *
+ * A step of 1 rounds to whole cells as it always did; 0.1 keeps one decimal,
+ * counted in tenths so a typed 1.15 lands on 1.2 rather than on something with
+ * a tail of nines.
+ */
+function parseGridNumber(raw, min, max, step = 1) {
   const n = Number(raw);
-  if (!Number.isFinite(n)) return null;
-  return Math.min(max, Math.max(min, Math.round(n)));
+  if (raw === '' || !Number.isFinite(n)) return null;
+  const rounded = step === 1 ? Math.round(n) : Math.round(n / step) * step;
+  const tidy = step === 1 ? rounded : Math.round(rounded * 10) / 10;
+  return Math.min(max, Math.max(min, tidy));
 }

@@ -261,10 +261,11 @@
           "description": "[width, depth] in cells. Default [2, 2]."
         },
         "height": {
-          "type": "integer",
+          "type": "number",
           "minimum": 0,
           "maximum": 40,
-          "description": "Vertical extent in cells. Use it to signal weight: 1 for a gateway, 3 for a database."
+          "description": "Vertical extent in cells, to one decimal place. The one measurement here that is not whole cells; footprints stay integral.",
+          "multipleOf": 0.1
         },
         "color": {
           "$ref": "#/$defs/color"

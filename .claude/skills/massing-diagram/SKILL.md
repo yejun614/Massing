@@ -48,7 +48,9 @@ Diagrams live on an integer grid drawn in isometric projection.
 
 - `pos: [x, y]` is a block's MINIMUM corner, not its centre.
 - `size: [width, depth]` and `height` are in cells.
-- Every coordinate is an integer. Never emit fractions.
+- Every coordinate is an integer, and so is every footprint. Never emit
+  fractions for those. `height` alone takes one decimal place, which is there
+  for hand-tuning a drawing rather than for writing one — start at `1`.
 
 A `[2, 2]` block at `[4, 4]` covers x 4–6 and y 4–6, so the next block in that
 row starts at x 7 to leave a one-cell gap.
@@ -490,7 +492,7 @@ const box = (o) => {
 const rectBox = (g) => [g.rect[0], g.rect[1], g.rect[0] + g.rect[2], g.rect[1] + g.rect[3]]
 const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 // Unset means the component type decides, and those run 1 to 3.
-const heightOf = (n) => (Number.isInteger(n.height) ? n.height : 2)
+const heightOf = (n) => (Number.isFinite(n.height) ? n.height : 2)
 
 // --- identifiers -----------------------------------------------------------
 const seen = new Set()

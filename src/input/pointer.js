@@ -31,7 +31,7 @@ import { edgeRoute, EDGE_Z } from '../render/edge.js';
 import { rotatePoint, rotateRect, CELL } from '../geom/iso.js';
 import { planeAxes, planeVector } from '../geom/plane.js';
 import { MAX_SPAN } from '../core/schema.js';
-import { clamp, clampInt } from '../util/num.js';
+import { clamp, clampInt, clampTenth } from '../util/num.js';
 import {
   nodeById,
   groupById,
@@ -318,7 +318,9 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
         // conversion from a vertical drag to whole storeys is that and nothing
         // more.
         const risen = (drag.origin.y - pt.y) / (CELL * store.state.camera.zoom);
-        const height = clampInt(drag.startHeight + risen, 0, MAX_HEIGHT, node.height);
+        // Whole cells added to whatever it started at, so a block set to 1.5
+        // by hand drags to 2.5 rather than being rounded off by the gesture.
+        const height = clampTenth(drag.startHeight + risen, 0, MAX_HEIGHT, node.height);
         if (height === node.height) break;
         openGesture(drag, 'Resize');
         store.commit('Resize', (doc) => {

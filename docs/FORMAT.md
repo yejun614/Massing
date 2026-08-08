@@ -17,10 +17,13 @@ The diagram lives on an integer grid, drawn in isometric projection.
 
 - `pos: [x, y]` is a block's **minimum corner**, not its centre.
 - `size: [width, depth]` in cells. Default `[2, 2]`.
-- `height` in cells. The type supplies one, between 1 and 3; write `1` on
-  everything instead, because a block no taller than the one behind it can
-  never hide it (see below).
-- Everything is an integer. Never emit fractional coordinates.
+- `height` in cells, to **one decimal place**. The type supplies one, between 1
+  and 3; write `1` on everything instead, because a block no taller than the one
+  behind it can never hide it (see below). A tenth of a cell exists for
+  hand-tuning a drawing, not for writing one.
+- Everything else is an integer — coordinates and footprints both. A footprint
+  of 2.3 has no meaning against a lattice of squares; half a cell of height
+  reads as a deliberate difference.
 
 Two derived numbers decide where something lands on screen, and placing goes
 better if you think in them rather than in `x` and `y`: the horizontal position
