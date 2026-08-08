@@ -3,9 +3,7 @@
   "meta": {
     "title": "Three-tier web application"
   },
-  "canvas": {
-    "background": "#eef1f5"
-  },
+  "canvas": {},
   "groups": [
     {
       "id": "prod-vpc",

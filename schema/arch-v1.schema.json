@@ -29,7 +29,8 @@
       "additionalProperties": false,
       "properties": {
         "background": {
-          "$ref": "#/$defs/color"
+          "$ref": "#/$defs/color",
+          "description": "Colour behind the diagram. Omit it to follow the viewer's theme (light or dark); name one and it is used in either theme."
         }
       }
     },

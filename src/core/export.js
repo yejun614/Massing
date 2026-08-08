@@ -13,7 +13,7 @@
  * camera that is not the user's without the user's camera ever moving.
  */
 
-import { slugify } from './schema.js';
+import { slugify, canvasBackground } from './schema.js';
 import { round2 } from '../util/num.js';
 import { downloadBlob } from '../util/dom.js';
 import { describeError } from '../util/errors.js';
@@ -138,7 +138,7 @@ export function createExporter({ store, scene, toaster }) {
     background.setAttribute('y', round2(box.y));
     background.setAttribute('width', round2(box.width));
     background.setAttribute('height', round2(box.height));
-    background.setAttribute('fill', store.state.doc.canvas.background);
+    background.setAttribute('fill', canvasBackground(store.state.doc, store.state.dark));
 
     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
     style.textContent = sceneStyles();
@@ -192,7 +192,8 @@ export function createExporter({ store, scene, toaster }) {
     if (!format.raster) {
       return { url: svgUrl(built.text), width, height };
     }
-    const canvas = await rasterize(built.text, width, height, store.state.doc.canvas.background);
+    const canvas = await rasterize(
+      built.text, width, height, canvasBackground(store.state.doc, store.state.dark));
     const blob = format.id === 'gif' ? gifBlob(canvas) : await canvasBlob(canvas, format.mime);
     return { url: URL.createObjectURL(blob), width, height, revoke: true };
   }
@@ -224,7 +225,8 @@ export function createExporter({ store, scene, toaster }) {
     }
 
     try {
-      const canvas = await rasterize(built.text, width, height, store.state.doc.canvas.background);
+      const canvas = await rasterize(
+        built.text, width, height, canvasBackground(store.state.doc, store.state.dark));
       const blob = format.id === 'gif' ? gifBlob(canvas) : await canvasBlob(canvas, format.mime);
       downloadBlob(blob, name);
       toaster?.info(`Exported ${name} at ${width}×${height}.`);

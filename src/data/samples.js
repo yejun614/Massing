@@ -9,7 +9,6 @@
 export const THREE_TIER = {
   version: 1,
   meta: { title: 'Three-tier web application' },
-  canvas: { background: '#eef1f5' },
   groups: [
     { id: 'prod-vpc', kind: 'vpc', label: 'Production VPC', rect: [0, 0, 18, 12] },
     { id: 'public-subnet', kind: 'subnet', label: 'Public subnet', rect: [1, 1, 7, 10], parent: 'prod-vpc' },

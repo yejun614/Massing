@@ -102,7 +102,13 @@ const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);
 const exportDialog = createExportDialog(document.body, { store, exporter });
-const theme = createTheme(() => scheduleRender());
+// The theme decides the canvas colour for any document that has not named one,
+// so what it resolves to has to reach the store the render reads.
+const theme = createTheme((state) => {
+  store.setUI({ dark: state.dark });
+  scheduleRender();
+});
+store.setUI({ dark: theme.current().dark });
 const toolbar = createToolbar({
   root: document,
   store,

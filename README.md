@@ -334,11 +334,21 @@ The theme button cycles **system → light → dark**, and "system" is stored as
 system rather than resolved once, so a machine that switches at dusk takes the
 editor with it.
 
-Only the interface changes. The canvas background belongs to the *document*, so
-flipping the theme never edits someone's diagram — instead the scene derives
-its ink, halo and grid colours from that background's luminance. A dark canvas
-gets light labels whichever theme is on, and a white one gets dark labels even
-in dark mode.
+Flipping the theme never edits a diagram, but it does decide how one looks when
+the diagram has no opinion. A document that names no `canvas.background` follows
+the theme — light in light, dark in dark, because a diagram nobody has picked a
+colour for should not be a white rectangle in a dark room. Pick a colour and it
+is yours in either theme; the first swatch in the inspector, split light/dark,
+hands the decision back.
+
+None of that is written to the file. An automatic background stays automatic by
+being *absent*, so reopening a diagram cannot turn "whatever suits" into a
+preference for whichever theme happened to be on when it was saved, and
+switching themes never marks anything unsaved.
+
+The scene then derives its ink, halo and grid colours from whatever background
+it ended up with, by luminance. A dark canvas gets light labels whichever theme
+is on, and a white one gets dark labels even in dark mode.
 
 ## How it works
 

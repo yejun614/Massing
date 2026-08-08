@@ -38,11 +38,32 @@ const EDGE_ARROWS = new Set(['none', 'end', 'start', 'both']);
 const EDGE_ROUTES = new Set(['auto', 'x', 'y']);
 export const DEFAULT_EDGE_ROUTE = 'auto';
 
+/**
+ * What an unset canvas background resolves to, light and dark.
+ *
+ * Both are offered in the inspector's swatches too, so "automatic" always
+ * lands on a colour the author could have chosen deliberately.
+ */
+export const CANVAS_BACKGROUNDS = { light: '#eef1f5', dark: '#0f172a' };
+
+/**
+ * The colour to actually paint behind a diagram.
+ *
+ * `null` means the author has not chosen one, and the viewer's theme decides —
+ * a diagram nobody has an opinion about should not be a white rectangle in a
+ * dark room. A colour means they have, and it is honoured whatever the theme
+ * is doing: the file says so, and the theme is not allowed to argue.
+ */
+export function canvasBackground(doc, dark = false) {
+  return doc?.canvas?.background ?? CANVAS_BACKGROUNDS[dark ? 'dark' : 'light'];
+}
+
 export function createEmptyDoc(title = 'Untitled diagram') {
   return {
     version: FORMAT_VERSION,
     meta: { title },
-    canvas: { background: '#eef1f5' },
+    // Not a colour: a new diagram has no opinion, so it follows the theme.
+    canvas: { background: null },
     groups: [],
     nodes: [],
     edges: [],
@@ -134,7 +155,9 @@ export function normalizeDoc(raw) {
 
   const doc = createEmptyDoc(str(raw.meta?.title) || 'Untitled diagram');
   if (raw.canvas && typeof raw.canvas === 'object') {
-    doc.canvas.background = color(raw.canvas.background) || doc.canvas.background;
+    // Absent, or unreadable, leaves it automatic. A file that names a colour
+    // is stating a preference; one that does not has none to state.
+    doc.canvas.background = color(raw.canvas.background);
   }
 
   const usedIds = new Set();
@@ -332,7 +355,10 @@ export function serializeDoc(doc) {
   const wire = {
     version: FORMAT_VERSION,
     meta: { title: doc.meta.title },
-    canvas: { background: doc.canvas.background },
+    // An automatic background is written by *not* being written, or reopening
+    // the file would turn "no opinion" into a preference for whatever theme
+    // happened to be on when it was saved.
+    canvas: omitEmpty({ background: doc.canvas.background }),
     groups: doc.groups.map((g) => omitEmpty({
       id: g.id,
       kind: g.kind,

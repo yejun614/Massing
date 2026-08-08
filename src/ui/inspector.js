@@ -85,6 +85,7 @@ function buildDocument(root, store) {
   fields.push(
     swatchField(section, store, {
       label: 'Background',
+      auto: 'Follow the theme',
       colors: ['#eef1f5', '#f8fafc', '#ffffff', '#e2e8f0', '#1e293b', '#0f172a'],
       get: (s) => s.doc.canvas.background,
       set: (value) => (doc) => (doc.canvas.background = value),
@@ -799,7 +800,12 @@ function selectField(parent, store, { label, options, get, set }) {
   };
 }
 
-function swatchField(parent, store, { label, colors, get, set }) {
+/**
+ * @param {{auto?: string}} options  when given, a leading swatch that sets the
+ *   value back to null — "no colour chosen", so something else decides. Without
+ *   it, picking a colour once would be a door that only opens one way.
+ */
+function swatchField(parent, store, { label, colors, get, set, auto }) {
   const buttons = colors.map((color) =>
     h('button', {
       class: 'swatch',
@@ -809,16 +815,27 @@ function swatchField(parent, store, { label, colors, get, set }) {
       onClick: () => commitWith(store, `Change ${label.toLowerCase()}`, set, color),
     })
   );
+  const autoBtn = auto
+    ? h('button', {
+        class: 'swatch swatch-auto',
+        title: auto,
+        'aria-label': auto,
+        onClick: () => commitWith(store, `Change ${label.toLowerCase()}`, set, null),
+      })
+    : null;
+
   parent.append(
     h('div', { class: 'field-block' }, [
       h('label', { class: 'field-block-label', text: label }),
-      h('div', { class: 'swatches' }, buttons),
+      h('div', { class: 'swatches' }, [autoBtn, ...buttons].filter(Boolean)),
     ])
   );
   return {
     sync: (state) => {
-      const active = (get(state) ?? '').toLowerCase();
+      const value = get(state);
+      const active = (value ?? '').toLowerCase();
       buttons.forEach((button, i) => setClass(button, 'is-active', colors[i] === active));
+      if (autoBtn) setClass(autoBtn, 'is-active', value == null);
     },
   };
 }

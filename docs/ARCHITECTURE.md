@@ -234,13 +234,24 @@ That is what keeps dragging smooth with no virtual DOM and no framework.
 Attribute writes go through `setAttr`, which compares before writing, so an
 unchanged frame touches nothing.
 
-### Ink follows the document, not the theme
+### Ink follows the background, not the theme
 
-The interface theme (§7) and the diagram's own background are different things.
 A dark canvas needs light labels whichever theme is on; a white canvas needs
 dark ones even in dark mode. So the scene sets `--scene-ink`, `--scene-halo`
-and friends from the *document's* background luminance, and `canvas.css` reads
-only those. Flipping the theme never edits anyone's diagram.
+and friends from the luminance of *the colour it is about to paint*, and
+`canvas.css` reads only those.
+
+That colour comes from `canvasBackground(doc, dark)`. A document that names a
+background gets it, in either theme. One that names none has no opinion to
+override, so it takes the theme's — a diagram nobody has chosen a colour for
+should not be a white rectangle in a dark room. The distinction is the whole
+point of storing `canvas.background` as `null` rather than defaulting it on
+load: "automatic" has to survive a round trip through the file (§7).
+
+The theme therefore reaches the renderer as state (`state.dark`) rather than as
+a class the render pass reads off the DOM, which keeps a render a pure function
+of the store — and keeps the export path, which has no DOM to read, honest.
+Flipping the theme still never *edits* anyone's diagram.
 
 ---
 
@@ -297,6 +308,21 @@ spread `"pos": [2, 2]` over five lines). Save → load → save is byte-identica
 which the tests assert, so diffs stay readable in version control.
 
 Defaults are omitted on write, so an unstyled note stays a three-line object.
+
+### Absence is an answer
+
+`canvas.background` is the case where omission carries meaning, and it is worth
+being explicit about why the round trip is built the way it is.
+
+An automatic background is written by *not being written* — `"canvas": {}`. The
+tempting shortcut is to resolve it on load ("no colour? use the light one") and
+write whatever resulted. That silently converts "no opinion" into a preference
+for whichever theme happened to be on the day it was saved, and the author never
+asked for that. So `null` survives from load to render to save, and only the
+final paint resolves it against the viewer.
+
+The same reasoning is why the theme writes nothing into `doc`: switching to dark
+must not mark a saved file unsaved.
 
 ---
 

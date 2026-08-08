@@ -24,6 +24,7 @@ import { createTextView, updateTextView } from './text.js';
 import { createImageView, updateImageView } from './image.js';
 import { sortForPaint } from '../geom/depth.js';
 import { nodeBox, rotatedBox, groupsInPaintOrder, endpointBox } from '../core/doc.js';
+import { canvasBackground } from '../core/schema.js';
 import { luminance } from '../util/color.js';
 
 export function createScene(container, { onResize } = {}) {
@@ -85,18 +86,20 @@ export function createScene(container, { onResize } = {}) {
     const selected = new Set(state.selection);
     const hoverId = state.hoverId;
 
-    // The scene's ink follows the *document's* background, not the interface
-    // theme: a dark canvas needs light labels whichever theme is on, and a
-    // white canvas needs dark ones even in dark mode. Everything in
-    // canvas.css reads these two custom properties.
-    const dark = luminance(doc.canvas.background) < 0.45;
+    // The scene's ink follows the *background it is painted on*, not the
+    // interface theme: a dark canvas needs light labels whichever theme is on,
+    // and a white canvas needs dark ones even in dark mode. That the theme now
+    // gets a say in what the background *is* when the document has no opinion
+    // changes nothing here -- the ink still reads the colour, not the theme.
+    const background = canvasBackground(doc, state.dark);
+    const dark = luminance(background) < 0.45;
     setAttr(
       el,
       'style',
-      `background:${doc.canvas.background};` +
+      `background:${background};` +
         `--scene-ink:${dark ? '#e8eef6' : '#26313f'};` +
         `--scene-ink-soft:${dark ? '#9fb0c4' : '#54637a'};` +
-        `--scene-halo:${doc.canvas.background};` +
+        `--scene-halo:${background};` +
         `--scene-grid:${dark ? '#31404f' : '#cbd5e1'};` +
         `--scene-axis:${dark ? '#465a6d' : '#9aa8b8'}`
     );

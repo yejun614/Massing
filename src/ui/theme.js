@@ -6,10 +6,15 @@
  * resolving it once means a machine that switches at dusk takes the editor
  * with it.
  *
- * Only the interface changes. The canvas background belongs to the *document*,
- * not to the viewer's preference -- flipping the theme must never edit someone's
- * diagram. The scene keeps itself readable on any background by deriving its
- * ink from that background's luminance instead (see `sceneInk`).
+ * Flipping the theme never edits a diagram. It can still decide how one looks:
+ * a document that names no background has no opinion to override, so it takes
+ * the theme's -- a diagram nobody has chosen a colour for should not be a white
+ * rectangle in a dark room. The moment an author picks one it is theirs, and
+ * the theme stops having a say. Either way nothing is written to the file and
+ * nothing is marked unsaved.
+ *
+ * The scene keeps itself readable on whatever background it ends up with by
+ * deriving its ink from that colour's luminance, never from the theme.
  */
 
 const THEME_KEY = 'massing:theme';

@@ -507,6 +507,9 @@ body.is-resizing .resizer::after { opacity: 1; }
 }
 .swatch.is-active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--surface) inset; }
 
+/* Half of each: it means "whichever the theme is", and says so without words. */
+.swatch-auto { background: linear-gradient(135deg, #eef1f5 0 50%, #0f172a 50% 100%); }
+
 .entity-kind {
   font-size: 11px;
   color: var(--ink-muted);

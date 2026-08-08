@@ -47,7 +47,7 @@ fields fall back to the component type's defaults.
 {
   "version": 1,
   "meta": { "title": "Three-tier web application" },
-  "canvas": { "background": "#eef1f5" },
+  "canvas": {},
   "groups": [
     { "id": "prod-vpc", "kind": "vpc", "label": "Production VPC", "rect": [0, 0, 18, 12] },
     { "id": "public-subnet", "kind": "subnet", "label": "Public subnet", "rect": [1, 1, 7, 10], "parent": "prod-vpc" },
@@ -67,6 +67,22 @@ fields fall back to the component type's defaults.
 
 A complete, editor-generated document is in
 [`examples/three-tier.arch.json`](../examples/three-tier.arch.json).
+
+### The canvas colour
+
+`canvas.background` is optional, and leaving it out is a real answer rather
+than an omission: it means the diagram has no opinion, and the colour follows
+whoever is looking — light in a light theme, dark in a dark one.
+
+```json
+{ "canvas": {} }                            // follows the theme
+{ "canvas": { "background": "#ffffff" } }   // white, in any theme
+```
+
+Name a colour and it is yours in both themes. Nothing the viewer does writes
+one in, so a file that stays quiet stays quiet — the editor never turns
+"whatever suits" into a preference for whichever theme happened to be on when
+it was saved.
 
 ## Component types
 

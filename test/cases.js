@@ -23,6 +23,9 @@ import {
   DEFAULT_PLANE,
   DEFAULT_ZONE_LABEL_PLANE,
   DEFAULT_LABEL_ALIGN,
+  CANVAS_BACKGROUNDS,
+  canvasBackground,
+  createEmptyDoc,
 } from '../src/core/schema.js';
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
@@ -307,6 +310,54 @@ function documentCases(check) {
     // Not "item": the slug falls back to what the thing *is*.
     return doc.groups[0].id === 'vpc' && doc.nodes[0].id === 'ec2';
   })());
+
+  // --- the canvas colour ----------------------------------------------------
+  // A document either names a background or has no opinion. Only the second
+  // kind follows the theme, and the difference has to survive the file.
+
+  check('a document that names no colour follows the theme', (() => {
+    const doc = normalizeDoc({ canvas: {} }).doc;
+    return doc.canvas.background === null &&
+      canvasBackground(doc, false) === CANVAS_BACKGROUNDS.light &&
+      canvasBackground(doc, true) === CANVAS_BACKGROUNDS.dark;
+  })());
+
+  check('a new diagram has no opinion either', (() => {
+    const doc = normalizeDoc(createEmptyDoc()).doc;
+    return doc.canvas.background === null && canvasBackground(doc, true) === CANVAS_BACKGROUNDS.dark;
+  })());
+
+  check('a colour someone chose is honoured whatever the theme is doing', (() => {
+    const light = normalizeDoc({ canvas: { background: '#ffffff' } }).doc;
+    const dark = normalizeDoc({ canvas: { background: '#0f172a' } }).doc;
+    return canvasBackground(light, true) === '#ffffff' &&
+      canvasBackground(dark, false) === '#0f172a';
+  })());
+
+  check('a colour nobody can read is no opinion, not a broken one',
+    normalizeDoc({ canvas: { background: 'chartreuse' } }).doc.canvas.background === null);
+
+  check('"no opinion" is written by not being written', (() => {
+    // Writing the resolved colour would turn whatever theme happened to be on
+    // at save time into a preference the file then carries forever.
+    const doc = normalizeDoc({ canvas: {} }).doc;
+    const text = serializeDoc(doc);
+    return !text.includes('background') &&
+      parseDoc(text).doc.canvas.background === null &&
+      serializeDoc(parseDoc(text).doc) === text;
+  })());
+
+  check('a chosen colour survives the round trip', (() => {
+    const doc = normalizeDoc({ canvas: { background: '#e2e8f0' } }).doc;
+    const text = serializeDoc(doc);
+    return text.includes('"background": "#e2e8f0"') &&
+      parseDoc(text).doc.canvas.background === '#e2e8f0' &&
+      serializeDoc(parseDoc(text).doc) === text;
+  })());
+
+  check('the sample opens with no opinion, so a first visit follows the theme',
+    normalizeDoc(THREE_TIER).doc.canvas.background === null,
+    'the built-in diagram would be a white rectangle in a dark room');
 
   // --- caption alignment ----------------------------------------------------
 

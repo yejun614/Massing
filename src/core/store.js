@@ -44,6 +44,12 @@ export function createStore(doc = createEmptyDoc()) {
     revision: 0,
     /** True when the document differs from the last saved copy. */
     dirty: false,
+    /**
+     * Whether the interface is currently dark. Kept here rather than read from
+     * the DOM so a render is a pure function of state, and because a document
+     * with no background of its own takes its colour from it.
+     */
+    dark: false,
   };
 
   function notify(what) {
