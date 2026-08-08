@@ -48,6 +48,7 @@ import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
 import { THREE_TIER } from '../src/data/samples.js';
+import { overConnected } from '../src/core/assistant.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -58,6 +59,7 @@ export function runCases(check) {
   cameraCases(check);
   depthCases(check);
   documentCases(check);
+  densityCases(check);
   textCases(check);
   arrangeCases(check);
   planarCases(check);
@@ -241,6 +243,36 @@ function depthCases(check) {
       return sortForPaint([a, b]).length === 2;
     })()
   );
+}
+
+/*
+ * The one house rule the loader cannot enforce, and the only one the assistant
+ * was measurably ignoring: written into the prompt it agreed and overspent
+ * anyway, six diagrams out of six. Said back in the tool result -- after the
+ * mistake, with the arithmetic done -- it fixes it and sends again.
+ */
+function densityCases(check) {
+  const doc = (blocks, lines) => ({
+    nodes: Array.from({ length: blocks }, (_, i) => ({ id: `n${i}` })),
+    edges: Array.from({ length: lines }, (_, i) => ({ id: `e${i}` })),
+  });
+
+  check('a diagram inside its budget is not told anything',
+    overConnected(doc(12, 4)) === null && overConnected(doc(6, 3)) === null);
+  check('the complaint starts past one connection per two blocks',
+    overConnected(doc(6, 3)) === null && overConnected(doc(6, 4)) !== null,
+    'the threshold has to match the validator, or the project holds two opinions');
+  check('it names the budget rather than only the breach', (() => {
+    const said = overConnected(doc(12, 9));
+    return said.includes('9 for 12 blocks') && said.includes('cut it to 4');
+  })(), overConnected(doc(12, 9)));
+  check('a small diagram is still asked for at least one', (() => {
+    // Four blocks over budget is a budget of one, not of zero: floor(4 / 3).
+    return overConnected(doc(4, 4)).includes('cut it to 1');
+  })(), overConnected(doc(4, 4)));
+  check('an empty diagram is not scolded for having no connections',
+    overConnected(doc(0, 0)) === null);
+
 }
 
 function documentCases(check) {

@@ -196,6 +196,9 @@ here.
   changed it themselves.
 - Make changes with \`replace_diagram\`, passing the complete document as JSON
   text. Keep the ids that already exist.
+- Count the connections before you send: at most one per three blocks. The tool
+  result says so when you have overspent, and that is a thing to fix and send
+  again — not a note to acknowledge in your reply.
 - The tool result lists what the loader repaired and what it refused. Those are
   real problems in what you sent — fix them and send again rather than telling
   the person it worked.

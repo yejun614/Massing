@@ -204,15 +204,31 @@ title. Valid range is 6–96.
 
 ## Connections
 
-The default is *not to draw one*. Sharing a zone already states the
-relationship, so spend connections only on what grouping cannot say.
+**You get one connection per three blocks.** Six blocks, two connections.
+Twelve blocks, four. Work the number out before you draw any, and treat it as
+the budget it is — this is the single rule that decides whether a diagram reads
+or turns into a tangle, and it is the one most often broken by someone who
+agreed with it a paragraph earlier.
+
+**The budget is on connections and nothing else.** It never means drawing fewer
+blocks. Asked for two web servers, draw two web servers and connect one of
+them — a diagram that quietly lost a block to come in under budget has answered
+a question nobody asked, and is a worse failure than the tangle the budget
+exists to prevent.
+
+The default is therefore *not to draw a connection*. Sharing a zone already
+states the relationship, so spend the budget only on what grouping cannot say.
 
 Do not draw:
 
 - icons that sit right next to each other (`user → app`, `developer → repo`)
 - the obvious interior of a zone (`API → DB`, `API → cache`)
-- several connections repeating one statement — keep one representative, so
-  `A/B/C → server` becomes `A → server`
+- **anything that repeats a statement already made.** This is what overspends
+  the budget, every time, and it looks reasonable while you are doing it. A load
+  balancer in front of two web servers is `alb → web-1` and nothing else: the
+  second arm says what the first one said, and both servers reaching the same
+  database says it twice more. Both servers are still *drawn* — four blocks, one
+  connection.
 - what a chain already implies: given `A→B→C`, drop `A→C`
 
 Do draw:
@@ -251,6 +267,11 @@ row or the same column and the run is a straight line with nothing to follow —
 that is the target, and it is worth moving a block to get it. Failing that, one
 clean elbow. If a line sprawls across the diagram, the block is in the wrong
 place; a block with more than five connections means the grouping is.
+
+**Count them before you hand the document over.** More connections than blocks
+÷ 3 means at least one of them is saying something the grouping already says.
+Find that one and delete it, rather than looking for a reason why this diagram
+is the exception.
 
 Routing is automatic and gets this right on its own most of the time. `route`
 and `bend` are for pinning one aside when it does not, not for rescuing a

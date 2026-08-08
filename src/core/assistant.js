@@ -31,6 +31,41 @@ const MAX_STEPS = 8;
 /** Sessions kept, newest first. Old conversations are not worth a quota crash. */
 const MAX_SESSIONS = 20;
 
+/**
+ * The house rule the loader cannot enforce, said back in the tool result.
+ *
+ * Written into the prompt, it is advice a model agrees with and then overspends
+ * anyway — measured against the live model, six diagrams out of six came back
+ * over the limit, averaging a connection per block instead of one per three.
+ * Said *here* it is feedback inside the loop, arriving after the mistake with
+ * the arithmetic already done, which the model is told to fix and send again.
+ *
+ * Advisory, not a refusal: the edit is applied either way. Someone may have
+ * asked for exactly those connections, and a style rule is not grounds for
+ * throwing away a document that loads.
+ *
+ * It says which way to cut, because the first version did not and the model
+ * found the other one: asked for a load balancer, two web servers and a
+ * database, it came back under budget by drawing a single web server. Losing a
+ * block someone asked for is a worse answer than the tangle this prevents.
+ *
+ * The threshold is the validator's, not a second opinion — over one per two
+ * complains, one per three is the target it names.
+ */
+export function overConnected(doc) {
+  const blocks = doc.nodes.length;
+  const lines = doc.edges.length;
+  if (!blocks || lines / blocks <= 0.5) return null;
+  const budget = Math.max(1, Math.floor(blocks / 3));
+  return (
+    `Too many connections: ${lines} for ${blocks} blocks. The budget is one per ` +
+    `three, so cut it to ${budget}. Delete connections, never blocks: every block ` +
+    `stays exactly as it is. What to remove is whatever repeats something the ` +
+    `grouping already says — a load balancer's second arm, two servers reaching ` +
+    `the same database. Send the document again with those lines gone.`
+  );
+}
+
 /** A short, stable id without pulling in anything to generate one. */
 function newId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -150,13 +185,20 @@ export function createAssistant({ store, commands, fetchImpl = fetch } = {}) {
       const counts =
         `${parsed.doc.nodes.length} blocks, ${parsed.doc.groups.length} zones, ` +
         `${parsed.doc.edges.length} connections, ${parsed.doc.texts.length} notes`;
-      if (!parsed.warnings.length) return `Applied. The diagram now has ${counts}.`;
-      return [
-        `Applied, with ${parsed.warnings.length} thing(s) the loader had to repair.`,
-        'These are problems in what you sent. Fix them and send the document again:',
-        ...parsed.warnings.map((w) => `- ${w}`),
-        `The diagram now has ${counts}.`,
-      ].join('\n');
+      const lines = [];
+      if (parsed.warnings.length) {
+        lines.push(
+          `Applied, with ${parsed.warnings.length} thing(s) the loader had to repair.`,
+          'These are problems in what you sent. Fix them and send the document again:',
+          ...parsed.warnings.map((w) => `- ${w}`)
+        );
+      } else {
+        lines.push('Applied.');
+      }
+      lines.push(`The diagram now has ${counts}.`);
+      const overspent = overConnected(parsed.doc);
+      if (overspent) lines.push(overspent);
+      return lines.join('\n');
     }
 
     return `Refused: there is no tool called "${name}".`;
