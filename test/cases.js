@@ -52,7 +52,7 @@ import { validateDrawing, validateDocument, formatReport } from '../src/core/val
 import { THREE_TIER } from '../src/data/samples.js';
 import { overConnected, underDrawn, misplaced, documentInReply } from '../src/core/assistant.js';
 import { MODEL_TIERS, DEFAULT_TIER, isTier, modelForTier, tiersPinned } from '../src/data/models.js';
-import { clampBox, isBox } from '../src/ui/movable.js';
+import { clampBox, KEEP_VISIBLE, HANDLE_HEIGHT } from '../src/ui/movable.js';
 import { splitTabs, joinTabs, createTabs } from '../src/core/tabs.js';
 import { createStore } from '../src/core/store.js';
 import {
@@ -932,21 +932,57 @@ function movableCases(check) {
     const same = clampBox(box(100, 50), view, min);
     return same.left === 100 && same.top === 50 && same.width === 380 && same.height === 520;
   })());
-  check('a box off the right edge comes back',
-    clampBox(box(950, 50), view, min).left === 1000 - 380);
-  check('a box off the bottom comes back',
-    clampBox(box(10, 700), view, min).top === 800 - 520);
-  check('negative coordinates come back',
-    clampBox(box(-200, -80), view, min).left === 0 &&
-      clampBox(box(-200, -80), view, min).top === 0);
+
+  // --- most of it may hang off, a handle may not ---------------------------
+  check('a panel may be pushed off the right edge', (() => {
+    // Only KEEP_VISIBLE has to remain, not the whole card: leaving a strip of
+    // title showing is half the reason for moving one in the first place.
+    const pushed = clampBox(box(2000, 50), view, min);
+    return pushed.left === view.width - KEEP_VISIBLE;
+  })(), JSON.stringify(clampBox(box(2000, 50), view, min)));
+  check('a panel may be pushed off the left edge', (() => {
+    const pushed = clampBox(box(-2000, 50), view, min);
+    return pushed.left === KEEP_VISIBLE - 380;
+  })(), JSON.stringify(clampBox(box(-2000, 50), view, min)));
+  check('a strip of it is always still on screen', (() => {
+    for (const at of [-5000, -381, -100, 0, 999, 5000]) {
+      const { left, width } = clampBox(box(at, 10), view, min);
+      const onScreen = Math.min(left + width, view.width) - Math.max(left, 0);
+      if (onScreen < KEEP_VISIBLE) return false;
+    }
+    return true;
+  })());
+  check('the ask for a visible strip never exceeds the panel itself', (() => {
+    // A panel narrower than the strip would otherwise be clamped to a range
+    // whose lower bound sat above its upper one.
+    const narrow = clampBox({ left: -500, top: 0, width: 60, height: 300 },
+      { width: 1000, height: 800 }, { width: 40, height: 40 });
+    return narrow.left === 0 && narrow.width === 60;
+  })(), JSON.stringify(clampBox({ left: -500, top: 0, width: 60, height: 300 },
+    { width: 1000, height: 800 }, { width: 40, height: 40 })));
+
+  check('it never goes above the top edge', (() => {
+    // Off the top the header is the first thing gone, and what is left cannot
+    // be dragged at all — so this one stays a hard floor.
+    return clampBox(box(10, -400), view, min).top === 0;
+  })());
+  check('the header stays reachable at the bottom',
+    clampBox(box(10, 5000), view, min).top === view.height - HANDLE_HEIGHT,
+    'past this the title bar is off screen and there is nothing to grab');
+  check('the bottom rule allows hanging below, unlike the old whole-card rule',
+    clampBox(box(10, 700), view, min).top === 700,
+    'a 520-tall panel at y=700 in an 800 window used to be dragged back up');
+
+  // --- size ----------------------------------------------------------------
   check('a box wider than the window is shrunk to it',
     clampBox(box(0, 0, 2000, 3000), view, min).width === 1000);
   check('shrinking happens before moving', (() => {
-    // Clamped the other way round, a too-wide box is pinned to the left edge
-    // and only then made to fit, which loses the position for nothing.
-    const fixed = clampBox(box(900, 10, 2000, 400), view, min);
-    return fixed.width === 1000 && fixed.left === 0;
-  })());
+    // The order is visible on the left bound, which is `keep - width`. Clamped
+    // the other way round, this box keeps the -1500 that a 2000-wide panel was
+    // allowed, then shrinks to 1000 — and ends up entirely off screen.
+    const fixed = clampBox(box(-1500, 10, 2000, 400), view, min);
+    return fixed.width === 1000 && fixed.left === KEEP_VISIBLE - 1000;
+  })(), JSON.stringify(clampBox(box(-1500, 10, 2000, 400), view, min)));
   check('a box smaller than the minimum is grown to it',
     clampBox(box(10, 10, 40, 30), view, min).width === 300 &&
       clampBox(box(10, 10, 40, 30), view, min).height === 260);
@@ -954,13 +990,11 @@ function movableCases(check) {
     // Otherwise the clamp hands back a box larger than the screen it is
     // clamping to, which is the one thing it exists to prevent.
     const tiny = clampBox(box(0, 0, 380, 520), { width: 200, height: 150 }, min);
-    return tiny.width === 200 && tiny.height === 150 && tiny.left === 0 && tiny.top === 0;
+    return tiny.width === 200 && tiny.height === 150;
   })());
-
-  check('a stored box is recognised', isBox({ left: 0, top: 0, width: 10, height: 10 }));
-  check('junk in storage is not a box', !isBox(null) && !isBox('nope') && !isBox({ left: 1 }) &&
-    !isBox({ left: 1, top: 2, width: 3, height: NaN }),
-    'localStorage outlives the code that wrote it, and holds whatever it was given');
+  check('a window shorter than the handle still yields a reachable top',
+    clampBox(box(0, 300), { width: 400, height: 20 }, min).top === 0,
+    'the bottom bound would go negative and pin the panel above the window');
 }
 
 /**

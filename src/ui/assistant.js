@@ -36,6 +36,16 @@ const MIN_SIZE = { width: 300, height: 260 };
 const INPUT_MAX_HEIGHT = 160;
 
 /**
+ * How far down the panel may be faded.
+ *
+ * Not to zero. The point of dimming it is to read the drawing through it while
+ * keeping the conversation to hand, and a panel faded to nothing is one whose
+ * own close button cannot be found — a control that can hide itself needs a
+ * floor, and 30% is where the text is still legible against the canvas.
+ */
+const MIN_OPACITY = 30;
+
+/**
  * A question, and what was selected when it was asked.
  *
  * The two travel as one string so a conversation reopened tomorrow still says
@@ -134,6 +144,35 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
       },
     }),
   ]);
+  /*
+   * How solid the panel is.
+   *
+   * A native range rather than something drawn here: dragging a slider is one
+   * of the few interactions a browser already does better than any
+   * reimplementation of it, including with a keyboard, and there is nothing
+   * about this one worth styling from scratch.
+   *
+   * It sets a custom property rather than `style.opacity` because the panel is
+   * also faded by its own rules — a turn in flight, a narrow window — and two
+   * things writing the same inline property is how one of them silently wins.
+   */
+  const opacity = h('input', {
+    class: 'chat-opacity',
+    type: 'range',
+    min: String(MIN_OPACITY),
+    max: '100',
+    step: '5',
+    value: '100',
+    title: 'How solid the panel is',
+    'aria-label': 'Panel opacity',
+    onInput: () => {
+      panel.style.setProperty('--chat-opacity', String(Number(opacity.value) / 100));
+    },
+    // The canvas listens for bare keys as tools; the arrow keys that nudge
+    // this slider must not also nudge the diagram behind it.
+    onKeyDown: (e) => e.stopPropagation(),
+  });
+
   const newBtn = h('button', {
     class: 'btn',
     type: 'button',
@@ -299,6 +338,7 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
         onDblClick: () => movable.reset(),
       }),
       picked,
+      opacity,
       newBtn,
       h('button', {
         class: 'btn btn-icon',
@@ -324,7 +364,8 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
 
   /*
    * Moved by its header, resized by the grip the browser draws for
-   * `resize: both`, and both remembered.
+   * `resize: both`, and neither one remembered — a reload puts it back in the
+   * bottom-right corner, where it always starts.
    *
    * Off below the breakpoint, which is the whole of the mobile story: a phone
    * has no room to put a panel anywhere but where the stylesheet puts it, and
@@ -332,7 +373,6 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
    */
   const movable = makeMovable(panel, {
     handle: panel.querySelector('.chat-head'),
-    storageKey: 'massing:chat:box:v1',
     min: MIN_SIZE,
     fixedWhen: window.matchMedia(FIXED_BELOW),
   });

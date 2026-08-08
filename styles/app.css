@@ -1490,7 +1490,22 @@ kbd {
   min-height: 260px;
   max-width: 100vw;
   max-height: 100vh;
+  /*
+   * Set from the header's slider. A custom property rather than the `opacity`
+   * declaration itself, so the panel's own states can still fade it without
+   * two things writing one inline property and one of them silently winning.
+   */
+  opacity: var(--chat-opacity, 1);
 }
+
+/*
+ * The panel may hang off an edge, and the page must not grow to hold it.
+ *
+ * `position: fixed` keeps it out of the document's scrollable overflow, and
+ * `html, body { overflow: hidden }` at the top of this file is what makes that
+ * a guarantee rather than a browser's opinion. Both are load-bearing now that
+ * a drag can put three-quarters of the card past the right edge.
+ */
 /* While being dragged: no text selection, and no transition chasing it. */
 .chat.is-moving { user-select: none; }
 .chat.is-moving * { cursor: grabbing !important; }
@@ -1507,6 +1522,21 @@ kbd {
 }
 .chat-head button { cursor: pointer; }
 .chat-title { font-weight: 650; font-size: 13px; margin-right: auto; }
+
+/*
+ * The opacity slider, sized down to fit a header that already carries three
+ * controls. Narrow enough to leave the conversation name room to be read, and
+ * given its own cursor so it does not inherit the header's `grab` — a control
+ * you can drag sideways should not look like one that moves the whole card.
+ */
+.chat-opacity {
+  flex: none;
+  width: 54px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.chat-opacity:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 
 /*
  * The conversation switcher.
@@ -1892,10 +1922,10 @@ kbd {
  *
  * There is nowhere else to put it — it already spans the width — and a drag
  * started on the header would be competing with the swipe that scrolls the
- * transcript underneath it. The `!important` is aimed at the inline geometry
- * a wider window may have left in `localStorage`: rotating a tablet into
+ * transcript underneath it. The `!important` is aimed at inline geometry left
+ * behind by a drag made before the window narrowed: rotating a tablet into
  * portrait must not leave a panel sized for landscape hanging off the edge.
- * The panel drops its inline styles as well, on the same breakpoint; this is
+ * The panel drops those inline styles as well, on the same breakpoint; this is
  * the half that holds without script.
  */
 @media (max-width: 720px) {
