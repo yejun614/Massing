@@ -18,9 +18,14 @@
 
 import { h, clear, setAttrs } from '../util/dom.js';
 import { UI_ICONS } from './icons-ui.js';
+import { MAX_TAB_NAME } from '../core/schema.js';
 
 /** How far a press has to travel before it is a drag rather than a click. */
 const DRAG_SLOP = 4;
+
+/** How close to an edge a dragged tab starts scrolling the row, and how fast. */
+const EDGE_ZONE = 28;
+const EDGE_SPEED = 12;
 
 export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
   /*
@@ -52,6 +57,82 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     strip.addEventListener(type, (e) => e.stopPropagation());
   }
 
+  // --- scrolling a row that has outgrown the canvas -------------------------
+
+  /**
+   * A wheel over the row scrolls it — but only while there is something to
+   * scroll to.
+   *
+   * A horizontal scroller with no visible scrollbar is otherwise unreachable
+   * with a mouse: a plain wheel does nothing to it and Shift+wheel is not
+   * something anyone tries on a strip of tabs. Vertical and horizontal deltas
+   * both count, so a trackpad swipe works as well as a wheel.
+   *
+   * When the row fits, the event is left alone and reaches the canvas as a
+   * zoom, which is what it means everywhere else over the drawing.
+   */
+  list.addEventListener('wheel', (e) => {
+    if (!overflowing()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    list.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  }, { passive: false });
+
+  const overflowing = () => list.scrollWidth - list.clientWidth > 1;
+
+  /**
+   * A button at each end, for the people who will never think to use a wheel.
+   *
+   * They are laid over the row rather than placed in it, so appearing and
+   * disappearing cannot change how wide the row's contents are — which, in a
+   * control whose whole job is to show up exactly when the contents overflow,
+   * is the difference between a button and a flickering loop.
+   */
+  const nudgeBtn = (icon, label, direction) =>
+    h('button', {
+      class: `tab-nudge tab-nudge-${direction < 0 ? 'left' : 'right'}`,
+      type: 'button',
+      title: label,
+      'aria-label': label,
+      html: UI_ICONS[icon],
+      onClick: () => {
+        list.scrollBy({ left: direction * list.clientWidth * 0.7, behavior: 'smooth' });
+      },
+    });
+  strip.append(
+    nudgeBtn('chevronLeft', 'Scroll the drawings left', -1),
+    nudgeBtn('chevronRight', 'Scroll the drawings right', 1)
+  );
+
+  /** Say which way there is more, so the edges can be faded. */
+  function paintOverflow() {
+    const max = list.scrollWidth - list.clientWidth;
+    strip.classList.toggle('can-scroll-left', list.scrollLeft > 1);
+    strip.classList.toggle('can-scroll-right', list.scrollLeft < max - 1);
+  }
+  list.addEventListener('scroll', paintOverflow);
+  window.addEventListener('resize', paintOverflow);
+
+  /**
+   * Keep the current drawing's tab where it can be seen.
+   *
+   * Done by hand rather than with `scrollIntoView`, which is free to scroll
+   * every ancestor as well — and which would centre the tab when nudging it
+   * into view is all that is wanted. The `+` sits over the right edge, so the
+   * room it takes is reserved.
+   */
+  function revealActive() {
+    const tab = list.querySelector('.tab.is-active');
+    if (!tab || !overflowing()) return;
+    const margin = 8;
+    const rightWall = list.scrollLeft + list.clientWidth - addBtn.offsetWidth - margin;
+    if (tab.offsetLeft < list.scrollLeft + margin) {
+      list.scrollLeft = tab.offsetLeft - margin;
+    } else if (tab.offsetLeft + tab.offsetWidth > rightWall) {
+      list.scrollLeft = tab.offsetLeft + tab.offsetWidth + addBtn.offsetWidth + margin - list.clientWidth;
+    }
+  }
+
   // --- the popover ----------------------------------------------------------
 
   /** Which tab the popover is open on, or -1. */
@@ -61,6 +142,9 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     class: 'tab-pop-name',
     type: 'text',
     'aria-label': 'Tab name',
+    // The loader enforces this too. Here it is so the field stops rather than
+    // accepting a name that would be silently cut on the way out.
+    maxlength: String(MAX_TAB_NAME),
     onKeydown: (e) => {
       if (e.key === 'Enter') closePopover({ commit: true });
       else if (e.key === 'Escape') closePopover({ commit: false });
@@ -222,6 +306,12 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
       index,
       to: index,
       startX: e.clientX,
+      // Where the row was scrolled to when the press began. Everything below is
+      // measured in the row's own coordinates, so a row that scrolls under the
+      // drag has to be added back in or the tab slides out from under the
+      // pointer that is holding it.
+      startScroll: list.scrollLeft,
+      pointerX: e.clientX,
       moving: false,
       tab,
       // Measured once: the layout does not change until the drag is over.
@@ -242,7 +332,8 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
 
   function onDrag(e) {
     if (!drag) return;
-    const dx = e.clientX - drag.startX;
+    drag.pointerX = e.clientX;
+    const dx = e.clientX - drag.startX + (list.scrollLeft - drag.startScroll);
     if (!drag.moving) {
       if (Math.abs(dx) < DRAG_SLOP) return;
       drag.moving = true;
@@ -256,6 +347,7 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     }
 
     drag.tab.style.transform = `translateX(${dx}px)`;
+    edgeScroll();
 
     // Where it would land: the neighbour whose middle the tab has passed.
     const centre = drag.others[drag.index].mid + dx;
@@ -276,6 +368,30 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     if (under) {
       marker.style.transform = `translateX(${under.left + shiftFor(tabs.active, dx)}px)`;
     }
+  }
+
+  /**
+   * Carry the row along when a drag reaches its edge.
+   *
+   * A frame loop rather than a response to pointer moves: the gesture that
+   * needs this is holding the tab still against the edge, which produces no
+   * moves at all. It re-runs the drag maths itself each frame, so the tab keeps
+   * up with the row sliding underneath it.
+   */
+  let edgeFrame = 0;
+  function edgeScroll() {
+    cancelAnimationFrame(edgeFrame);
+    if (!drag?.moving || !overflowing()) return;
+    const box = list.getBoundingClientRect();
+    const left = drag.pointerX - box.left;
+    const right = box.right - drag.pointerX;
+    const step = left < EDGE_ZONE ? -EDGE_SPEED : right < EDGE_ZONE ? EDGE_SPEED : 0;
+    if (!step) return;
+    const before = list.scrollLeft;
+    list.scrollLeft += step;
+    if (list.scrollLeft === before) return; // already at the end
+    onDrag({ clientX: drag.pointerX });
+    edgeFrame = requestAnimationFrame(edgeScroll);
   }
 
   /** How far tab `i` has been displaced, mid-drag. */
@@ -305,6 +421,7 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
       // The pointer was already released, which is not a problem to report.
     }
     drag = null;
+    cancelAnimationFrame(edgeFrame);
     list.classList.remove('is-dragging');
     tab.classList.remove('is-dragged');
     if (!moving) return;
@@ -392,6 +509,8 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     });
     clear(list).append(marker, ...entries.map(tabButton), addBtn);
     placeMarker();
+    revealActive();
+    paintOverflow();
   }
 
   render();

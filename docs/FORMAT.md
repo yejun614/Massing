@@ -358,7 +358,9 @@ collections move one level down and each tab carries its own:
   it has a second drawing to wrap, so every file written before tabs existed
   round-trips byte for byte, and saving a single-tab file never adds a layer.
 - `meta` and `canvas` belong to the file. A tab has a `name` and its five
-  collections, and nothing else.
+  collections, and nothing else. A name is at most 40 characters — the strip
+  elides what will not fit, but the file itself is bounded too — and a tab
+  without one is numbered.
 - **Ids are unique within a tab, not across the file.** Two drawings may both
   call something `api`; they are separate documents that happen to travel
   together. A connection can only join two things in its own tab.

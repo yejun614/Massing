@@ -31,6 +31,16 @@ export const FILE_EXTENSION = '.arch.json';
 
 /** Sanity bound on grid coordinates and sizes, shared with the resize drag. */
 export const MAX_SPAN = 400;
+
+/**
+ * How long a tab's name may be.
+ *
+ * A tab is about 25 characters wide before it starts eliding, so this is not
+ * about what fits — it is a bound on what a file may carry. Without one a name
+ * is unbounded text in a field that is only ever read at a glance, and a
+ * paragraph pasted into it would be stored, saved and published in full.
+ */
+export const MAX_TAB_NAME = 40;
 const EDGE_STYLES = new Set(['solid', 'dashed', 'dotted']);
 const EDGE_ARROWS = new Set(['none', 'end', 'start', 'both']);
 
@@ -232,7 +242,13 @@ export function normalizeDoc(raw) {
       }
       const body = emptyBody();
       readBody(tab, body, warnings, `tabs[${index}].`);
-      doc.tabs.push({ name: str(tab.name) || `Tab ${index + 1}`, ...body });
+      const given = str(tab.name);
+      if (given && [...given].length > MAX_TAB_NAME) {
+        warnings.push(
+          `Shortened tabs[${index}].name to ${MAX_TAB_NAME} characters.`
+        );
+      }
+      doc.tabs.push({ name: tabNameFrom(given, index), ...body });
     }
     if (!doc.tabs.length) doc.tabs.push({ name: 'Tab 1', ...emptyBody() });
     for (const key of CONTENT_KEYS) delete doc[key];
@@ -241,6 +257,19 @@ export function normalizeDoc(raw) {
 
   readBody(raw, doc, warnings, '');
   return { doc, warnings, rejection: null };
+}
+
+/**
+ * A tab's name, bounded, or its number when it has none.
+ *
+ * Counted in code points rather than in `length`, so a name of emoji or of
+ * Korean is cut where it looks cut rather than at a UTF-16 unit, which would
+ * leave a half character behind.
+ */
+export function tabNameFrom(name, index) {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return `Tab ${index + 1}`;
+  return [...trimmed].slice(0, MAX_TAB_NAME).join('');
 }
 
 /** The five collections a drawing is made of, empty. */

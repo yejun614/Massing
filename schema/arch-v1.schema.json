@@ -94,7 +94,7 @@
           "name": {
             "type": "string",
             "description": "What the tab is called. Name it after what it shows — \"Overview\", \"Network detail\" — since this is all anyone has to go on before clicking it.",
-            "maxLength": 60
+            "maxLength": 40
           },
           "groups": {
             "type": "array",

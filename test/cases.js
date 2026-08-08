@@ -28,6 +28,7 @@ import {
   createEmptyDoc,
   docRejection,
   CONTENT_KEYS,
+  MAX_TAB_NAME,
 } from '../src/core/schema.js';
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
@@ -662,6 +663,33 @@ function tabCases(check) {
     const { tabs } = controller();
     tabs.rename(1, '  Write path  ');
     return tabs.document().tabs[1].name === 'Write path';
+  })());
+  check('a name has an upper bound', (() => {
+    const { tabs } = controller();
+    tabs.rename(1, 'x'.repeat(200));
+    return tabs.list[1].name.length === MAX_TAB_NAME;
+  })());
+  check('a name is cut in characters, not in code units', (() => {
+    // Half a surrogate pair would be a lone replacement character on screen.
+    const { tabs } = controller();
+    tabs.rename(1, '🙂'.repeat(50));
+    const name = tabs.list[1].name;
+    return [...name].length === MAX_TAB_NAME && !name.includes('�') &&
+      [...name].every((c) => c === '🙂');
+  })());
+  check('a file carrying an over-long name is shortened, and says so', (() => {
+    const { doc, warnings } = normalizeDoc({
+      tabs: [{ name: 'A'.repeat(90), nodes: [node('a')] }, { name: 'Two', nodes: [node('b')] }],
+    });
+    return doc.tabs[0].name.length === MAX_TAB_NAME &&
+      warnings.some((w) => w.includes('tabs[0].name'));
+  })());
+  check('a name at the bound is left alone', (() => {
+    const name = 'A'.repeat(MAX_TAB_NAME);
+    const { doc, warnings } = normalizeDoc({
+      tabs: [{ name, nodes: [node('a')] }, { name: 'Two', nodes: [node('b')] }],
+    });
+    return doc.tabs[0].name === name && !warnings.length;
   })());
   check('a name erased falls back to its number', (() => {
     const { tabs } = controller();

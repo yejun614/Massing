@@ -18,7 +18,7 @@
  * entries are whole documents, it would do so by replacing the one you are.
  */
 
-import { serializeDoc, normalizeDoc, createEmptyDoc } from './schema.js';
+import { serializeDoc, normalizeDoc, createEmptyDoc, tabNameFrom } from './schema.js';
 
 /** A default name for tab `index`, one-based as the strip shows it. */
 export const tabName = (index) => `Tab ${index + 1}`;
@@ -192,7 +192,9 @@ export function createTabs({ store, initial = null, onSwitch } = {}) {
     rename(index, name) {
       const tab = tabs[index];
       if (!tab) return;
-      tab.name = String(name ?? '').trim() || tabName(index);
+      // Through the loader's own rule, so a name typed here and a name read
+      // from a file are bounded by one thing rather than by two.
+      tab.name = tabNameFrom(name, index);
       announce();
     },
 

@@ -572,6 +572,63 @@ body.is-resizing .resizer::after { opacity: 1; }
  * the current tab is a pill behind it that slides between them instead.
  */
 
+/*
+ * The fades are the only sign that a row has more in it than fits, so they are
+ * on the strip rather than on the scroller: as a mask on the row itself they
+ * would have dimmed the pinned `+` sitting in the same place. The right-hand
+ * one stops where that button starts.
+ */
+.tab-strip::before,
+.tab-strip::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 22px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.tab-strip::before {
+  left: 4px;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+.tab-strip::after {
+  right: 30px; /* the width of the pinned + , plus the row's padding */
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+.tab-strip.can-scroll-left::before,
+.tab-strip.can-scroll-right::after { opacity: 1; }
+
+/*
+ * The same two ends, as something to press. Over the row rather than in it: a
+ * control that appears when the contents overflow must not itself change how
+ * wide those contents are.
+ */
+.tab-nudge {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: none;
+  place-items: center;
+  width: 20px;
+  height: 22px;
+  margin-top: -11px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.tab-nudge:hover { color: var(--ink); border-color: var(--border-strong); }
+.tab-nudge svg { width: 11px; height: 11px; display: block; }
+.tab-nudge-left { left: 5px; }
+.tab-nudge-right { right: 34px; } /* clear of the pinned + */
+.tab-strip.can-scroll-left .tab-nudge-left,
+.tab-strip.can-scroll-right .tab-nudge-right { display: grid; }
+
 .tab-strip {
   position: absolute;
   left: 10px;
@@ -587,7 +644,9 @@ body.is-resizing .resizer::after { opacity: 1; }
   display: flex;
   align-items: stretch;
   gap: 2px;
-  padding: 3px;
+  /* No padding on the right: the pinned `+` supplies it, so the row has
+     nowhere for a scrolled tab to peek out past the button. */
+  padding: 3px 0 3px 3px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -665,14 +724,19 @@ body.is-resizing .resizer::after { opacity: 1; }
 }
 
 .tab-add {
-  position: relative;
+  position: sticky;
+  right: 0;
+  z-index: 3;
   flex: none;
   display: grid;
   place-items: center;
-  width: 26px;
+  /* Reaching into the row's padding, because a scroller's content slides
+     under it -- without this a hair of the last tab shows past the button. */
+  width: 29px;
+  padding-right: 3px;
   border: none;
   border-radius: 7px;
-  background: none;
+  background: var(--surface);
   color: var(--ink-muted);
   cursor: pointer;
 }
@@ -689,7 +753,7 @@ body.is-resizing .resizer::after { opacity: 1; }
 .tab-pop {
   position: absolute;
   bottom: calc(100% + 6px);
-  z-index: 2;
+  z-index: 4;
   width: 244px;
   padding: 8px;
   border: 1px solid var(--border);

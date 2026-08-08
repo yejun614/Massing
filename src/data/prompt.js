@@ -212,7 +212,8 @@ carrying its own \`groups\`, \`nodes\`, \`edges\`, \`texts\` and \`images\`:
 - Ids only have to be unique **within** one tab, and a connection can only join
   two things in its own tab. Nothing crosses.
 - Name a tab after what it shows — "Overview", "Write path", "Failover" — since
-  that name is all anyone has before they click it.
+  that name is all anyone has before they click it. Forty characters at most;
+  a longer one is cut on load.
 
 Reach for this when one picture would have to answer two questions: a system
 overview and the inside of one service, a before and an after, the happy path
