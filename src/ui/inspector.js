@@ -599,37 +599,285 @@ function buildEdge(root, store, id) {
   return fields;
 }
 
+/** English plural without a table of exceptions, for the words used below. */
+const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * The value every one of `items` agrees on, or null when they differ.
+ *
+ * Null is what a field renders as blank, which is the honest thing to show for
+ * a mixed selection: an input that displayed the first item's value would be
+ * offering to change everything to something only one of them has.
+ */
+function shared(items, read) {
+  if (!items.length) return null;
+  const first = read(items[0]);
+  return items.every((item) => read(item) === first) ? first : null;
+}
+
+/**
+ * Editing many things at once.
+ *
+ * Selecting eight blocks to give them one caption size is the whole reason the
+ * uniformity this format wants is achievable by hand, so the panel offers every
+ * field that is meaningful across a group rather than colour alone. Which
+ * fields appear depends on what is actually selected: connections have no
+ * height, notes have no caption plane, and a section for a kind that is not
+ * present is a control that cannot do anything.
+ *
+ * The one thing deliberately missing is caption *text*. Everything here sets
+ * one value on many entities, and the only thing that does to a set of names
+ * is destroy them.
+ */
 function buildMulti(root, store, commands, selection) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Selection' }),
-    h('div', { class: 'entity-kind', text: `${selection.length} items selected` }),
-  ]);
 
-  fields.push(
-    swatchField(section, store, {
-      label: 'Colour',
-      colors: SWATCHES,
-      get: () => null,
-      set: (value) => (doc) => {
-        for (const id of selection) {
-          const target = nodeById(doc, id) || groupById(doc, id) || edgeById(doc, id);
-          if (target) target.color = value;
-        }
-      },
-    })
-  );
+  /** The selection, resolved against a document and split up by kind. */
+  const split = (doc) => {
+    const found = selection.map((id) => entityById(doc, id)).filter(Boolean);
+    const of = (kind) => found.filter((f) => f.kind === kind).map((f) => f.entity);
+    return {
+      nodes: of('node'),
+      groups: of('group'),
+      edges: of('edge'),
+      texts: of('text'),
+      images: of('image'),
+    };
+  };
 
-  section.append(
+  /** Apply `fn` to every selected entity of one of `kinds`. */
+  const each = (kinds, fn) => (doc) => {
+    for (const id of selection) {
+      const found = entityById(doc, id);
+      if (found && kinds.includes(found.kind)) fn(found.entity);
+    }
+  };
+
+  const have = split(store.state.doc);
+  const captioned = [...have.nodes, ...have.groups, ...have.edges];
+  const aligned = [...have.nodes, ...have.edges];
+  const planar = [...have.texts, ...have.images];
+
+  const summary = [
+    have.nodes.length && count(have.nodes.length, 'block'),
+    have.groups.length && count(have.groups.length, 'zone'),
+    have.edges.length && count(have.edges.length, 'connection'),
+    have.texts.length && count(have.texts.length, 'note'),
+    have.images.length && count(have.images.length, 'picture'),
+  ].filter(Boolean);
+
+  const section = (title) => {
+    const el = h('section', { class: 'section' }, [
+      h('h2', { class: 'section-title', text: title }),
+    ]);
+    root.append(el);
+    return el;
+  };
+
+  const head = section('Selection');
+  head.append(h('div', { class: 'entity-kind', text: summary.join(' · ') }));
+
+  if (captioned.length) {
+    fields.push(
+      swatchField(head, store, {
+        label: 'Colour',
+        colors: SWATCHES,
+        get: (s) => shared(split(s.doc).nodes.concat(split(s.doc).groups, split(s.doc).edges),
+          (e) => e.color),
+        set: (value) => each(['node', 'group', 'edge'], (e) => (e.color = value)),
+      })
+    );
+  }
+
+  // --- captions -------------------------------------------------------------
+  if (captioned.length) {
+    const box = section('Captions');
+    fields.push(
+      numberField(box, store, {
+        label: 'Size',
+        min: 6,
+        max: 96,
+        get: (s) => {
+          const d = split(s.doc);
+          return shared([...d.nodes, ...d.groups, ...d.edges], (e) => e.labelSize);
+        },
+        set: (value) => each(['node', 'group', 'edge'], (e) => (e.labelSize = value)),
+      }),
+      selectField(box, store, {
+        label: 'Plane',
+        mixed: true,
+        options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
+        get: (s) => {
+          const d = split(s.doc);
+          return shared([...d.nodes, ...d.groups, ...d.edges], (e) => e.labelPlane);
+        },
+        set: (value) => each(['node', 'group', 'edge'], (e) => (e.labelPlane = value)),
+      })
+    );
+    if (aligned.length) {
+      fields.push(
+        selectField(box, store, {
+          label: 'Align',
+          mixed: true,
+          options: ALIGN_OPTIONS,
+          get: (s) => {
+            const d = split(s.doc);
+            return shared([...d.nodes, ...d.edges], (e) => e.labelAlign);
+          },
+          set: (value) => each(['node', 'edge'], (e) => (e.labelAlign = value)),
+        })
+      );
+    }
+  }
+
+  // --- blocks ---------------------------------------------------------------
+  if (have.nodes.length) {
+    const box = section('Blocks');
+    fields.push(
+      pairField(box, store, {
+        label: 'Footprint',
+        min: 1,
+        max: 400,
+        // The one action that makes a scattered diagram uniform in one go.
+        get: (s) => shared(split(s.doc).nodes, (n) => n.size.join('x'))
+          ? split(s.doc).nodes[0].size
+          : null,
+        set: (value) => each(['node'], (n) => (n.size = [...value])),
+      }),
+      numberField(box, store, {
+        label: 'Height',
+        min: 0,
+        max: 40,
+        get: (s) => shared(split(s.doc).nodes, (n) => n.height),
+        set: (value) => each(['node'], (n) => (n.height = value)),
+      })
+    );
+  }
+
+  // --- connections ----------------------------------------------------------
+  if (have.edges.length) {
+    const box = section('Connections');
+    fields.push(
+      selectField(box, store, {
+        label: 'Line',
+        mixed: true,
+        options: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']],
+        get: (s) => shared(split(s.doc).edges, (e) => e.style),
+        set: (value) => each(['edge'], (e) => (e.style = value)),
+      }),
+      selectField(box, store, {
+        label: 'Arrow',
+        mixed: true,
+        options: [['end', 'End'], ['start', 'Start'], ['both', 'Both'], ['none', 'None']],
+        get: (s) => shared(split(s.doc).edges, (e) => e.arrow),
+        set: (value) => each(['edge'], (e) => (e.arrow = value)),
+      })
+    );
+  }
+
+  // --- notes ----------------------------------------------------------------
+  if (have.texts.length) {
+    const box = section('Notes');
+    fields.push(
+      numberField(box, store, {
+        label: 'Size',
+        min: 6,
+        max: 200,
+        get: (s) => shared(split(s.doc).texts, (t) => t.size),
+        set: (value) => each(['text'], (t) => (t.size = value)),
+      }),
+      toggleField(box, store, {
+        label: 'Style',
+        options: [
+          ['bold', 'B', 'Bold', 'font-weight:700'],
+          ['italic', 'I', 'Italic', 'font-style:italic'],
+          ['underline', 'U', 'Underline', 'text-decoration:underline'],
+        ],
+        // A synthetic entity: each flag is on only when every note has it, so
+        // a mixed selection reads as off and one press turns them all on.
+        get: (s) => {
+          const notes = split(s.doc).texts;
+          return {
+            bold: shared(notes, (t) => t.bold) === true,
+            italic: shared(notes, (t) => t.italic) === true,
+            underline: shared(notes, (t) => t.underline) === true,
+          };
+        },
+        set: (key, value) => each(['text'], (t) => (t[key] = value)),
+      }),
+      selectField(box, store, {
+        label: 'Align',
+        mixed: true,
+        options: ALIGN_OPTIONS,
+        get: (s) => shared(split(s.doc).texts, (t) => t.align),
+        set: (value) => each(['text'], (t) => (t.align = value)),
+      })
+    );
+  }
+
+  // --- notes and pictures share their placement -----------------------------
+  if (planar.length) {
+    const box = section('Placement');
+    const flat = (doc) => [...split(doc).texts, ...split(doc).images];
+    fields.push(
+      selectField(box, store, {
+        label: 'Plane',
+        mixed: true,
+        options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
+        get: (s) => shared(flat(s.doc), (e) => e.plane),
+        set: (value) => each(['text', 'image'], (e) => (e.plane = value)),
+      }),
+      selectField(box, store, {
+        label: 'Rotation',
+        mixed: true,
+        options: SPINS.map((s) => [String(s), `${s}°`]),
+        get: (s) => {
+          const spin = shared(flat(s.doc), (e) => e.spin);
+          return spin === null ? null : String(spin);
+        },
+        set: (value) => each(['text', 'image'], (e) => (e.spin = Number(value))),
+      }),
+      numberField(box, store, {
+        label: 'Elevation',
+        min: 0,
+        max: 40,
+        get: (s) => shared(flat(s.doc), (e) => e.z),
+        set: (value) => each(['text', 'image'], (e) => (e.z = value)),
+      }),
+      checkboxField(box, store, {
+        label: 'Behind',
+        caption: 'Draw underneath the blocks',
+        get: (s) => shared(flat(s.doc), (e) => e.behind) === true,
+        set: (value) => each(['text', 'image'], (e) => (e.behind = value)),
+      })
+    );
+  }
+
+  if (have.images.length) {
+    const box = section('Pictures');
+    fields.push(
+      rangeField(box, store, {
+        label: 'Opacity',
+        min: 5,
+        max: 100,
+        get: (s) => Math.round((shared(split(s.doc).images, (im) => im.opacity) ?? 1) * 100),
+        set: (value) => each(['image'], (im) => (im.opacity = value / 100)),
+      })
+    );
+  }
+
+  // Last, and after every other section rather than under the swatches at the
+  // top: the one control here that cannot be undone by setting it back should
+  // not be the one nearest the pointer.
+  root.append(
     h('button', {
       class: 'btn',
       text: 'Delete selection',
-      style: 'margin-top:8px;color:var(--danger)',
+      style: 'margin:12px 0 0;color:var(--danger)',
       onClick: () => commands.deleteSelection(),
     })
   );
 
-  root.append(section);
   return fields;
 }
 
@@ -800,19 +1048,32 @@ function rangeField(parent, store, { label, get, set, min = 0, max = 100 }) {
   };
 }
 
-function selectField(parent, store, { label, options, get, set }) {
+/**
+ * @param {{mixed?: boolean}} options  for a selection whose members disagree.
+ *   Adds a leading placeholder the field falls back to when `get` returns null,
+ *   so a mixed selection says so rather than displaying one member's value as
+ *   though it were everyone's — and choosing it commits nothing.
+ */
+function selectField(parent, store, { label, options, get, set, mixed = false }) {
+  const MIXED = '';
+  const choices = mixed ? [[MIXED, 'Mixed'], ...options] : options;
   const select = h(
     'select',
     {
-      onChange: (e) => commitWith(store, `Change ${label.toLowerCase()}`, set, e.target.value),
+      onChange: (e) => {
+        if (mixed && e.target.value === MIXED) return;
+        commitWith(store, `Change ${label.toLowerCase()}`, set, e.target.value);
+      },
     },
-    options.map(([value, text]) => h('option', { value, text }))
+    choices.map(([value, text]) => h('option', { value, text }))
   );
   row(parent, label, select);
   return {
     sync: (state) => {
       const value = get(state);
-      if (value != null && select.value !== value) select.value = value;
+      if (value == null && !mixed) return;
+      const next = value ?? MIXED;
+      if (select.value !== next) select.value = next;
     },
   };
 }
