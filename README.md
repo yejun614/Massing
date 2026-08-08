@@ -32,6 +32,7 @@ node build.js                     # → dist/index.html, plus the Claude skill
 node build.js --doc my.arch.json   # the same, with a diagram baked in
 node build.js --font Pretendard.woff2   # inline the font: no network at all
 MASSING_VERCEL_FEATURES=1 node build.js  # the hosted build (off by default)
+npm run dev:hosted                # the hosted build locally, real API handlers
 ```
 
 `test/iso.test.html` runs the identical suite in a browser, which also proves

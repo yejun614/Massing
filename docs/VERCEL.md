@@ -32,6 +32,39 @@ variable for each new feature is how a deployment ends up half-configured.
 
 ---
 
+## Running it on your machine first
+
+Everything under `api/` is a Vercel function, and for a while the only way to
+exercise one was to deploy — which turns a one-line fix into a push, a build, a
+cold start and a click. `scripts/dev.mjs` mounts the **real** handlers on a
+plain Node server instead, so the same code answers the same requests with the
+same environment variables:
+
+```sh
+echo "GEMINI_API_KEY=..." > .env.local   # gitignored
+npm run dev:hosted                       # http://127.0.0.1:8130
+```
+
+It prints what is live and what is not:
+
+```
+Massing dev server  http://127.0.0.1:8130
+  blob       in memory — nothing survives a restart
+  assistant  live — default model
+```
+
+- **Gemini is not stubbed** when the key is there. That is the point: function
+  calling, reasoning signatures and which model ids a key can actually reach are
+  precisely what a stub cannot tell you, and each of them was first discovered
+  in production.
+- **Blob is a Map in memory** unless `BLOB_READ_WRITE_TOKEN` is set, so
+  publishing and reading work locally and nothing outlives the process.
+- The page is rebuilt on every request, so editing a module and refreshing is
+  the whole loop.
+
+`.env.local` is gitignored, and the server reads only from it rather than from
+the shell, so a key cannot end up in a command someone pastes.
+
 ## What to set in the dashboard
 
 ### 1. Environment variable, on the project
