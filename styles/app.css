@@ -576,6 +576,14 @@ body.is-resizing .resizer::after { opacity: 1; }
   font-weight: 650;
 }
 
+/* A sheet that is a sentence rather than a table of options. */
+.sheet-narrow { max-width: 410px; }
+.sheet-text {
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
 .sheet-grid {
   display: grid;
   gap: 7px 16px;

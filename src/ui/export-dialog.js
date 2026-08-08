@@ -26,7 +26,7 @@ import {
 
 const STORAGE_KEY = 'massing:export:v1';
 
-export function createExportDialog(root, { store, exporter }) {
+export function createExportDialog(root, { store, exporter, onExported }) {
   const settings = { ...DEFAULT_EXPORT, ...read() };
   const formats = supportedFormats();
   if (!formats.some((f) => f.id === settings.format)) settings.format = DEFAULT_EXPORT.format;
@@ -84,7 +84,9 @@ export function createExportDialog(root, { store, exporter }) {
     text: 'Export',
     onClick: async () => {
       dialog.close();
-      await exporter.run(effective());
+      // Only on a real export. A failed one has already put an error on screen,
+      // and following it with a request for feedback would be a joke.
+      if (await exporter.run(effective())) onExported?.();
     },
   });
 

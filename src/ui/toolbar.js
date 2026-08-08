@@ -5,8 +5,7 @@
 
 import { h, clear, setClass, setAttrs } from '../util/dom.js';
 import { UI_ICONS } from './icons-ui.js';
-
-const REPO_URL = 'https://github.com/yejun614/Massing';
+import { REPO_URL } from '../data/links.js';
 
 export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);

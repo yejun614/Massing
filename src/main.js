@@ -35,6 +35,7 @@ import { createShortcutsDialog } from './ui/shortcuts.js';
 import { createTooltips } from './ui/tooltip.js';
 import { createConsent } from './ui/consent.js';
 import { createExportDialog } from './ui/export-dialog.js';
+import { createFeedbackPrompt } from './ui/feedback.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
 
@@ -108,7 +109,12 @@ const commands = createCommands({ store, scene, toaster, io });
 const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);
-const exportDialog = createExportDialog(document.body, { store, exporter });
+const feedback = createFeedbackPrompt(document.body);
+const exportDialog = createExportDialog(document.body, {
+  store,
+  exporter,
+  onExported: () => feedback.maybeAsk(),
+});
 // The theme decides the canvas colour for any document that has not named one,
 // so what it resolves to has to reach the store the render reads.
 const theme = createTheme((state) => {
