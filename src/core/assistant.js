@@ -16,7 +16,7 @@
  */
 
 import { serializeDoc, normalizeDoc } from './schema.js';
-import { DEFAULT_TIER, isTier } from '../data/models.js';
+import { DEFAULT_TIER, isTier, tierFor } from '../data/models.js';
 
 const SESSIONS_KEY = 'massing:chat:v1';
 
@@ -362,6 +362,13 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
   const mine = () => sessions.filter((s) => !library || s.diagramId === library.currentId);
   let currentId = mine()[0]?.id ?? null;
   let tier = readTier();
+  /**
+   * Notes made before there was a conversation to put them in.
+   *
+   * Not persisted: they describe a choice whose record, once a conversation
+   * exists, lives in that conversation. `startSession` moves them across.
+   */
+  let preface = [];
   let busy = false;
   const listeners = new Set();
 
@@ -434,7 +441,8 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
       title: titleFrom(firstMessage),
       at: Date.now(),
       diagramId: library?.currentId ?? null,
-      messages: [],
+      // Whatever was noted before there was anywhere to note it.
+      messages: preface.splice(0),
     };
     sessions = [session, ...sessions].slice(0, MAX_SESSIONS);
     currentId = session.id;
@@ -582,7 +590,29 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
       if (!isTier(next) || next === tier || busy) return false;
       tier = next;
       writeTier(tier);
-      announce();
+      /*
+       * Say in the transcript what was chosen, and what it means.
+       *
+       * Three words on a button cannot carry the difference between these
+       * models, and the difference is the entire reason to have the control:
+       * one of them will not draw a system from a description and the label
+       * "Light" does not say so. It goes in the log rather than in a tooltip
+       * because the log is where the consequences will show up, and because
+       * scrolling back to find where the answers changed character is exactly
+       * the question this line answers.
+       */
+      const chosen = tierFor(tier);
+      const note = { role: 'note', content: `${chosen.label} — ${chosen.hint}` };
+      const session = current();
+      if (session) {
+        session.messages.push(note);
+        persist();
+      } else {
+        // Nothing to append to yet. Held until a conversation starts, so
+        // choosing a model before typing still leaves a record of the choice.
+        preface.push(note);
+        announce();
+      }
       return true;
     },
     /** The question the turn is parked on, or null. */
@@ -622,7 +652,13 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
     get visible() {
       const out = [];
       const asked = new Map();
-      for (const message of current()?.messages ?? []) {
+      // Before the first question there is no conversation, and the notes
+      // about which model will answer it are still waiting to be housed.
+      for (const message of current()?.messages ?? preface) {
+        if (message.role === 'note') {
+          out.push(message);
+          continue;
+        }
         if (message.role === 'tool') {
           const question = asked.get(message.tool_call_id);
           if (question && message.content?.trim()) {

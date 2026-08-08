@@ -10,8 +10,30 @@
  * is unavailable.
  */
 
-import { h, clear, setClass } from '../util/dom.js';
+import { h, clear, setClass, copyText } from '../util/dom.js';
 import { MODEL_TIERS } from '../data/models.js';
+import { makeMovable } from './movable.js';
+
+/**
+ * Below this the panel is the stylesheet's to place, and moving is off.
+ *
+ * The same 720px the stylesheet uses, deliberately: two breakpoints that
+ * disagree by a pixel produce a panel that is being positioned by both of them.
+ */
+const FIXED_BELOW = '(max-width: 720px)';
+
+/** Smallest the panel may be dragged to before it stops being usable. */
+const MIN_SIZE = { width: 300, height: 260 };
+
+/**
+ * How tall the message box may grow before it starts scrolling instead.
+ *
+ * It grows with what is typed, because a box that shows two lines of a
+ * six-line question is a box you cannot proofread. It stops, because the
+ * transcript is in the same panel and a box that kept growing would push the
+ * conversation it is about off the top.
+ */
+const INPUT_MAX_HEIGHT = 160;
 
 /**
  * A question, and what was selected when it was asked.
@@ -27,6 +49,34 @@ function splitAttachment(content) {
     content.slice(0, at),
     content.slice(at).replace(/^\s*\[Selected in the editor: /, '').replace(/\]\s*$/, ''),
   ];
+}
+
+/**
+ * Copy one answer.
+ *
+ * On the turn rather than in a menu, because the thing worth copying is a
+ * particular answer and there is no way to say which one from a header. It
+ * reports success on itself instead of raising a toast: the toast would appear
+ * in the far corner of the screen for a click made inside a small panel.
+ */
+function copyButton(text) {
+  const button = h('button', {
+    class: 'chat-copy',
+    type: 'button',
+    title: 'Copy this answer',
+    'aria-label': 'Copy this answer',
+    text: 'Copy',
+    onClick: async () => {
+      const ok = await copyText(text);
+      button.textContent = ok ? 'Copied' : 'Blocked';
+      setClass(button, 'is-done', ok);
+      setTimeout(() => {
+        button.textContent = 'Copy';
+        setClass(button, 'is-done', false);
+      }, 1600);
+    },
+  });
+  return button;
 }
 
 export function createAssistantPanel(root, { assistant, store, toaster, onToggle }) {
@@ -48,7 +98,24 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
       // message must not draw a zone behind the panel.
       e.stopPropagation();
     },
+    onInput: () => fitInput(),
   });
+
+  /**
+   * Grow the box to what is in it, up to a point.
+   *
+   * Reset to `auto` first, or `scrollHeight` never comes back down: it reports
+   * the content height *or the height already set*, whichever is larger, so
+   * measuring without clearing makes the box a one-way ratchet that never
+   * shrinks after a line is deleted.
+   */
+  function fitInput() {
+    input.style.height = 'auto';
+    const wanted = input.scrollHeight;
+    input.style.height = `${Math.min(wanted, INPUT_MAX_HEIGHT)}px`;
+    // Only once it has stopped growing does it need to scroll.
+    input.style.overflowY = wanted > INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
+  }
 
   const sendBtn = h('button', { class: 'btn btn-primary', type: 'button', text: 'Send', onClick: () => submit() });
   const contextLabel = h('span', { class: 'chat-context-label' });
@@ -223,7 +290,14 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
 
   const panel = h('section', { class: 'chat is-hidden', 'aria-label': 'Diagram assistant' }, [
     h('header', { class: 'chat-head' }, [
-      h('span', { class: 'chat-title', text: 'Assistant' }),
+      h('span', {
+        class: 'chat-title',
+        text: 'Assistant',
+        title: 'Drag to move the panel. Double-click to put it back.',
+        // The way out of "I dragged it somewhere silly", and the reason the
+        // panel needs no reset button of its own.
+        onDblClick: () => movable.reset(),
+      }),
       picked,
       newBtn,
       h('button', {
@@ -249,6 +323,21 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
   root.append(panel);
 
   /*
+   * Moved by its header, resized by the grip the browser draws for
+   * `resize: both`, and both remembered.
+   *
+   * Off below the breakpoint, which is the whole of the mobile story: a phone
+   * has no room to put a panel anywhere but where the stylesheet puts it, and
+   * a drag there competes with scrolling the transcript under your thumb.
+   */
+  const movable = makeMovable(panel, {
+    handle: panel.querySelector('.chat-head'),
+    storageKey: 'massing:chat:box:v1',
+    min: MIN_SIZE,
+    fixedWhen: window.matchMedia(FIXED_BELOW),
+  });
+
+  /*
    * What is selected travels with the question.
    *
    * "Make these blue" is unanswerable without it, and asking the model to fetch
@@ -265,12 +354,14 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
     // answer to it rather than the start of another turn.
     if (assistant.pending) {
       input.value = '';
+      fitInput();
       assistant.answer(text);
       return;
     }
     if (assistant.busy) return;
     const selection = attachSelection ? store?.state.selection ?? [] : [];
     input.value = '';
+    fitInput();
     const result = await assistant.ask(text, { selection });
     if (!result.ok && result.error) toaster?.error(result.error);
   }
@@ -285,13 +376,22 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
     if (log.dataset.signature !== signature) {
       log.dataset.signature = signature;
       clear(log);
-      if (!messages.length) {
+      // Notes are not turns: choosing a model before typing should not clear
+      // the line that explains what to type.
+      if (!messages.some((m) => m.role !== 'note')) {
         log.append(h('p', { class: 'chat-empty', text:
           'Describe the system and it will draw one, or ask for a change to what is open. ' +
           'It edits the diagram directly, so undo works on whatever it does.' }));
       }
       const WHO = { user: 'You', assistant: 'Assistant', ask: 'Assistant asks', answer: 'You' };
       for (const message of messages) {
+        // A note is the panel talking about itself — which model is answering
+        // now — rather than a turn. No author, no copy button, nothing said to
+        // anybody: it is a line in the margin of the conversation.
+        if (message.role === 'note') {
+          log.append(h('p', { class: 'chat-note', text: message.content }));
+          continue;
+        }
         // The selection travelled inside the question, which is right for the
         // record and wrong for the bubble: it is not what the person typed.
         const [said, attached] = splitAttachment(message.content);
@@ -299,6 +399,9 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
           h('span', { class: 'chat-who', text: WHO[message.role] ?? 'Assistant' }),
           h('p', { class: 'chat-text', text: said }),
           ...(attached ? [h('span', { class: 'chat-attached', text: `with ${attached}` })] : []),
+          // Only on what the assistant said. Copying your own question back is
+          // a button that does nothing you could not do by looking at it.
+          ...(message.role === 'assistant' ? [copyButton(said)] : []),
         ]));
       }
       // A turn parked on a question is waiting on a person, not working.

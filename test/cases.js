@@ -50,6 +50,7 @@ import { LLM_PROMPT } from '../src/data/prompt.js';
 import { THREE_TIER } from '../src/data/samples.js';
 import { overConnected, underDrawn, misplaced, documentInReply } from '../src/core/assistant.js';
 import { MODEL_TIERS, DEFAULT_TIER, isTier, modelForTier, tiersPinned } from '../src/data/models.js';
+import { clampBox, isBox } from '../src/ui/movable.js';
 import { splitTabs, joinTabs, createTabs } from '../src/core/tabs.js';
 import { createStore } from '../src/core/store.js';
 import {
@@ -74,6 +75,7 @@ export function runCases(check) {
   densityCases(check);
   coverageCases(check);
   modelCases(check);
+  movableCases(check);
   heightCases(check);
   tabCases(check);
   libraryCases(check);
@@ -762,6 +764,54 @@ function coverageCases(check) {
   check('a zone that does not exist is left to the loader',
     misplaced({ groups: [], nodes: [{ id: 'n', group: 'gone', pos: [0, 0], size: [2, 2] }] }) === null,
     'two complaints about one mistake is one complaint too many');
+}
+
+/**
+ * Keeping a moved panel on screen.
+ *
+ * Every way the assistant panel gets lost runs through `clampBox`: a window
+ * narrowed since the geometry was stored, a laptop unplugged from the monitor
+ * the panel was dragged onto, a phone rotated. None of those is reproducible
+ * by hand, and all of them end with a card the person cannot reach.
+ */
+function movableCases(check) {
+  const view = { width: 1000, height: 800 };
+  const min = { width: 300, height: 260 };
+  const box = (left, top, width = 380, height = 520) => ({ left, top, width, height });
+
+  check('a box already on screen is left where it is', (() => {
+    const same = clampBox(box(100, 50), view, min);
+    return same.left === 100 && same.top === 50 && same.width === 380 && same.height === 520;
+  })());
+  check('a box off the right edge comes back',
+    clampBox(box(950, 50), view, min).left === 1000 - 380);
+  check('a box off the bottom comes back',
+    clampBox(box(10, 700), view, min).top === 800 - 520);
+  check('negative coordinates come back',
+    clampBox(box(-200, -80), view, min).left === 0 &&
+      clampBox(box(-200, -80), view, min).top === 0);
+  check('a box wider than the window is shrunk to it',
+    clampBox(box(0, 0, 2000, 3000), view, min).width === 1000);
+  check('shrinking happens before moving', (() => {
+    // Clamped the other way round, a too-wide box is pinned to the left edge
+    // and only then made to fit, which loses the position for nothing.
+    const fixed = clampBox(box(900, 10, 2000, 400), view, min);
+    return fixed.width === 1000 && fixed.left === 0;
+  })());
+  check('a box smaller than the minimum is grown to it',
+    clampBox(box(10, 10, 40, 30), view, min).width === 300 &&
+      clampBox(box(10, 10, 40, 30), view, min).height === 260);
+  check('a window smaller than the minimum wins over the minimum', (() => {
+    // Otherwise the clamp hands back a box larger than the screen it is
+    // clamping to, which is the one thing it exists to prevent.
+    const tiny = clampBox(box(0, 0, 380, 520), { width: 200, height: 150 }, min);
+    return tiny.width === 200 && tiny.height === 150 && tiny.left === 0 && tiny.top === 0;
+  })());
+
+  check('a stored box is recognised', isBox({ left: 0, top: 0, width: 10, height: 10 }));
+  check('junk in storage is not a box', !isBox(null) && !isBox('nope') && !isBox({ left: 1 }) &&
+    !isBox({ left: 1, top: 2, width: 3, height: NaN }),
+    'localStorage outlives the code that wrote it, and holds whatever it was given');
 }
 
 /**
