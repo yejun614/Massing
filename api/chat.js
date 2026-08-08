@@ -22,6 +22,7 @@
  */
 
 import { LLM_PROMPT } from '../src/data/prompt.js';
+import { DEFAULT_TIER, isTier, modelForTier, TIER_IDS } from '../src/data/models.js';
 import { send, fail, readJson, callerKey, methodAllowed } from './_lib/http.js';
 import {
   MAX_CHAT_BYTES,
@@ -35,21 +36,17 @@ import {
 const HOST = 'https://generativelanguage.googleapis.com';
 
 /**
- * An alias rather than a pinned id, and that is the lesson of how this got
- * here.
+ * Which model answers is a choice the person makes, out of three.
  *
- * This defaulted to `gemini-2.5-flash-lite`, which is exactly the model the
- * project was asked to use — and which Google has since closed to new keys. It
- * still *appears* in the model listing, so a deployment configured today gets a
- * 404 for a name that is demonstrably on the list, with nothing to suggest the
- * name was ever the problem.
+ * The ladder, the ids and the reason each rung is an alias rather than a pinned
+ * version all live in `src/data/models.js`, because the panel draws the same
+ * table this resolves against. What stays here is the part that is nobody
+ * else's business: a request names a *tier*, and this file turns it into an id.
  *
- * `gemini-flash-lite-latest` cannot be retired underneath a deployment nobody
- * is watching. It can shift under one, which is the opposite trade and the
- * better one to take by default: anyone who needs the version fixed sets
- * `MASSING_AI_MODEL` and owns the upgrade.
+ * The fallback below is what a request that names no tier gets, which is every
+ * request from a page cached before this feature existed.
  */
-const DEFAULT_MODEL = 'gemini-flash-lite-latest';
+const DEFAULT_MODEL = modelForTier(DEFAULT_TIER, {});
 
 /**
  * The handful worth suggesting, out of everything a key can call.
@@ -128,7 +125,11 @@ const limiter = createRateLimiter(RATE_LIMITS.chat);
 /**
  * What the model may do to the editor.
  *
- * Two tools, and the pair is deliberate. `replace_diagram` matches how this
+ * Three tools. Two of them are about the document and the pairing is
+ * deliberate; the third, `ask_user`, is about the person, and is described
+ * where it is declared.
+ *
+ * `replace_diagram` matches how this
  * format is meant to be edited — the authoring rules already say to return the
  * complete document rather than a patch, because renaming an id silently breaks
  * every connection pointing at it, and a patch language would be a second way
@@ -144,6 +145,49 @@ const limiter = createRateLimiter(RATE_LIMITS.chat);
  * tool result it can correct rather than as a schema violation it cannot see.
  */
 const FUNCTIONS = [
+  {
+    /*
+     * The third tool, and the only one whose answer is not the document.
+     *
+     * The assistant sees exactly what was typed into the box and nothing else:
+     * no repository, no URL, no disk. Handed a GitHub link it used to draw what
+     * the name suggested — a service on Oracle Cloud running MySQL came back as
+     * AWS and PostgreSQL, drawn confidently, with nothing in the picture to
+     * mark which parts had been read and which were invented. There was no
+     * third option available to it: answer, or refuse the whole request.
+     *
+     * `options` is a list of plain strings rather than a richer shape because
+     * everything the person can do with it is click it, and the label is the
+     * whole of what a click means. Free text stays available regardless — a
+     * question worth asking is usually one whose best answer nobody listed.
+     */
+    name: 'ask_user',
+    description:
+      'Ask the person a question and wait for their answer. Use it when the diagram ' +
+      'would differ depending on the answer and you cannot work it out from what they ' +
+      'wrote — above all when you have been pointed at a repository, a URL or a file ' +
+      'you cannot see, where the alternative is guessing at a system and drawing it ' +
+      'wrongly. Offer options where the choice is between a few known answers. Ask ' +
+      'once, and ask for everything you need in that one question rather than in three.',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'The question, in the language the person is writing in. One or two sentences.',
+        },
+        options: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Up to six answers to offer as buttons, each a few words. Optional: leave it ' +
+            'out when the useful answer is something they have to type, such as a paste ' +
+            'of a dependency list.',
+        },
+      },
+      required: ['question'],
+    },
+  },
   {
     name: 'get_diagram',
     description:
@@ -214,8 +258,19 @@ here.
   for the person. Two or three sentences, saying what you changed and why, is
   the right length. They can see the diagram, so do not describe it back to
   them.
-- If a request is ambiguous in a way that changes the drawing, ask. If it is
-  ambiguous in a way that does not, choose and say which way you went.
+- If a request is ambiguous in a way that changes the drawing, ask with
+  \`ask_user\` rather than in prose: a question in your reply ends the turn and
+  makes them start another one, while \`ask_user\` keeps the turn open and
+  carries on with the answer. If it is ambiguous in a way that does not change
+  the drawing, choose and say which way you went.
+- **You cannot see anything they have not typed.** No repository, no URL, no
+  file on their machine. Pointed at one, ask for what you need — the build
+  file, the dependency list, the output of \`tree\` — or offer to draw a typical
+  system of that kind and label it as that. Do not draw a named system from its
+  name alone; it comes out plausible and wrong, and they cannot tell which.
+- The tool result may say the diagram is thinner than the system described, or
+  that a caption reads as a group of things rather than one thing. Both are
+  real defects in what you sent. Fix them and send again.
 - Answer in the language the person is writing in.`;
 
 /** Only the fields we understand, and only from roles we understand. */
@@ -402,7 +457,19 @@ export default async function handler(req, res) {
   const sanitised = sanitiseMessages(body.value?.messages);
   if (sanitised.error) return fail(res, 400, sanitised.error);
 
-  const model = modelId(process.env.MASSING_AI_MODEL);
+  /*
+   * A tier, not a model id. Absent means the request came from a page that
+   * predates the picker, which is a normal thing for a cached page to be and
+   * gets the default rather than an error. A tier that is *named* and unknown
+   * is a client sending something this deployment does not have, and saying so
+   * beats quietly answering with a different model than the one asked for.
+   */
+  const asked = body.value?.model;
+  if (asked !== undefined && !isTier(asked)) {
+    return fail(res, 400, `Unknown model "${asked}". Choose one of: ${TIER_IDS.join(', ')}.`);
+  }
+  const tier = asked ?? DEFAULT_TIER;
+  const model = modelId(modelForTier(tier, process.env));
 
   try {
     const version = apiVersion(process.env);
@@ -493,6 +560,9 @@ export default async function handler(req, res) {
             total_tokens: result.usageMetadata.totalTokenCount ?? null,
           }
         : null,
+      // Both, because they answer different questions: the tier is what was
+      // asked for, and `model` is what a pinned deployment actually used.
+      tier,
       model: result.modelVersion ?? model,
     });
   } catch (err) {

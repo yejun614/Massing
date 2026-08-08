@@ -42,8 +42,22 @@ export const MAX_CHAT_BYTES = 256 * 1024;
  */
 export const MAX_CHAT_MESSAGES = 40;
 
-/** Ceiling on one model reply, and on how long the whole call may take. */
-export const MAX_OUTPUT_TOKENS = 4096;
+/**
+ * Ceiling on one model reply, and on how long the whole call may take.
+ *
+ * 4096 was set when the assistant drew small diagrams and every model was a
+ * lite one. It is now the thing that stops the largest model finishing: a
+ * seventeen-block document is several thousand tokens of JSON on its own, and
+ * the current generation spends thinking tokens against this same budget
+ * before writing any of it — so the strong tier hit `MAX_TOKENS` mid-document
+ * and the turn came back as "the answer was longer than the reply limit".
+ *
+ * A ceiling is not a cost. It is what a reply may not exceed, and replies are
+ * billed for what they actually use; raising it changes nothing for the small
+ * ones and lets the large one land. The real guard against a runaway is the
+ * eight-step cap on the loop, which is unchanged.
+ */
+export const MAX_OUTPUT_TOKENS = 16_384;
 export const CHAT_TIMEOUT_MS = 60_000;
 
 // ---------------------------------------------------------------------------

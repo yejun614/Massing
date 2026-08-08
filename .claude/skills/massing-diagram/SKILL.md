@@ -12,6 +12,49 @@ You write Massing diagrams: `.arch.json` files describing isometric
 architecture diagrams. Reply with the JSON document and nothing else — no
 commentary, no markdown fence — unless you were asked a question about it.
 
+## Draw the whole system, then make it read well
+
+Two things go wrong and they pull opposite ways. A diagram can be a tangle
+nobody can follow, and it can be tidy and *wrong* — three blocks standing in
+for a system that has a payment gateway, a vector store and an object store in
+it. Everything after this section is written against the tangle, because the
+tangle is what a person drawing by hand produces.
+
+Reading it, a model produces the other one. Told a dozen times to draw less, it
+draws a client, a server and a database, writes "architecture" across the top
+and has answered a question nobody asked. So this section comes first and it
+outranks every rule that follows:
+
+**Every part of the system gets its own block.** The budgets below are spent on
+connections, captions and colours. None of them is ever spent on a component.
+There is no rule in this document that permits leaving out something that is
+there, and "it would have been cluttered" is not one either — a system with
+twenty parts is a diagram with twenty blocks, or it is two diagrams, each
+complete in what it covers.
+
+**No catch-alls.** `External APIs`, `Other services`, `3rd party`, `Infra` —
+a caption that is a plural noun is several components someone declined to name,
+and it is the most common way a diagram quietly loses two thirds of the system.
+Four external services are four blocks: `Toss`, `Clova`, `S3`, `OpenAI`. If
+they genuinely will not fit, that is a second diagram, not one block with a
+shrug written on it.
+
+### The order of work
+
+1. **Inventory.** Before any JSON, list in prose every part of the system: each
+   running process, each datastore, each external service it calls, each client
+   that calls it, and how it is deployed. Count the list. That count is your
+   block count.
+2. **Group.** Sort the inventory into zones — what runs where, what is inside
+   the boundary and what is outside it.
+3. **Place.** Put the blocks on the grid in the order requests flow.
+4. **Connect last, and least.** Only here does the connection budget apply.
+
+Do the inventory even when the request is small; it costs three lines and it is
+the step that decides whether the diagram is true rather than merely tidy. When
+something on the list has no matching component type, draw it as a generic
+block carrying its real name — never fold it into a neighbour.
+
 ## Start from these defaults
 
 Diagrams get ugly because their authors try to make them *varied*. Start here,
@@ -28,7 +71,7 @@ and depart only where you can name the reason.
 | note `size` | **50**; the 14px default is invisible on the floor | never |
 | connection `labelSize` | **30**; the 12px default is unreadable | never |
 | `screen`, on anything | do not use it | never |
-| block count | 12–20 | past that, split the diagram |
+| block count | one per thing in the inventory; 12–20 is usual | fewer only when the system really has fewer — past ~25, split the diagram |
 | connection count | block count ÷ 3, at most | more means the grouping is wrong |
 | zone `color` | a distinct hue per zone | zones of the same purpose share one |
 | a nested zone's `color` | far from its parent's in hue AND lightness | never |
@@ -164,6 +207,73 @@ Generic: `server` `database` `queue` `storage` `container` `user` `internet` `ge
 
 An unknown type still loads, drawn as a plain block. Prefer an exact match;
 fall back to a generic type rather than inventing one.
+
+## Drawing a codebase
+
+Asked for "the architecture of this repository", what is wanted is the system
+the code runs as — not its folder tree. A box per directory under
+`src/main/java` is a screenshot of the file explorer; a single `App` block is
+not an architecture either. What belongs on the page is everything the process
+talks to, plus whatever internal structure the code actually commits to.
+
+Five places hold the inventory, and each holds a part the others do not:
+
+| Where to look | What it gives you |
+|---|---|
+| the build file — `build.gradle`, `pom.xml`, `package.json`, `pyproject.toml` | **every external system, one dependency at a time.** The richest source, and the one most often skipped |
+| `docker-compose.yml`, `Dockerfile`, k8s or Helm manifests | what runs alongside it, and what it is deployed onto |
+| CI workflows | the release path: registry, manifest repository, cluster |
+| configuration — `application.yml`, `.env.example` | hosts, buckets, queues and vendor keys, which name services the build file missed |
+| the top two levels of the source tree | the internal structure, where there is one worth drawing |
+
+### A Spring Boot service
+
+The dependency list *is* the inventory, and it maps almost one to one. Every
+row that appears in the build is a block on the page:
+
+| In the build | Draw |
+|---|---|
+| `spring-boot-starter-web` / `webflux` | the `springboot` block: the process itself |
+| a JDBC driver — `mysql-connector-j`, `postgresql` | `mysql` / `postgresql`, whichever it actually is. Not the other one |
+| `spring-boot-starter-data-redis`, `spring-session-data-redis` | `redis` |
+| `spring-boot-starter-security`, `oauth2-client`, a JWT library | `oauth2` and `jwt` — authentication is a component, not an adjective |
+| an AWS, GCS or MinIO SDK | `s3` or `storage` |
+| `spring-ai-*`, an LLM client, a vector-store client | `llm` for the model, a `database` block for the vector store |
+| `spring-boot-starter-mail` with a template engine | a `generic` block named for the mail provider |
+| a payments, OCR, maps or messaging client | one `generic` block **each**, named for the vendor |
+| `spring-kafka`, `spring-amqp` | `queue` / `rabbitmq` |
+| `spring-boot-starter-actuator`, Micrometer, an agent | `healthcheck` or `prometheus`, when monitoring is part of the question |
+| a Dockerfile, a CI workflow, a manifest repository | `docker`, `dockerhub`, `kubernetes` — the release path is part of the architecture whenever the question is about deployment |
+
+A service wired to MySQL, Redis, S3, a vector store, an LLM, a payment gateway,
+an OCR API and SMTP has **eight** blocks around it before its own structure is
+drawn at all. Collapsing six of them into one block called `External` is
+exactly the failure this section exists to prevent.
+
+**Draw internal structure only where the code commits to one.** The flat
+`controller / service / repository` split is what every Spring project has and
+says nothing; leave it as the one `springboot` block. A layout the team chose
+is a real decision and belongs on the page: hexagonal
+`adapter / application / domain`, a module per bounded context, a separate
+batch or admin process. Draw those as **zones** of kind `group`, one block
+inside each for what it holds, with request flow running across them along +x.
+
+A second process is always a second block — a batch worker, a scheduler, an
+admin API, an SSE or websocket endpoint held open on its own.
+
+### Never draw one from its name
+
+You cannot open a URL or read a disk from here. Given a repository link and
+nothing else you know the name, and a diagram drawn from a name comes out
+plausible and false — which is worse than none. It will say AWS for a service
+deployed on Oracle Cloud and PostgreSQL for one running MySQL, and nobody
+looking at the picture can tell which parts were read and which were invented.
+
+So do not guess. Ask for the build file, the dependency list, or the output of
+`tree` — through `ask_user` where that tool is offered, in your reply where it
+is not. Name the choice being made: the real system, which needs those files,
+or a typical service of that kind, which is a perfectly good thing to want and
+must be captioned as what it is.
 
 ## Zones
 
@@ -664,6 +774,19 @@ for (const [view, where] of drawings) {
     if (!g.label?.trim()) warn('zone ' + g.id + ' has no caption — the renderer prints its kind name instead')
   }
 
+  // --- catch-alls, which is how a diagram loses two thirds of the system -----
+  // A plural caption is several components someone declined to name. This
+  // cannot be proved from the JSON alone, so it warns rather than fails --
+  // but the false positives are rare and the thing it catches is severe.
+  const CATCH_ALL = /^(external|externals|other|others|etc|misc|infra|3rd[- ]party|third[- ]party|various|integrations?)\b|(apis|services|systems|clients|providers|externals|integrations)$/i
+  for (const n of nodes) {
+    const label = (n.label ?? '').trim()
+    if (label && CATCH_ALL.test(label)) {
+      warn(n.id + ' is captioned "' + label + '" — that reads as several components folded ' +
+           'into one. Draw each of them, named')
+    }
+  }
+
   // --- notes -----------------------------------------------------------------
   for (const t of texts) {
     if (t.plane === 'screen') {
@@ -799,7 +922,6 @@ for (const [view, where] of drawings) {
        images.length + ' pictures · ' + texts.length + ' notes')
 }
 
-
 for (const m of errors) console.log('ERROR  ' + m)
 for (const m of warns) console.log('WARN   ' + m)
 for (const m of infos) console.log('INFO   ' + m)
@@ -835,3 +957,7 @@ render, and check overlap, legibility and line tangle with your eyes.
 | a logo is a plain square | a glyph-less plate was downloaded | check path-data volume, swap the file |
 | a logo is blurry | `width="1em"` | replace it with the viewBox pixel size |
 | a zone looks clipped | contents flush with the boundary | one cell of margin all round |
+| a large system came out as three blocks | the connection budget was applied to components | the budget is connections only — inventory first, then draw all of it |
+| one block reads `External APIs` | several systems folded into a catch-all | one block each, named for the vendor |
+| tidy, and wrong about the technology | drawn from a repository's name instead of its build file | ask for the dependency list rather than guessing |
+| the diagram answers a smaller question than the one asked | parts were dropped to stay under a count | nothing here permits dropping a component; split into two diagrams instead |

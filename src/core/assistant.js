@@ -16,8 +16,20 @@
  */
 
 import { serializeDoc, normalizeDoc } from './schema.js';
+import { DEFAULT_TIER, isTier } from '../data/models.js';
 
 const SESSIONS_KEY = 'massing:chat:v1';
+
+/**
+ * Which of the three models to ask.
+ *
+ * Kept apart from the conversations and outside any of them, because it is a
+ * preference about the tool rather than a property of a chat: someone who
+ * turned the model up did so because of the work they are doing that
+ * afternoon, and having it drop back to Light on the next conversation would
+ * be the wrong half of the guess.
+ */
+const MODEL_KEY = 'massing:chat:model:v1';
 
 /**
  * How many tool calls one question may make.
@@ -63,6 +75,119 @@ export function overConnected(doc) {
     `stays exactly as it is. What to remove is whatever repeats something the ` +
     `grouping already says — a load balancer's second arm, two servers reaching ` +
     `the same database. Send the document again with those lines gone.`
+  );
+}
+
+/**
+ * The other half of that budget, and the failure it turned out to cause.
+ *
+ * `overConnected` says "you drew too many lines", and the prompt says it a
+ * dozen more ways. Measured against the live model, that lands as "draw less"
+ * full stop: asked for a Spring Boot service with MySQL, Redis, S3, a vector
+ * store, an LLM, a payment gateway and an OCR API behind it, six runs out of
+ * six came back with three to six blocks and one of them captioned
+ * "External APIs". Tidy, and wrong about most of the system.
+ *
+ * So the loop says this one too, for the same reason it says the other: prose
+ * in the prompt is advice a model agrees with and then ignores, and a sentence
+ * in the tool result is feedback arriving after the mistake with the counting
+ * already done.
+ *
+ * The two halves are deliberately asymmetric. A plural caption is a real
+ * defect in any document, so it is named whenever it appears. A thin diagram
+ * is only suspicious when the model has just drawn a whole system from
+ * nothing — on an edit, three blocks is three blocks someone asked for, and
+ * nagging about it would make "make these blue" grow the drawing.
+ */
+const CATCH_ALL =
+  /^(external|externals|other|others|etc|misc|infra|3rd[- ]party|third[- ]party|various|integrations?)\b|(apis|services|systems|clients|providers|externals|integrations)$/i;
+
+/**
+ * Where a first draft stops being plausible as a whole system.
+ *
+ * Not a number picked for feel: the prompt's own defaults table says 12 to 20
+ * blocks, measured off a diagram that was hand-tuned until it read well. A
+ * first draft in single figures is therefore below the project's own stated
+ * target, and worth one question.
+ */
+const THIN_FIRST_DRAFT = 10;
+
+export function underDrawn(doc, { fromScratch = false } = {}) {
+  const said = [];
+
+  const vague = doc.nodes
+    .map((n) => String(n.label ?? '').trim())
+    .filter((label) => label && CATCH_ALL.test(label));
+  if (vague.length) {
+    said.push(
+      `${vague.length} block(s) are captioned as a group of things rather than as one ` +
+        `thing: ${vague.map((l) => `"${l}"`).join(', ')}. A plural caption is several ` +
+        `components that never got named, and it is how a diagram loses most of the ` +
+        `system it was meant to show. Draw one block for each, named for the vendor or ` +
+        `the product, and send the document again.`
+    );
+  }
+
+  // Only on a first draft, and against the target the prompt already names.
+  // Twelve to twenty blocks is what a system diagram is said to be, so a first
+  // draft in single figures is worth one question — which a genuinely small
+  // system can wave away, at the cost of a sentence.
+  if (fromScratch && doc.nodes.length < THIN_FIRST_DRAFT) {
+    said.push(
+      `Only ${doc.nodes.length} block(s) for a whole system. Before you answer, go back ` +
+        `over the inventory: every running process, every datastore, every external ` +
+        `service the code calls, every client that calls it. If the system really is ` +
+        `that small, ignore this line — but if anything was left out to keep the ` +
+        `picture tidy, put it back. The budget is on connections, never on components.`
+    );
+  }
+
+  return said.length ? said.join('\n') : null;
+}
+
+/**
+ * Blocks that name a zone they are not standing in.
+ *
+ * The loader checks that a \`group\` exists and stops there, which is right for
+ * a loader — where the block is drawn is a question about the picture, not
+ * about whether the file is well formed. But it leaves the assistant with no
+ * way to hear about the one defect that most obviously breaks a diagram:
+ * membership here is geometric, so a block whose \`pos\` puts it outside the
+ * rectangle is simply drawn outside it, orphaned next to a slab that was meant
+ * to contain it. The validator in the authoring guide calls this an ERROR;
+ * this is that check, in the loop, where the model can act on it.
+ *
+ * It arrived with the coverage rules, and that is not a coincidence. A model
+ * drawing six blocks places them all correctly; the same model drawing nine
+ * starts pushing one off the edge, so the fix for one failure surfaced the
+ * next one.
+ */
+export function misplaced(doc) {
+  const rects = new Map((doc.groups ?? []).map((g) => [g.id, g.rect]));
+  const strays = [];
+
+  for (const node of doc.nodes ?? []) {
+    if (!node.group) continue;
+    const rect = rects.get(node.group);
+    // A group that does not exist is the loader's complaint, already made.
+    if (!rect) continue;
+    const [gx, gy, gw, gh] = rect;
+    const [x, y] = node.pos ?? [0, 0];
+    const [w, h] = node.size ?? [2, 2];
+    if (x > gx && y > gy && x + w < gx + gw && y + h < gy + gh) continue;
+    strays.push(
+      `"${node.id}" covers [${x}, ${y}]–[${x + w}, ${y + h}] but zone "${node.group}" ` +
+        `covers [${gx}, ${gy}]–[${gx + gw}, ${gy + gh}]`
+    );
+  }
+
+  if (!strays.length) return null;
+  return (
+    `${strays.length} block(s) name a zone they are not inside: ${strays.join('; ')}. ` +
+    `Membership is geometric — the block is drawn where its pos puts it, outside the ` +
+    `slab, and the zone does not move to collect it. Move the block inside with a cell ` +
+    `of margin on every side, or make the zone big enough to hold it, and send the ` +
+    `document again.`
   );
 }
 
@@ -118,6 +243,40 @@ export function describeSelection(doc, selection) {
   return selection.map(find).join(', ');
 }
 
+/**
+ * A whole diagram typed into the reply instead of passed through the tool.
+ *
+ * Not a rare mishap — it is what the authoring guide's own first line asks
+ * for: *reply with the JSON document and nothing else*. That instruction is
+ * right for the model in a chat window pasting into the editor by hand, and
+ * the addendum a few thousand words later tells the assistant to use the tool
+ * instead. A model that weighs the opening line more heavily is not
+ * malfunctioning, it is obeying the louder of two instructions, and the
+ * lighter the model the more often it does.
+ *
+ * Left unhandled it is the worst failure in the panel: the person sees a wall
+ * of JSON, the diagram does not change, and nothing says why. So the document
+ * is taken from wherever it arrives. A fenced block counts — models add the
+ * fence back however often they are told not to.
+ *
+ * @returns {string | null} the JSON text, or null if this is just a reply.
+ */
+export function documentInReply(content) {
+  const text = String(content ?? '').trim();
+  if (!text) return null;
+  const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n?```$/.exec(text);
+  const body = (fenced ? fenced[1] : text).trim();
+  // Cheap gate first: parsing every chat reply as JSON to find out it is prose
+  // is work done on every turn to catch a minority of them.
+  if (!body.startsWith('{') || !body.endsWith('}')) return null;
+  try {
+    JSON.parse(body);
+  } catch {
+    return null;
+  }
+  return body;
+}
+
 /** A short, stable id without pulling in anything to generate one. */
 function newId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -144,6 +303,31 @@ export function readSessions() {
     return Array.isArray(raw) ? raw.filter((s) => s?.id && Array.isArray(s.messages)) : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * The remembered model choice, checked against what this build offers.
+ *
+ * A tier that no longer exists — a stored `"turbo"` from a build that had one —
+ * reads as the default rather than as an error, and the next write cleans it
+ * up. Storage that outlives a release has to be read that way.
+ */
+export function readTier() {
+  try {
+    const stored = localStorage.getItem(MODEL_KEY);
+    return isTier(stored) ? stored : DEFAULT_TIER;
+  } catch {
+    return DEFAULT_TIER;
+  }
+}
+
+export function writeTier(tier) {
+  try {
+    localStorage.setItem(MODEL_KEY, tier);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -177,6 +361,7 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
    */
   const mine = () => sessions.filter((s) => !library || s.diagramId === library.currentId);
   let currentId = mine()[0]?.id ?? null;
+  let tier = readTier();
   let busy = false;
   const listeners = new Set();
 
@@ -218,6 +403,31 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
     highlightTimer = setTimeout(() => store.setUI({ aiTouched: [] }), HIGHLIGHT_MS);
   }
 
+  /**
+   * A question waiting on the person, and the promise the loop is parked on.
+   *
+   * Not persisted. A question is only meaningful while the turn that asked it
+   * is still running, and a turn does not survive a reload — so a conversation
+   * reopened tomorrow shows the question that was asked and the answer that was
+   * given, both of which are in `messages`, and nothing left hanging.
+   */
+  let pending = null;
+
+  function askPerson(question, options) {
+    return new Promise((resolve) => {
+      pending = {
+        question,
+        options,
+        settle(reply) {
+          pending = null;
+          resolve(reply);
+          announce();
+        },
+      };
+      announce();
+    });
+  }
+
   function startSession(firstMessage) {
     const session = {
       id: newId(),
@@ -239,9 +449,32 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
    * what it sent, and an acceptance names what the loader had to repair, so the
    * next turn can fix it instead of reporting success.
    */
-  function runTool(name, args) {
+  async function runTool(name, args) {
     if (name === 'get_diagram') {
       return serializeDoc(store.state.doc);
+    }
+
+    /*
+     * The one tool whose result comes from the person rather than the document.
+     *
+     * It exists because the assistant cannot see anything the person has not
+     * typed — not a repository, not a URL, not a disk. Without a way to ask, a
+     * model handed a GitHub link draws what the name suggests, and what comes
+     * back is a picture that says AWS about a service on Oracle Cloud. Being
+     * able to ask turns that into a question, which is the honest answer.
+     *
+     * The loop simply stops here until it is answered. That is the point: the
+     * model is mid-turn, the tool result it is waiting for is what somebody
+     * clicks, and everything else about the turn carries on unchanged.
+     */
+    if (name === 'ask_user') {
+      const question = String(args?.question ?? '').trim();
+      if (!question) return 'Refused: `question` is required.';
+      const options = (Array.isArray(args?.options) ? args.options : [])
+        .map((o) => String(o ?? '').trim())
+        .filter(Boolean)
+        .slice(0, 6);
+      return askPerson(question, options);
     }
 
     if (name === 'replace_diagram') {
@@ -281,6 +514,9 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
       }
       // Worked out before the swap, or there is nothing left to compare with.
       const touched = touchedIds(store.state.doc, parsed.doc);
+      // Read before the swap too: whether this was a whole system drawn from
+      // nothing is what decides if a thin result is worth remarking on.
+      const fromScratch = store.state.doc.nodes.length === 0;
       // Through the store, so it is one undo away like any other edit.
       store.replaceDoc(parsed.doc, 'Assistant edit');
       commands?.zoomFit?.();
@@ -301,6 +537,10 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
       lines.push(`The diagram now has ${counts}.`);
       const overspent = overConnected(parsed.doc);
       if (overspent) lines.push(overspent);
+      const thin = underDrawn(parsed.doc, { fromScratch });
+      if (thin) lines.push(thin);
+      const strays = misplaced(parsed.doc);
+      if (strays) lines.push(strays);
       return lines.join('\n');
     }
 
@@ -312,7 +552,9 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
     const response = await fetchImpl('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      // The tier, never a model id: which model a tier means is the server's
+      // to decide, and a deployment may have pinned it to something else.
+      body: JSON.stringify({ messages, model: tier }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? `The assistant failed (${response.status}).`);
@@ -327,17 +569,82 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
     get busy() {
       return busy;
     },
+    /** Which of the three models the next question goes to. */
+    get tier() {
+      return tier;
+    },
+    /**
+     * Change it. Mid-turn is refused rather than queued: the turn already in
+     * flight would finish on the old model, and a control that lies about
+     * which model is answering is worse than one that waits.
+     */
+    setTier(next) {
+      if (!isTier(next) || next === tier || busy) return false;
+      tier = next;
+      writeTier(tier);
+      announce();
+      return true;
+    },
+    /** The question the turn is parked on, or null. */
+    get pending() {
+      return pending && { question: pending.question, options: pending.options };
+    },
+    /**
+     * Answer it, and let the turn carry on.
+     *
+     * An empty answer is still an answer — someone dismissing the question is
+     * telling the model to get on with it, and the model needs to hear that as
+     * words rather than as silence, or it asks again.
+     */
+    answer(text) {
+      if (!pending) return false;
+      const said = String(text ?? '').trim();
+      pending.settle(
+        said || 'The person did not answer. Choose the most reasonable default, say which way you went, and carry on.'
+      );
+      return true;
+    },
     get sessions() {
       return mine();
     },
     get currentId() {
       return currentId;
     },
-    /** Only the turns worth showing: what was said, not the plumbing. */
+    /**
+     * Only the turns worth showing: what was said, not the plumbing.
+     *
+     * `ask_user` is the exception that makes this more than a filter. Its
+     * question lives inside a tool call and its answer inside a tool result —
+     * both plumbing by the rule above, and both plainly part of the
+     * conversation. A transcript that dropped them would show an assistant
+     * changing its mind for no stated reason.
+     */
     get visible() {
-      return (current()?.messages ?? []).filter(
-        (m) => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()
-      );
+      const out = [];
+      const asked = new Map();
+      for (const message of current()?.messages ?? []) {
+        if (message.role === 'tool') {
+          const question = asked.get(message.tool_call_id);
+          if (question && message.content?.trim()) {
+            out.push({ role: 'answer', content: message.content });
+          }
+          continue;
+        }
+        if (message.content?.trim()) out.push({ role: message.role, content: message.content });
+        for (const call of message.tool_calls ?? []) {
+          if (call.function?.name !== 'ask_user') continue;
+          let question = '';
+          try {
+            question = JSON.parse(call.function.arguments || '{}').question ?? '';
+          } catch {
+            question = '';
+          }
+          if (!question) continue;
+          asked.set(call.id, question);
+          out.push({ role: 'ask', content: question });
+        }
+      }
+      return out;
     },
 
     select(id) {
@@ -388,7 +695,26 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
           persist();
 
           const calls = message.tool_calls ?? [];
-          if (!calls.length) return { ok: true };
+          if (!calls.length) {
+            /*
+             * A turn that ends in words is normally the end of the turn — but
+             * a model that wrote the whole document into those words meant to
+             * change the diagram, and dropping it on the floor would leave the
+             * person reading JSON at an unchanged drawing. Applied through the
+             * same tool, so it lands in the same store with the same undo.
+             */
+            const typed = documentInReply(message.content);
+            if (typed) {
+              const outcome = await runTool('replace_diagram', { document: typed });
+              // The reply becomes what happened, because the JSON is now on the
+              // canvas and reprinting it in the transcript says nothing.
+              message.content = outcome.startsWith('Refused')
+                ? `${outcome}\n\nThe document was in the reply rather than sent through the tool, and it could not be applied.`
+                : outcome;
+              persist();
+            }
+            return { ok: true };
+          }
 
           for (const call of calls) {
             let args = {};
@@ -407,7 +733,8 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
             session.messages.push({
               role: 'tool',
               tool_call_id: call.id,
-              content: runTool(call.function.name, args),
+              // Awaited, because `ask_user` parks here until somebody clicks.
+              content: await runTool(call.function.name, args),
             });
           }
           persist();

@@ -48,7 +48,8 @@ import { COMPONENTS, GROUP_KINDS, componentFor, groupKindFor, isKnownType } from
 import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
 import { THREE_TIER } from '../src/data/samples.js';
-import { overConnected } from '../src/core/assistant.js';
+import { overConnected, underDrawn, misplaced, documentInReply } from '../src/core/assistant.js';
+import { MODEL_TIERS, DEFAULT_TIER, isTier, modelForTier, tiersPinned } from '../src/data/models.js';
 import { splitTabs, joinTabs, createTabs } from '../src/core/tabs.js';
 import { createStore } from '../src/core/store.js';
 import {
@@ -69,10 +70,12 @@ export function runCases(check) {
   projectionCases(check);
   cameraCases(check);
   depthCases(check);
-  heightCases(check);
-  tabCases(check);
   documentCases(check);
   densityCases(check);
+  coverageCases(check);
+  modelCases(check);
+  heightCases(check);
+  tabCases(check);
   libraryCases(check);
   textCases(check);
   arrangeCases(check);
@@ -414,6 +417,11 @@ function libraryCases(check) {
   })());
 }
 
+/*
+ * Height is the one measurement on this grid that is not whole cells. Half a
+ * cell reads as a deliberate difference; a footprint of 2.3 does not, so
+ * everything else stays integral.
+ */
 function heightCases(check) {
   const heightOf = (raw) => normalizeDoc({
     nodes: [{ id: 'n', type: 'ec2', pos: [0, 0], height: raw }],
@@ -651,6 +659,145 @@ function densityCases(check) {
   check('an empty diagram is not scolded for having no connections',
     overConnected(doc(0, 0)) === null);
 
+}
+
+/**
+ * The other direction, which is the one the light models actually fail in.
+ *
+ * These matter more than they look. Every other rule in the project pushes
+ * towards drawing less, and this pair is the only thing pushing back — so a
+ * regression here is silent, and shows up as diagrams that are tidy and wrong.
+ */
+function coverageCases(check) {
+  const doc = (...labels) => ({
+    nodes: labels.map((label, i) => ({ id: `n${i}`, label })),
+    edges: [],
+  });
+  // Ten named components: the diagram the whole exercise is trying to reach.
+  const full = doc('Spring', 'MySQL', 'Redis', 'S3', 'Toss', 'Clova', 'OpenAI',
+    'Pinecone', 'SMTP', 'Client');
+
+  check('a diagram that covers its system is left alone',
+    underDrawn(full, { fromScratch: true }) === null);
+  check('a plural caption is named even in a diagram big enough to pass', (() => {
+    const said = underDrawn(doc('Spring', 'MySQL', 'Redis', 'S3', 'Toss', 'Clova',
+      'OpenAI', 'Pinecone', 'SMTP', 'External APIs'), { fromScratch: true });
+    return said?.includes('"External APIs"') && !said.includes('for a whole system');
+  })());
+  check('the catch-all check does not need a first draft to fire',
+    underDrawn(doc('Spring', 'MySQL', 'Redis', 'S3', 'Ext Services'), { fromScratch: false }) !== null,
+    'a block named for a group of things is wrong in an edit too');
+  check('real product names are not mistaken for catch-alls',
+    underDrawn(full, { fromScratch: false }) === null,
+    'a false positive here tells the model to split a block that is already one thing');
+  check('a thin first draft is questioned', (() => {
+    const said = underDrawn(doc('Client', 'API', 'DB'), { fromScratch: true });
+    return said?.includes('3 block(s)');
+  })());
+  check('the question is asked against the target the prompt names', (() => {
+    // Nine is below the 12-20 the defaults table calls usual; ten is not.
+    const nine = doc(...Array.from({ length: 9 }, (_, i) => `Thing${i}`));
+    return underDrawn(nine, { fromScratch: true }) !== null &&
+           underDrawn(full, { fromScratch: true }) === null;
+  })());
+  check('a thin diagram that was edited rather than drawn is not questioned',
+    underDrawn(doc('Client', 'API', 'DB'), { fromScratch: false }) === null,
+    'otherwise "make these blue" on a small diagram becomes a demand to grow it');
+  check('both complaints arrive together when both apply', (() => {
+    const said = underDrawn(doc('API', 'External APIs'), { fromScratch: true });
+    return said.includes('External APIs') && said.includes('2 block(s) for a whole system');
+  })(), underDrawn(doc('API', 'External APIs'), { fromScratch: true }));
+
+  // --- blocks standing outside the zone they claim --------------------------
+  const zoned = (pos, rect = [0, 0, 20, 20]) => ({
+    groups: [{ id: 'z', rect }],
+    nodes: [{ id: 'n', group: 'z', pos, size: [2, 2] }],
+  });
+
+  check('a block well inside its zone is not remarked on',
+    misplaced(zoned([4, 4])) === null);
+  check('a block outside its zone is caught', (() => {
+    const said = misplaced(zoned([30, 4]));
+    return said?.includes('"n"') && said.includes('"z"');
+  })(), misplaced(zoned([30, 4])));
+  check('flush against the boundary counts as outside',
+    misplaced(zoned([0, 0])) !== null,
+    'the validator wants a cell of margin, and the two must not disagree');
+  check('the complaint carries both rectangles, so the fix can be computed',
+    misplaced(zoned([30, 4])).includes('[30, 4]–[32, 6]') &&
+      misplaced(zoned([30, 4])).includes('[0, 0]–[20, 20]'));
+  check('a block in no zone at all is not a stray',
+    misplaced({ groups: [], nodes: [{ id: 'n', pos: [99, 99], size: [2, 2] }] }) === null);
+  check('a zone that does not exist is left to the loader',
+    misplaced({ groups: [], nodes: [{ id: 'n', group: 'gone', pos: [0, 0], size: [2, 2] }] }) === null,
+    'two complaints about one mistake is one complaint too many');
+}
+
+/**
+ * Which model a choice resolves to.
+ *
+ * Worth testing because every one of these is a promise to somebody who is not
+ * looking: a deployment that pinned a model, a page cached before the picker
+ * existed, and a browser holding a tier this build no longer has.
+ */
+function modelCases(check) {
+  check('every tier names a distinct model', (() => {
+    const ids = MODEL_TIERS.map((t) => t.model);
+    return new Set(ids).size === ids.length && ids.length === 3;
+  })());
+  check('the default tier is one of the tiers', isTier(DEFAULT_TIER));
+  check('the default is what the deployment ran before the picker existed',
+    modelForTier(DEFAULT_TIER, {}) === 'gemini-flash-lite-latest',
+    'shipping a control must not change the answer for someone who ignores it');
+  check('the two upper rungs float rather than pinning a version',
+    MODEL_TIERS.filter((t) => t.model.endsWith('-latest')).length === 2,
+    'a pinned id can be retired underneath a deployment nobody is watching');
+  check('no rung is a Pro model', (() => {
+    // A free key has no Pro quota at all, and this project has no billing
+    // behind it. A rung that answers 429 for everyone is not a rung.
+    return MODEL_TIERS.every((t) => !/pro/.test(t.model));
+  })());
+  check('every tier carries a label and a hint',
+    MODEL_TIERS.every((t) => t.label && t.hint && t.id));
+
+  check('a tier resolves to its own model',
+    modelForTier('strong', {}) === 'gemini-flash-latest');
+  check('an unknown tier falls back rather than throwing',
+    modelForTier('turbo', {}) === modelForTier(DEFAULT_TIER, {}),
+    'a stored preference outlives the build that wrote it');
+  check('a per-tier variable swaps one rung', (() => {
+    // The documented way to put Pro back where there is quota for it.
+    const env = { MASSING_AI_MODEL_STRONG: 'gemini-pro-latest' };
+    return modelForTier('strong', env) === 'gemini-pro-latest' &&
+      modelForTier('light', env) === 'gemini-3.1-flash-lite';
+  })());
+  check('a pinned deployment ignores the picker entirely', (() => {
+    const env = { MASSING_AI_MODEL: 'gemini-2.0-flash' };
+    return MODEL_TIERS.every((t) => modelForTier(t.id, env) === 'gemini-2.0-flash') &&
+      tiersPinned(env) && !tiersPinned({});
+  })(), 'setting it has always meant "this deployment uses this model"');
+  // --- a document typed into the reply instead of passed to the tool --------
+  check('prose is not mistaken for a document',
+    documentInReply('I moved the database to the left.') === null);
+  check('an empty reply is not a document', documentInReply('') === null &&
+    documentInReply(null) === null);
+  check('a document in the reply is found',
+    documentInReply('{"nodes":[]}') === '{"nodes":[]}');
+  check('a fenced document is unwrapped', (() => {
+    const said = '```json\n{"nodes":[{"id":"a"}]}\n```';
+    return documentInReply(said) === '{"nodes":[{"id":"a"}]}';
+  })());
+  check('a bare fence with no language is unwrapped too',
+    documentInReply('```\n{"nodes":[]}\n```') === '{"nodes":[]}');
+  check('JSON that does not parse is left alone',
+    documentInReply('{"nodes": [,]}') === null,
+    'half a document is not something to apply to somebody\'s drawing');
+  check('prose that merely mentions braces is not parsed',
+    documentInReply('Set it to {"color": "#fff"} and it works') === null);
+
+  check('an empty variable is not a pin',
+    modelForTier('light', { MASSING_AI_MODEL: '   ' }) === 'gemini-3.1-flash-lite',
+    'an unset variable arrives as an empty string often enough to matter');
 }
 
 function documentCases(check) {

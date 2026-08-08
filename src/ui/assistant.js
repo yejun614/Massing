@@ -11,6 +11,7 @@
  */
 
 import { h, clear, setClass } from '../util/dom.js';
+import { MODEL_TIERS } from '../data/models.js';
 
 /**
  * A question, and what was selected when it was asked.
@@ -180,6 +181,46 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
     }
   }
 
+  /*
+   * Where a question from the assistant lands.
+   *
+   * Below the transcript rather than inside it, because it is not a thing that
+   * was said — it is a thing waiting to be answered, and it has to stay put
+   * while the log scrolls. The buttons are a shortcut, never the whole of the
+   * answer: the compose box underneath stays live, and typing into it answers
+   * the question too.
+   */
+  const askText = h('p', { class: 'chat-ask-text' });
+  const askOptions = h('div', { class: 'chat-ask-options' });
+  const ask = h('div', { class: 'chat-ask is-hidden', role: 'group' }, [askText, askOptions]);
+
+  /*
+   * Which of the three models answers.
+   *
+   * Three buttons rather than a menu, because with three options a menu hides
+   * two of them behind a click to save a few pixels — and the choice here is a
+   * comparison, so the alternatives are the useful part. It sits directly above
+   * the box rather than up in the header: it is a property of the question
+   * about to be sent, and the header is already carrying three controls that
+   * are about the conversation instead.
+   */
+  const modelButtons = MODEL_TIERS.map((option) =>
+    h('button', {
+      class: 'chat-model-option',
+      type: 'button',
+      role: 'radio',
+      'aria-checked': 'false',
+      title: `${option.label} — ${option.hint}`,
+      text: option.label,
+      onClick: () => assistant.setTier(option.id),
+    })
+  );
+  const models = h('div', {
+    class: 'chat-model',
+    role: 'radiogroup',
+    'aria-label': 'Which model answers',
+  }, [h('span', { class: 'chat-model-label', text: 'Model' }), ...modelButtons]);
+
   const panel = h('section', { class: 'chat is-hidden', 'aria-label': 'Diagram assistant' }, [
     h('header', { class: 'chat-head' }, [
       h('span', { class: 'chat-title', text: 'Assistant' }),
@@ -200,7 +241,9 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
       }),
     ]),
     log,
+    ask,
     context,
+    models,
     h('div', { class: 'chat-compose' }, [input, sendBtn]),
   ]);
   root.append(panel);
@@ -217,7 +260,15 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
 
   async function submit() {
     const text = input.value.trim();
-    if (!text || assistant.busy) return;
+    if (!text) return;
+    // A turn parked on a question is still busy, and what was typed is the
+    // answer to it rather than the start of another turn.
+    if (assistant.pending) {
+      input.value = '';
+      assistant.answer(text);
+      return;
+    }
+    if (assistant.busy) return;
     const selection = attachSelection ? store?.state.selection ?? [] : [];
     input.value = '';
     const result = await assistant.ask(text, { selection });
@@ -229,7 +280,8 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
     // on every store notification, and rebuilding it under the pointer would
     // break selecting text in an answer.
     const messages = assistant.visible;
-    const signature = `${assistant.currentId}:${messages.length}:${assistant.busy}`;
+    const waiting = assistant.pending;
+    const signature = `${assistant.currentId}:${messages.length}:${assistant.busy}:${waiting?.question ?? ''}`;
     if (log.dataset.signature !== signature) {
       log.dataset.signature = signature;
       clear(log);
@@ -238,17 +290,21 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
           'Describe the system and it will draw one, or ask for a change to what is open. ' +
           'It edits the diagram directly, so undo works on whatever it does.' }));
       }
+      const WHO = { user: 'You', assistant: 'Assistant', ask: 'Assistant asks', answer: 'You' };
       for (const message of messages) {
         // The selection travelled inside the question, which is right for the
         // record and wrong for the bubble: it is not what the person typed.
         const [said, attached] = splitAttachment(message.content);
         log.append(h('div', { class: `chat-turn is-${message.role}` }, [
-          h('span', { class: 'chat-who', text: message.role === 'user' ? 'You' : 'Assistant' }),
+          h('span', { class: 'chat-who', text: WHO[message.role] ?? 'Assistant' }),
           h('p', { class: 'chat-text', text: said }),
           ...(attached ? [h('span', { class: 'chat-attached', text: `with ${attached}` })] : []),
         ]));
       }
-      if (assistant.busy) log.append(h('div', { class: 'chat-turn is-working', text: 'Working…' }));
+      // A turn parked on a question is waiting on a person, not working.
+      if (assistant.busy && !waiting) {
+        log.append(h('div', { class: 'chat-turn is-working', text: 'Working…' }));
+      }
       log.scrollTop = log.scrollHeight;
     }
 
@@ -273,9 +329,35 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
         `${selection.length} selected — sent with your message`;
     }
 
-    sendBtn.disabled = assistant.busy;
-    input.disabled = assistant.busy;
-    panel.classList.toggle('is-working', assistant.busy);
+    ask.classList.toggle('is-hidden', !waiting);
+    if (waiting && askText.textContent !== waiting.question) {
+      askText.textContent = waiting.question;
+      clear(askOptions);
+      for (const option of waiting.options ?? []) {
+        askOptions.append(h('button', {
+          class: 'btn chat-ask-option',
+          type: 'button',
+          text: option,
+          onClick: () => assistant.answer(option),
+        }));
+      }
+      input.placeholder = 'Answer, or type something else…';
+      input.focus();
+    }
+    if (!waiting) input.placeholder = 'Ask for a change, or a diagram from scratch…';
+
+    // Locked mid-turn, because the turn in flight is already on the old model.
+    for (const [i, button] of modelButtons.entries()) {
+      const chosen = MODEL_TIERS[i].id === assistant.tier;
+      setClass(button, 'is-current', chosen);
+      button.setAttribute('aria-checked', String(chosen));
+      button.disabled = assistant.busy;
+    }
+
+    // Busy disables the box; a question is the one kind of busy that needs it.
+    sendBtn.disabled = assistant.busy && !waiting;
+    input.disabled = assistant.busy && !waiting;
+    panel.classList.toggle('is-working', assistant.busy && !waiting);
   }
 
   assistant.subscribe(render);

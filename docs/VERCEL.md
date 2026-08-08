@@ -103,8 +103,35 @@ and add it to the project.
 | Variable | Set by | Notes |
 |---|---|---|
 | `GEMINI_API_KEY` | You | Its presence is what makes the assistant flag default to on. |
-| `MASSING_AI_MODEL` | Optional | Defaults to `gemini-flash-lite-latest`. A vendor prefix is tolerated — `google/…` and `models/…` both resolve to the bare id. |
+| `MASSING_AI_MODEL` | Optional | **Pins all three tiers to one model**, which is what it has always meant. A vendor prefix is tolerated — `google/…` and `models/…` both resolve to the bare id. |
+| `MASSING_AI_MODEL_LIGHT` / `_STANDARD` / `_STRONG` | Optional | Swaps one rung of the picker without touching the other two. Ignored when `MASSING_AI_MODEL` is set. |
 | `GEMINI_API_VERSION` | Optional | Defaults to `v1beta`, which carries the newest models. Try `v1` if a model 404s on it. |
+
+**The panel offers three models**, and the request names a tier rather than a
+model id — a public endpoint that let its caller name a model would bill this
+key for whatever the caller fancied. The table lives in `src/data/models.js`,
+which both the panel and the endpoint read:
+
+| Tier | Model | What it is for |
+|---|---|---|
+| Light | `gemini-3.1-flash-lite` | Edits to a drawing that already exists. Asked to author one it writes the document into its reply instead of calling the tool; Massing applies it anyway, but this is not the rung to draw a system with. |
+| Standard | `gemini-flash-lite-latest` | The default, and what this deployment ran before there was a picker — so the control changes nothing for anyone who ignores it. |
+| Strong | `gemini-flash-latest` | A whole repository: the components, the internal layers and the release path. Slower. |
+
+**No rung is a Pro model, deliberately.** A free Gemini key is granted no Pro
+quota at all, so every Pro id answers 429 — not as a rate limit that clears.
+Massing has no billing behind it, so a Pro rung would be a button broken for
+everyone who runs this. A deployment that *does* have Pro quota puts it back
+with one variable:
+
+```
+MASSING_AI_MODEL_STRONG=gemini-pro-latest
+```
+
+Old generations are no good either: measured on a free key, `gemini-2.0-flash-lite`
+answers 429 with `GenerateRequestsPerDayPerProjectPerModel-FreeTier` on the
+first call of the day, and the whole 2.5 line answers 404. A rung has to be
+recent enough to still be given away.
 
 **The default is an alias on purpose.** A pinned version can be closed to new
 keys while staying in the model listing, which is exactly what happened to
@@ -218,7 +245,7 @@ deliberate. Vercel's own limiter is the one that does that.
 | Chat, per address | 20/min, 200/hour, 600/day | Enough for a long working session, bounded well under what a runaway client costs. |
 | Chat request body | 256 kB | Prompts are text. |
 | Conversation sent | last 40 messages | Older turns are dropped rather than summarised: the diagram is sent in full every turn, so the thing carrying the state is never the thing being trimmed. |
-| Model reply | 4096 tokens, 60 s | |
+| Model reply | 16384 tokens, 60 s | 4096 was what stopped the strong tier finishing a seventeen-block document: the current generation spends thinking tokens against the same budget before writing any JSON. A ceiling is not a cost — replies are billed for what they use. |
 | Tool calls per question | 8 | Read, write, check, write again is four. Past eight it is stuck, and finding out costs money. |
 | Display id | 3–64 chars, `[a-z0-9-]`, claim-once | Lower case because a URL read aloud has no case. Names that look like hex are refused, because a lookup key carries no label saying which kind it is. |
 | Link lifetime | 90 days since last opened | See below. |
@@ -296,6 +323,18 @@ republishing a name does not kill the content link somebody else is using.
 the editor runs them against the document actually on screen — through the same
 store and the same undo history as a change made by hand. A server editing its
 own copy would be editing a document nobody is looking at.
+
+Three tools are declared, and the third is the one that behaves differently:
+
+| Tool | What the editor does with it |
+|---|---|
+| `get_diagram` | Serialises the open document and hands it back |
+| `replace_diagram` | Loads the document, applies it, and answers with what the loader repaired plus what is wrong with the drawing — too many connections, a caption that names a group of things rather than one thing, a first draft too thin to be a whole system, a block standing outside the zone it claims |
+| `ask_user` | **Parks the turn.** The question appears under the transcript with its options as buttons, and the tool result is whatever the person clicks or types. Nothing is sent upstream until then |
+
+That third one exists because the assistant can see only what was typed into the
+box — no repository, no URL, no disk. Without it, a model handed a GitHub link
+draws what the name suggests, which comes back plausible and wrong.
 
 ---
 

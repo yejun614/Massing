@@ -29,6 +29,9 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
+// Safe to import this early: it reads the environment only when called, and
+// the environment is not assembled until a few lines below.
+import { MODEL_TIERS, modelForTier, tiersPinned } from '../src/data/models.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.argv[2] ?? 8130);
@@ -161,7 +164,12 @@ createServer(async (req, res) => {
 }).listen(PORT, () => {
   console.log(`Massing dev server  http://127.0.0.1:${PORT}`);
   console.log(`  blob       ${liveBlob ? 'live (BLOB_READ_WRITE_TOKEN set)' : 'in memory — nothing survives a restart'}`);
-  console.log(`  assistant  ${liveModel ? `live — ${process.env.MASSING_AI_MODEL || 'default model'}` : 'off (set GEMINI_API_KEY in .env.local)'}`);
+  // Which models, not "a model": the panel picks between three, and being
+  // told which one a tier resolves to here is the point of running locally.
+  const models = tiersPinned(process.env)
+    ? `pinned to ${process.env.MASSING_AI_MODEL}`
+    : MODEL_TIERS.map((t) => `${t.id}=${modelForTier(t.id, process.env)}`).join('  ');
+  console.log(`  assistant  ${liveModel ? `live — ${models}` : 'off (set GEMINI_API_KEY in .env.local)'}`);
   if (!existsSync(resolve(ROOT, '.env.local'))) {
     console.log('\n  No .env.local. Create one with:\n    GEMINI_API_KEY=…\n');
   }

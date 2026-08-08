@@ -1484,6 +1484,83 @@ kbd {
   background: var(--accent-soft);
 }
 .chat-turn.is-working { color: var(--ink-muted); font-size: 12.5px; }
+/* An answer given by clicking reads like anything else the person said. */
+.chat-turn.is-answer .chat-text {
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+}
+
+/*
+ * A question from the assistant, waiting to be answered.
+ *
+ * Sits directly above the compose box and carries the accent border, because
+ * it is the only state in this panel where the turn has stopped and is waiting
+ * on a person — that has to be visible without reading anything.
+ */
+.chat-ask {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--accent);
+  background: var(--accent-soft);
+}
+.chat-ask.is-hidden { display: none; }
+.chat-ask-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+/*
+ * The model picker: three segments, the chosen one filled.
+ *
+ * Quiet, like the conversation switcher above it — it is a setting rather than
+ * an action, and a row of three accented buttons over the compose box would
+ * out-shout Send. The whole strip greys out mid-turn, which is also how it says
+ * that changing it now would not affect the answer being waited on.
+ */
+.chat-model {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px 0;
+}
+.chat-model-label {
+  margin-right: auto;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+.chat-model-option {
+  height: 22px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11.5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.chat-model-option:hover:not(:disabled) { color: var(--ink); }
+.chat-model-option.is-current {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.chat-model-option:disabled { opacity: 0.5; cursor: default; }
+
+.chat-ask-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-ask-option {
+  height: auto;
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: normal;
+  text-align: left;
+}
 
 .chat-compose {
   display: flex;
