@@ -47,7 +47,8 @@ the modules load unbundled.
 | Connect | `C`, then drag from one block or zone to another |
 | Re-route a connection | Select it and drag the grip on the run it turns on |
 | Draw a zone | `G`, then drag a rectangle |
-| Add a note | `T`, then click. Bold, italic, underline, size and colour in the inspector |
+| Add a note | Double-click bare canvas, or `T` then click |
+| Rename anything | Double-click it — the caret lands in its caption, whether that is a block, a zone, a connection or a note |
 | Add a picture | The picture button, or drag an image file onto the canvas, or paste a screenshot |
 | Tidy | `A` — nudge blocks apart until nothing is hidden, keeping your layout |
 | Auto layout | `Shift+A` — re-flow the whole diagram from its connections |
@@ -58,7 +59,7 @@ the modules load unbundled.
 | Light / dark | The theme button cycles system → light → dark |
 | Resize the panels | Drag either panel edge; double-click to reset, arrow keys when focused |
 | Hide a panel | `[` / `]`, or the two buttons beside the logo. A narrow window folds them away on its own |
-| Reload from disk | `R`, or the refresh button — re-reads the open file after something else edited it |
+| Reload from disk | `R`, or the refresh button — re-reads the open file after something else edited it, without moving the camera |
 | Export an image | `Ctrl+E` — SVG, PNG, JPG, WebP or GIF, with or without the grid, isometric or 2D, at 1× to 4× |
 | Share a diagram | The share button copies a link with the whole diagram inside it |
 | Everything else | The `?` button in the toolbar |

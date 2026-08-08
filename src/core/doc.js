@@ -246,13 +246,24 @@ export function makeGroup(doc, kind, rect, overrides = {}) {
   };
 }
 
+/**
+ * What a note is born at, which is not what an unstated `size` falls back to.
+ *
+ * A note lies on the ground, where the projection and the 45-degree skew each
+ * take a cut, so `TEXT_DEFAULTS.size` -- fine for the format, since it is only
+ * ever reached by a file that left the field out -- produces a smudge nobody
+ * can read the moment it is on screen. A note someone has just made should be
+ * legible without a trip to the inspector first.
+ */
+export const NEW_TEXT_SIZE = 50;
+
 export function makeText(doc, x, y, overrides = {}) {
   const body = overrides.text ?? 'Double-click to edit';
   return {
     id: uniqueId(overrides.id ?? body.split('\n')[0], allIds(doc)),
     text: body,
     pos: [x, y],
-    size: TEXT_DEFAULTS.size,
+    size: NEW_TEXT_SIZE,
     color: TEXT_DEFAULTS.color,
     bold: false,
     italic: false,

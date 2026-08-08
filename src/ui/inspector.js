@@ -56,7 +56,24 @@ export function createInspector({ root, store, commands }) {
     return buildEdge(root, store, found.entity.id);
   }
 
-  return { render };
+  /**
+   * Put the caret in the panel's first writable field, all of it selected.
+   *
+   * Deferred by a frame because the panel is rebuilt from the render loop, so
+   * at the moment a caller selects something and asks for this, the field it
+   * means does not exist yet. Selecting the contents rather than only focusing
+   * is what makes a note's placeholder disappear as soon as you type.
+   */
+  function focusEditor() {
+    requestAnimationFrame(() => {
+      const field = root.querySelector('textarea, input[type="text"]');
+      if (!field) return;
+      field.focus({ preventScroll: true });
+      field.select();
+    });
+  }
+
+  return { render, focusEditor };
 }
 
 /** Rebuild only when the selection identity or entity kinds change. */

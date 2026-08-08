@@ -26,6 +26,7 @@ export const SHORTCUTS = [
   ['C', 'Connect tool'],
   ['G', 'Draw a zone'],
   ['T', 'Add a text annotation'],
+  ['Double-click', 'Write a note on bare canvas, or edit the caption of whatever is there'],
   ['A', 'Tidy — separate anything hidden'],
   ['Shift + A', 'Auto layout from the connections'],
   ['V', 'Select tool'],

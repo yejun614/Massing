@@ -36,7 +36,6 @@ import {
   nodeById,
   groupById,
   edgeById,
-  textById,
   imageById,
   planarById,
   endpointBox,
@@ -57,7 +56,7 @@ const DRAG_THRESHOLD = 3; // px before a press becomes a drag
 const CONNECT_KEY = 'c';
 const MAX_HEIGHT = 40; // matches the loader's own bound on `height`
 
-export function attachPointer({ canvas, store, scene, overlay, toaster }) {
+export function attachPointer({ canvas, store, scene, overlay, toaster, onEditText }) {
   /** @type {null | {mode: string, ...}} */
   let drag = null;
   let spaceDown = false;
@@ -462,6 +461,34 @@ export function attachPointer({ canvas, store, scene, overlay, toaster }) {
   );
 
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // --- double-click: write here --------------------------------------------
+
+  /**
+   * Double-click means "write here".
+   *
+   * On bare canvas that is a new note where you clicked. On anything that is
+   * already there it is the caret in whatever that thing calls its words -- a
+   * note's content, a block's or a zone's caption, a connection's label -- all
+   * of which the inspector puts first in its panel.
+   *
+   * The second half is what makes the first reachable. A diagram of any size is
+   * mostly zone, so a rule that only fired over untouched ground would hardly
+   * ever fire; and it is what finally makes a new note's placeholder honest,
+   * having read "Double-click to edit" while nothing did.
+   *
+   * Only from the select tool. The text tool already writes a note on a single
+   * click, and an armed component is waiting to be placed -- in both cases the
+   * first click of the pair has done the work and the second must not repeat
+   * it.
+   */
+  canvas.addEventListener('dblclick', (e) => {
+    if (e.button !== 0 || store.state.tool !== 'select' || store.state.pendingType) return;
+    const id = hitId(e);
+    if (id) store.select(id);
+    else placeText(cellAt(local(e)));
+    onEditText?.();
+  });
 
   // --- space-to-pan --------------------------------------------------------
 

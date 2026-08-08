@@ -50,7 +50,14 @@ function isPlatformRefusal(err) {
   return err?.name === 'NotAllowedError' || err?.name === 'SecurityError';
 }
 
-export function createIO({ store, toaster }) {
+/**
+ * @param {{onOpened?: () => void}} deps
+ *   `onOpened` fires once a document has actually replaced the one on screen.
+ *   Not on a reload: re-reading the open file exists so you can watch one
+ *   diagram change while looking at one part of it, and moving the camera is
+ *   the opposite of that.
+ */
+export function createIO({ store, toaster, onOpened }) {
   /**
    * Not a constant: some browsers expose the whole File System Access API and
    * only refuse at the moment of use. Once that happens there is no point
@@ -298,6 +305,9 @@ export function createIO({ store, toaster }) {
     if (!result) return false;
     source = null;
     store.replaceDoc(result.doc, 'Open', { markSaved: true });
+    // Before the toasts, so a diagram that opens with warnings is already
+    // framed behind them rather than being framed once they are read.
+    onOpened?.();
     toaster?.warnings(result.warnings);
     if (!result.warnings.length) toaster?.info(`Opened ${label}`);
     return true;

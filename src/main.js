@@ -100,7 +100,10 @@ const panels = createPanels({
 const overlay = createOverlay(scene.overlay);
 // io first: `newDoc` has to tell it to forget which file is open, and io
 // itself depends only on the store.
-const io = createIO({ store, toaster });
+// `commands` does not exist yet, and does not need to: opening a file is the
+// one thing that happens long after start-up, and a diagram that arrives from
+// outside has no reason to land under the camera the last one left behind.
+const io = createIO({ store, toaster, onOpened: () => commands.zoomFit() });
 const commands = createCommands({ store, scene, toaster, io });
 const exporter = createExporter({ store, scene, toaster });
 
@@ -141,7 +144,14 @@ const palette = createPalette({
 });
 const inspector = createInspector({ root: region('inspector'), store, commands });
 
-const pointer = attachPointer({ canvas: canvasEl, store, scene, overlay, toaster });
+const pointer = attachPointer({
+  canvas: canvasEl,
+  store,
+  scene,
+  overlay,
+  toaster,
+  onEditText: () => inspector.focusEditor(),
+});
 attachKeyboard({ store, commands, io, panels, onExport: () => exportDialog.open() });
 
 io.attachDropZone(canvasEl, (e) => {
@@ -211,8 +221,7 @@ function offerRecovery() {
   el.style.pointerEvents = 'auto';
   el.style.cursor = 'pointer';
   el.addEventListener('click', () => {
-    io.loadText(saved.text, 'recovered draft');
-    commands.zoomFit();
+    io.loadText(saved.text, 'recovered draft'); // frames itself
     el.remove();
   });
 }
@@ -228,8 +237,7 @@ async function openSharedDiagram() {
   const payload = sharePayloadFrom();
   if (!payload) return;
   try {
-    io.loadText(await decodeShareText(payload), 'shared link');
-    commands.zoomFit();
+    io.loadText(await decodeShareText(payload), 'shared link'); // frames itself
   } catch (err) {
     toaster.error('That shared link could not be read.', {
       detail: [describeError(err), '', describeEnvironment()].join('\n'),
