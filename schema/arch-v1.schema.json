@@ -5,8 +5,19 @@
   "description": "An isometric architecture diagram. Coordinates are integer cells on a ground grid: +x runs right-and-down on screen, +y runs left-and-down, and height rises straight up. A node's pos is its minimum corner, not its centre.",
   "type": "object",
   "required": [
-    "version",
-    "nodes"
+    "version"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "nodes"
+      ]
+    },
+    {
+      "required": [
+        "tabs"
+      ]
+    }
   ],
   "additionalProperties": false,
   "properties": {
@@ -67,6 +78,55 @@
       "description": "Embedded pictures. The bytes live in the document as a data URL so the diagram remains a single self-contained file.",
       "items": {
         "$ref": "#/$defs/image"
+      }
+    },
+    "tabs": {
+      "type": "array",
+      "description": "Several drawings in one file, shown as tabs. Use it for views of one system that do not belong in a single picture — an overview and a detail, a before and an after. A file with one drawing writes its collections at the top level instead and omits this entirely. The title and the canvas belong to the file, not to a tab.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nodes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What the tab is called. Name it after what it shows — \"Overview\", \"Network detail\" — since this is all anyone has to go on before clicking it.",
+            "maxLength": 60
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/group"
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/edge"
+            }
+          },
+          "texts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/image"
+            }
+          }
+        }
       }
     }
   },

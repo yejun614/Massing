@@ -57,7 +57,19 @@ function isPlatformRefusal(err) {
  *   diagram change while looking at one part of it, and moving the camera is
  *   the opposite of that.
  */
-export function createIO({ store, toaster, onOpened, onFile }) {
+export function createIO({ store, toaster, onOpened, onFile, tabs = null }) {
+  /**
+   * The file is every tab; the store holds only the one on screen. Everything
+   * that writes a file goes through `fileDoc`, and everything that reads one
+   * goes through `showDoc`, so a document with several drawings in it survives
+   * a round trip through save, reload, autosave and copy alike.
+   *
+   * `tabs` is optional so this module still works on its own in tests.
+   */
+  const fileDoc = () => tabs?.document() ?? store.state.doc;
+  const showDoc = (doc, label, options) =>
+    tabs ? tabs.load(doc, { label, ...options }) : store.replaceDoc(doc, label, options);
+
   /**
    * Not a constant: some browsers expose the whole File System Access API and
    * only refuse at the moment of use. Once that happens there is no point
@@ -94,7 +106,7 @@ export function createIO({ store, toaster, onOpened, onFile }) {
    * work, so anything short of an outright cancel falls back to a download.
    */
   async function save({ saveAs = false } = {}) {
-    const text = serializeDoc(store.state.doc);
+    const text = serializeDoc(fileDoc());
 
     if (fsAvailable) {
       const outcome = await writeThroughHandle(text, saveAs);
@@ -308,7 +320,7 @@ export function createIO({ store, toaster, onOpened, onFile }) {
     const result = parseOrReport(text, label);
     if (!result) return false;
     source = null;
-    store.replaceDoc(result.doc, 'Open', { markSaved: true });
+    showDoc(result.doc, 'Open', { markSaved: true });
     // Before the toasts, so a diagram that opens with warnings is already
     // framed behind them rather than being framed once they are read.
     onOpened?.();
@@ -347,14 +359,14 @@ export function createIO({ store, toaster, onOpened, onFile }) {
     // the selection, and this is a button people press repeatedly while
     // waiting for a model to finish writing. Both sides are compared in their
     // canonical form, so a difference in whitespace does not read as a change.
-    if (serializeDoc(result.doc) === serializeDoc(store.state.doc)) {
+    if (serializeDoc(result.doc) === serializeDoc(fileDoc())) {
       toaster?.info(`${name} has not changed.`);
       return false;
     }
 
     const hadUnsaved = store.state.dirty;
     const bound = source;
-    store.replaceDoc(result.doc, 'Reload', { markSaved: true, keepSelection: true });
+    showDoc(result.doc, 'Reload', { markSaved: true, keepSelection: true });
     source = bound; // replaceDoc goes through the store, not through loadText
 
     toaster?.warnings(result.warnings);
@@ -500,7 +512,7 @@ export function createIO({ store, toaster, onOpened, onFile }) {
         try {
           localStorage.setItem(
             AUTOSAVE_KEY,
-            JSON.stringify({ at: Date.now(), text: serializeDoc(state.doc) })
+            JSON.stringify({ at: Date.now(), text: serializeDoc(fileDoc()) })
           );
         } catch {
           // Quota exceeded or storage disabled -- autosave is optional.
@@ -530,7 +542,7 @@ export function createIO({ store, toaster, onOpened, onFile }) {
   // --- clipboard-style helpers --------------------------------------------
 
   async function copyDocumentJson() {
-    const text = serializeDoc(store.state.doc);
+    const text = serializeDoc(fileDoc());
     if (await copyText(text)) toaster?.info('Diagram JSON copied to the clipboard.');
     else toaster?.error('Clipboard access was blocked by the browser.', { detail: text });
   }

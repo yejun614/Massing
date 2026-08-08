@@ -33,6 +33,12 @@ export const MAX_ENTRIES = 40;
 
 const now = () => Date.now();
 
+/** Blocks in the whole file, which may hold several drawings. */
+function countBlocks(doc) {
+  if (doc.tabs?.length) return doc.tabs.reduce((sum, tab) => sum + (tab.nodes?.length ?? 0), 0);
+  return doc.nodes?.length ?? 0;
+}
+
 function newEntryId() {
   return `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -216,7 +222,10 @@ export function createLibrary({ store, files, storage = libraryStorage() } = {})
         text: text.length <= MAX_ENTRY_BYTES ? text : null,
         evicted: text.length > MAX_ENTRY_BYTES,
         bytes: text.length,
-        blocks: doc.nodes?.length ?? 0,
+        blocks: countBlocks(doc),
+        // Only worth showing when there is more than one; the list says
+        // "12 blocks" for an ordinary diagram and stays quiet about tabs.
+        ...(doc.tabs?.length > 1 ? { tabs: doc.tabs.length } : {}),
         ...(source ? { source } : {}),
         ...(fileName ? { fileName } : {}),
         ...(handleKey ? { handleKey } : {}),

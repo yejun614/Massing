@@ -113,6 +113,36 @@ would land on top of each other, pin one aside with `route` (`x` or `y`, the
 axis it turns on) and `bend` (where it crosses over, in half cells):
 `{ "from": "api", "to": "db", "route": "x", "bend": 6.5 }`
 
+## Several drawings in one file
+
+When the block count passes about 25 the answer is two diagrams, and `tabs` is
+where the second one goes — the collections move one level down, each tab
+carrying its own `groups`, `nodes`, `edges`, `texts` and `images`:
+
+```json
+{
+  "version": 1,
+  "meta": { "title": "Payments service" },
+  "tabs": [
+    { "name": "Overview", "nodes": [], "edges": [] },
+    { "name": "Write path", "nodes": [], "edges": [] }
+  ]
+}
+```
+
+- **One drawing writes no tabs at all.** Put the collections at the top level,
+  as above. A single-tab wrapper is the same file with an extra layer around it.
+- `meta` and `canvas` belong to the file. A tab has a `name` and drawings.
+- Ids only have to be unique **within** one tab, and a connection can only join
+  two things in its own tab. Nothing crosses.
+- Name a tab after what it shows — "Overview", "Write path", "Failover" — since
+  that name is all anyone has before they click it.
+
+Reach for this when one picture would have to answer two questions: a system
+overview and the inside of one service, a before and an after, the happy path
+and the failure path. Do not reach for it to dodge a crowded drawing — a
+diagram split down the middle for want of space reads worse than the crowd.
+
 ## Component types
 
 Compute: `ec2` `lambda` `ecs` `eks` `fargate` `batch`
@@ -440,9 +470,9 @@ connections naming a missing block are dropped, and out-of-range coordinates
 are clamped. Each is reported as a warning.
 
 Two things are refused outright: text that is not JSON, and JSON that is not a
-diagram — an object carrying none of `nodes`, `groups`, `edges`, `texts` or
-`images` is rejected rather than opened as an empty canvas. So make sure the
-output parses, and that it has content in the collections named above.
+diagram — an object carrying none of `nodes`, `groups`, `edges`, `texts`,
+`images` or `tabs` is rejected rather than opened as an empty canvas. So make
+sure the output parses, and that it has content in the collections named above.
 
 ## Check it before you hand it over
 
@@ -473,289 +503,302 @@ try {
   process.exit(1)
 }
 
-const groups = doc.groups ?? []
-const nodes = doc.nodes ?? []
-const edges = doc.edges ?? []
-const texts = doc.texts ?? []
-const images = doc.images ?? []
-
 const errors = [], warns = [], infos = []
-const err = (m) => errors.push(m)
-const warn = (m) => warns.push(m)
-const info = (m) => infos.push(m)
 
-/** Footprint of a flat thing as [x0, y0, x1, y1]. */
-const box = (o) => {
-  const [w, h] = o.size ?? [2, 2]
-  return [o.pos[0], o.pos[1], o.pos[0] + w, o.pos[1] + h]
-}
-const rectBox = (g) => [g.rect[0], g.rect[1], g.rect[0] + g.rect[2], g.rect[1] + g.rect[3]]
-const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
-// Unset means the component type decides, and those run 1 to 3.
-const heightOf = (n) => (Number.isFinite(n.height) ? n.height : 2)
+/**
+ * A file may hold several drawings under `tabs`, and each is checked on its
+ * own: ids and coordinates only ever have to agree within one drawing, so
+ * merging them would invent clashes that nobody can see.
+ */
+const drawings = Array.isArray(doc.tabs) && doc.tabs.length
+  ? doc.tabs.map((t, i) => [t, (t.name ?? 'tab ' + (i + 1)) + ': '])
+  : [[doc, '']]
 
-// --- identifiers -----------------------------------------------------------
-const seen = new Set()
-for (const o of [...groups, ...nodes, ...edges, ...texts, ...images]) {
-  if (o.id == null) continue
-  if (seen.has(o.id)) err('duplicate id "' + o.id + '" — the loader renames it with a suffix')
-  seen.add(o.id)
-}
-const anchors = new Set([...groups, ...nodes].map((o) => o.id))
-for (const e of edges) {
-  for (const end of ['from', 'to']) {
-    if (!anchors.has(e[end])) {
-      err('edge ' + (e.id ?? e.from + '->' + e.to) + ' has ' + end + '="' + e[end] +
-          '", which does not exist — this edge is dropped silently')
-    }
-  }
-}
+for (const [view, where] of drawings) {
+  const groups = view.groups ?? []
+  const nodes = view.nodes ?? []
+  const edges = view.edges ?? []
+  const texts = view.texts ?? []
+  const images = view.images ?? []
 
-// --- coordinates -----------------------------------------------------------
-// Negative coordinates are fine — the origin is not a corner of the world —
-// but a fractional one is not, and the loader rounds it somewhere you did not
-// ask for.
-for (const o of [...nodes, ...texts, ...images]) {
-  const p = Array.isArray(o.pos) ? o.pos : []
-  if (p.some((v) => !Number.isInteger(v))) err(o.id + ' pos is not integral')
-  // A note's size is one number, a block's and a picture's is [w, h].
-  if (Array.isArray(o.size) && o.size.some((v) => !Number.isInteger(v) || v <= 0)) {
-    err(o.id + ' size must be positive integers')
-  }
-}
-for (const g of groups) {
-  if (!g.rect?.every(Number.isInteger)) err('zone ' + g.id + ' rect is not integral')
-}
+  const err = (m) => errors.push(where + m)
+  const warn = (m) => warns.push(where + m)
+  const info = (m) => infos.push(where + m)
 
-// --- block collisions ------------------------------------------------------
-for (let i = 0; i < nodes.length; i++) {
-  for (let j = i + 1; j < nodes.length; j++) {
-    if (overlaps(box(nodes[i]), box(nodes[j]))) err('blocks overlap: ' + nodes[i].id + ' / ' + nodes[j].id)
+  /** Footprint of a flat thing as [x0, y0, x1, y1]. */
+  const box = (o) => {
+    const [w, h] = o.size ?? [2, 2]
+    return [o.pos[0], o.pos[1], o.pos[0] + w, o.pos[1] + h]
   }
-}
+  const rectBox = (g) => [g.rect[0], g.rect[1], g.rect[0] + g.rect[2], g.rect[1] + g.rect[3]]
+  const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+  // Unset means the component type decides, and those run 1 to 3.
+  const heightOf = (n) => (Number.isFinite(n.height) ? n.height : 2)
 
-// --- zone membership, with a cell of margin all round ----------------------
-for (const n of nodes) {
-  if (!n.group) continue
-  const g = groups.find((x) => x.id === n.group)
-  if (!g) { err(n.id + ' names group "' + n.group + '", which does not exist'); continue }
-  const [gx0, gy0, gx1, gy1] = rectBox(g)
-  const [x0, y0, x1, y1] = box(n)
-  if (!(x0 > gx0 && y0 > gy0 && x1 < gx1 && y1 < gy1)) {
-    err(n.id + ' is not inside zone ' + g.id + ' with a cell of margin — membership is geometric')
+  // --- identifiers -----------------------------------------------------------
+  const seen = new Set()
+  for (const o of [...groups, ...nodes, ...edges, ...texts, ...images]) {
+    if (o.id == null) continue
+    if (seen.has(o.id)) err('duplicate id "' + o.id + '" — the loader renames it with a suffix')
+    seen.add(o.id)
   }
-}
-
-// --- sibling zones may nest, but must not half-overlap ---------------------
-for (let i = 0; i < groups.length; i++) {
-  for (let j = i + 1; j < groups.length; j++) {
-    const a = rectBox(groups[i]), b = rectBox(groups[j])
-    if (!overlaps(a, b)) continue
-    const aInB = a[0] >= b[0] && a[1] >= b[1] && a[2] <= b[2] && a[3] <= b[3]
-    const bInA = b[0] >= a[0] && b[1] >= a[1] && b[2] <= a[2] && b[3] <= a[3]
-    if (!aInB && !bInA) {
-      warn('zones ' + groups[i].id + ' and ' + groups[j].id +
-           ' partially overlap — nest fully or separate fully')
-    }
-  }
-}
-
-// --- occlusion -------------------------------------------------------------
-for (const f of nodes) {
-  for (const b of nodes) {
-    if (f === b) continue
-    const [fx0, fy0, fx1, fy1] = box(f)
-    const [bx0, by0, bx1, by1] = box(b)
-    const fh = heightOf(f), bh = heightOf(b)
-    if (fh <= bh) continue                  // no taller, so it can never hide it
-    if (fx0 + fy0 <= bx0 + by0) continue    // not in front
-    if (fx1 - fy0 < bx0 - by1 || bx1 - by0 < fx0 - fy1) continue  // side by side
-    const slack = fx0 + fy0 - (bx1 + by1)
-    const need = 2 * (fh - bh)
-    if (slack < need) {
-      err(f.id + ' hides ' + b.id + ' — needs ' + need + ' of x+y clearance, has ' + slack)
-    }
-  }
-}
-
-// --- pictures --------------------------------------------------------------
-for (const im of images) {
-  if ((im.plane ?? 'floor') === 'floor') {
-    for (const n of nodes) {
-      if (overlaps(box(im), box(n))) warn('image ' + im.id + ' lies on top of block ' + n.id)
-    }
-    info('image ' + im.id + ' lies flat; for a logo, left/right usually reads better')
-  }
-  const m = /^data:(image\/[a-z+.-]+);base64,(.+)$/i.exec(im.src ?? '')
-  if (!m) {
-    if (im.src && !/^https?:\/\//.test(im.src)) err('image ' + im.id + ' src is neither a data URL nor http')
-    continue
-  }
-  if (m[1] !== 'image/svg+xml') continue
-  let svg = ''
-  try { svg = Buffer.from(m[2], 'base64').toString('utf8') } catch { /* binary */ }
-  if (!/<svg[\s>]/.test(svg)) { err('image ' + im.id + ' does not decode to SVG'); continue }
-  // A glyph-less plate is judged by path-data volume, not by shape count:
-  // measured, an empty plate is ~125 characters and a real logo 450-700.
-  const shapes = (svg.match(/<(path|polygon|circle|rect|polyline|ellipse)[\s>]/g) ?? []).length
-  const chars = [...svg.matchAll(/\sd="([^"]*)"/g)].reduce((s, x) => s + x[1].length, 0)
-  if (shapes <= 2 && chars < 250) {
-    warn('image ' + im.id + ' has ' + shapes + ' shapes and ' + chars +
-         ' characters of path data — probably a glyph-less plate. Look at it')
-  }
-  if (/width="1em"/.test(svg)) warn('image ' + im.id + ' says width="1em" — it renders blurry at 16px')
-}
-
-// --- captions --------------------------------------------------------------
-const PLANES = new Set(['floor', 'screen', 'left', 'right'])
-for (const n of nodes) {
-  if (!n.labelPlane) warn(n.id + ' has no labelPlane — its caption lies skewed on the floor')
-  else if (!PLANES.has(n.labelPlane)) err(n.id + ' labelPlane "' + n.labelPlane + '" is not a known plane')
-  else if (n.labelPlane === 'screen') {
-    warn(n.id + ' has labelPlane "screen" — that sits on top of the picture, not in it. Use left or right')
-  }
-  if (n.label && [...n.label].length > 12) {
-    warn(n.id + ' caption is ' + [...n.label].length + ' characters ("' + n.label +
-         '") — cut it to a proper noun of ten or fewer')
-  }
-}
-for (const g of groups) {
-  if (!g.label?.trim()) warn('zone ' + g.id + ' has no caption — the renderer prints its kind name instead')
-}
-
-// --- notes -----------------------------------------------------------------
-for (const t of texts) {
-  if (t.plane === 'screen') {
-    warn('note ' + t.id + ' is pinned to the viewer — a note belongs on the floor of the scene')
-  }
-  // Floor text is foreshortened, so the 14px default is unreadable there.
-  if ((t.plane ?? 'floor') === 'floor' && (t.size ?? 14) < 40) {
-    warn('note ' + t.id + ' is ' + (t.size ?? 14) + 'px on the floor — 50 is what it takes to read')
-  }
-}
-for (const e of edges) {
-  if (e.label?.trim() && (e.labelSize ?? 12) < 24) {
-    warn('edge ' + (e.id ?? e.from + '->' + e.to) + ' has a caption at ' + (e.labelSize ?? 12) +
-         'px — raise it to 30')
-  }
-}
-
-// --- zone contrast ---------------------------------------------------------
-/** [hue in degrees, lightness 0-1] of a #rrggbb colour. */
-const hsl = (hex) => {
-  const [r, g, b] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
-  let h = 0
-  if (d) {
-    if (max === r) h = ((g - b) / d) % 6
-    else if (max === g) h = (b - r) / d + 2
-    else h = (r - g) / d + 4
-  }
-  return [((h * 60) % 360 + 360) % 360, (max + min) / 2]
-}
-const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
-
-for (const g of groups) {
-  const parent = groups.find((p) => p.id === g.parent)
-  if (!parent || !/^#[0-9a-f]{6}$/i.test(g.color ?? '') || !/^#[0-9a-f]{6}$/i.test(parent.color ?? '')) continue
-  const [gh, gl] = hsl(g.color), [ph, pl] = hsl(parent.color)
-  // A nested zone is painted over its parent and captioned in a shade of
-  // itself, so a near hue makes both the slab edge and the caption vanish.
-  if (hueGap(gh, ph) < 40 && Math.abs(gl - pl) < 0.25) {
-    warn('zone ' + g.id + ' (' + g.color + ') is too close to its parent ' + parent.id +
-         ' (' + parent.color + ') — ' + Math.round(hueGap(gh, ph)) + '° of hue apart. Nested zones need a quarter turn')
-  }
-}
-
-// --- connections you can follow --------------------------------------------
-const anchorOf = (id) => {
-  const n = nodes.find((x) => x.id === id)
-  if (n) return box(n)
-  const g = groups.find((x) => x.id === id)
-  return g ? rectBox(g) : null
-}
-const mid = (b) => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]
-
-/** Does the segment p-q touch rectangle r? Liang-Barsky. */
-const cuts = ([x0, y0], [x1, y1], [rx0, ry0, rx1, ry1]) => {
-  let t0 = 0, t1 = 1
-  const dx = x1 - x0, dy = y1 - y0
-  for (const [p, q] of [[-dx, x0 - rx0], [dx, rx1 - x0], [-dy, y0 - ry0], [dy, ry1 - y0]]) {
-    if (p === 0) { if (q < 0) return false; continue }
-    const t = q / p
-    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t }
-    else { if (t < t0) return false; if (t < t1) t1 = t }
-  }
-  return true
-}
-
-for (const e of edges) {
-  const a = anchorOf(e.from), b = anchorOf(e.to)
-  if (!a || !b) continue
-  const [p, q] = [mid(a), mid(b)]
-  // The two elbows the router chooses between: along x first, or along y first.
-  const elbows = [[p, [q[0], p[1]], q], [p, [p[0], q[1]], q]]
-  const blockedBy = elbows.map((path) => nodes.filter((n) =>
-    n.id !== e.from && n.id !== e.to &&
-    (cuts(path[0], path[1], box(n)) || cuts(path[1], path[2], box(n)))).map((n) => n.id))
-  // Only when BOTH routes are obstructed is the line certain to vanish behind
-  // something; the router takes whichever passes through fewer blocks.
-  if (blockedBy.every((hit) => hit.length)) {
-    warn('edge ' + (e.id ?? e.from + '->' + e.to) + ' runs under ' +
-         [...new Set(blockedBy.flat())].join(', ') + ' whichever way it turns — move a block')
-  }
-}
-
-const side = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-for (let i = 0; i < edges.length; i++) {
-  for (let j = i + 1; j < edges.length; j++) {
-    const [x, y] = [edges[i], edges[j]]
-    if ([x.from, x.to].some((id) => id === y.from || id === y.to)) continue // meeting at a block is fine
-    const [a, b, c, d] = [anchorOf(x.from), anchorOf(x.to), anchorOf(y.from), anchorOf(y.to)]
-    if (!a || !b || !c || !d) continue
-    const [p, q, r, s] = [mid(a), mid(b), mid(c), mid(d)]
-    const straddles = (side(p, q, r) > 0) !== (side(p, q, s) > 0) &&
-                      (side(r, s, p) > 0) !== (side(r, s, q) > 0)
-    if (straddles) {
-      warn('edges ' + (x.id ?? x.from + '->' + x.to) + ' and ' + (y.id ?? y.from + '->' + y.to) +
-           ' cross — at this density that means two blocks are in the wrong order')
-    }
-  }
-}
-for (const o of [...nodes, ...groups, ...edges]) {
-  if (o.labelSize != null && (o.labelSize < 6 || o.labelSize > 96)) {
-    err(o.id + ' labelSize ' + o.labelSize + ' is outside the valid range, 6 to 96')
-  }
-}
-
-// --- uniformity, which is what the good diagrams have in common ------------
-const sizes = new Set(nodes.map((n) => (n.size ?? [2, 2]).join('x')))
-if (sizes.size > 2) warn(sizes.size + ' distinct block sizes — one uniform [2,2] reads better')
-if (nodes.some((n) => heightOf(n) > 1)) warn('heights above 1 in use — 0 and 1 alone remove occlusion entirely')
-const labelSizes = new Set(nodes.map((n) => n.labelSize ?? 12))
-if (labelSizes.size > 2) warn(labelSizes.size + ' distinct block labelSizes — peers should share one')
-const titles = groups.filter((g) => (g.labelSize ?? 12) >= 80).length
-if (titles > 1) warn(titles + ' very large zone titles — they fight each other, so keep one')
-
-// --- connection density ----------------------------------------------------
-if (nodes.length) {
-  const ratio = edges.length / nodes.length
-  if (ratio > 0.5) {
-    warn(edges.length + ' edges over ' + nodes.length + ' nodes = ' + ratio.toFixed(2) +
-         ' — aim for 0.33. Sharing a zone needs no edge')
-  }
-  const degree = {}
+  const anchors = new Set([...groups, ...nodes].map((o) => o.id))
   for (const e of edges) {
-    degree[e.from] = (degree[e.from] ?? 0) + 1
-    degree[e.to] = (degree[e.to] ?? 0) + 1
+    for (const end of ['from', 'to']) {
+      if (!anchors.has(e[end])) {
+        err('edge ' + (e.id ?? e.from + '->' + e.to) + ' has ' + end + '="' + e[end] +
+            '", which does not exist — this edge is dropped silently')
+      }
+    }
   }
-  for (const [id, d] of Object.entries(degree)) {
-    if (d > 5) warn(id + ' has ' + d + ' edges — a sign the grouping needs rework')
+
+  // --- coordinates -----------------------------------------------------------
+  // Negative coordinates are fine — the origin is not a corner of the world —
+  // but a fractional one is not, and the loader rounds it somewhere you did not
+  // ask for.
+  for (const o of [...nodes, ...texts, ...images]) {
+    const p = Array.isArray(o.pos) ? o.pos : []
+    if (p.some((v) => !Number.isInteger(v))) err(o.id + ' pos is not integral')
+    // A note's size is one number, a block's and a picture's is [w, h].
+    if (Array.isArray(o.size) && o.size.some((v) => !Number.isInteger(v) || v <= 0)) {
+      err(o.id + ' size must be positive integers')
+    }
   }
+  for (const g of groups) {
+    if (!g.rect?.every(Number.isInteger)) err('zone ' + g.id + ' rect is not integral')
+  }
+
+  // --- block collisions ------------------------------------------------------
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      if (overlaps(box(nodes[i]), box(nodes[j]))) err('blocks overlap: ' + nodes[i].id + ' / ' + nodes[j].id)
+    }
+  }
+
+  // --- zone membership, with a cell of margin all round ----------------------
+  for (const n of nodes) {
+    if (!n.group) continue
+    const g = groups.find((x) => x.id === n.group)
+    if (!g) { err(n.id + ' names group "' + n.group + '", which does not exist'); continue }
+    const [gx0, gy0, gx1, gy1] = rectBox(g)
+    const [x0, y0, x1, y1] = box(n)
+    if (!(x0 > gx0 && y0 > gy0 && x1 < gx1 && y1 < gy1)) {
+      err(n.id + ' is not inside zone ' + g.id + ' with a cell of margin — membership is geometric')
+    }
+  }
+
+  // --- sibling zones may nest, but must not half-overlap ---------------------
+  for (let i = 0; i < groups.length; i++) {
+    for (let j = i + 1; j < groups.length; j++) {
+      const a = rectBox(groups[i]), b = rectBox(groups[j])
+      if (!overlaps(a, b)) continue
+      const aInB = a[0] >= b[0] && a[1] >= b[1] && a[2] <= b[2] && a[3] <= b[3]
+      const bInA = b[0] >= a[0] && b[1] >= a[1] && b[2] <= a[2] && b[3] <= a[3]
+      if (!aInB && !bInA) {
+        warn('zones ' + groups[i].id + ' and ' + groups[j].id +
+             ' partially overlap — nest fully or separate fully')
+      }
+    }
+  }
+
+  // --- occlusion -------------------------------------------------------------
+  for (const f of nodes) {
+    for (const b of nodes) {
+      if (f === b) continue
+      const [fx0, fy0, fx1, fy1] = box(f)
+      const [bx0, by0, bx1, by1] = box(b)
+      const fh = heightOf(f), bh = heightOf(b)
+      if (fh <= bh) continue                  // no taller, so it can never hide it
+      if (fx0 + fy0 <= bx0 + by0) continue    // not in front
+      if (fx1 - fy0 < bx0 - by1 || bx1 - by0 < fx0 - fy1) continue  // side by side
+      const slack = fx0 + fy0 - (bx1 + by1)
+      const need = 2 * (fh - bh)
+      if (slack < need) {
+        err(f.id + ' hides ' + b.id + ' — needs ' + need + ' of x+y clearance, has ' + slack)
+      }
+    }
+  }
+
+  // --- pictures --------------------------------------------------------------
+  for (const im of images) {
+    if ((im.plane ?? 'floor') === 'floor') {
+      for (const n of nodes) {
+        if (overlaps(box(im), box(n))) warn('image ' + im.id + ' lies on top of block ' + n.id)
+      }
+      info('image ' + im.id + ' lies flat; for a logo, left/right usually reads better')
+    }
+    const m = /^data:(image\/[a-z+.-]+);base64,(.+)$/i.exec(im.src ?? '')
+    if (!m) {
+      if (im.src && !/^https?:\/\//.test(im.src)) err('image ' + im.id + ' src is neither a data URL nor http')
+      continue
+    }
+    if (m[1] !== 'image/svg+xml') continue
+    let svg = ''
+    try { svg = Buffer.from(m[2], 'base64').toString('utf8') } catch { /* binary */ }
+    if (!/<svg[\s>]/.test(svg)) { err('image ' + im.id + ' does not decode to SVG'); continue }
+    // A glyph-less plate is judged by path-data volume, not by shape count:
+    // measured, an empty plate is ~125 characters and a real logo 450-700.
+    const shapes = (svg.match(/<(path|polygon|circle|rect|polyline|ellipse)[\s>]/g) ?? []).length
+    const chars = [...svg.matchAll(/\sd="([^"]*)"/g)].reduce((s, x) => s + x[1].length, 0)
+    if (shapes <= 2 && chars < 250) {
+      warn('image ' + im.id + ' has ' + shapes + ' shapes and ' + chars +
+           ' characters of path data — probably a glyph-less plate. Look at it')
+    }
+    if (/width="1em"/.test(svg)) warn('image ' + im.id + ' says width="1em" — it renders blurry at 16px')
+  }
+
+  // --- captions --------------------------------------------------------------
+  const PLANES = new Set(['floor', 'screen', 'left', 'right'])
+  for (const n of nodes) {
+    if (!n.labelPlane) warn(n.id + ' has no labelPlane — its caption lies skewed on the floor')
+    else if (!PLANES.has(n.labelPlane)) err(n.id + ' labelPlane "' + n.labelPlane + '" is not a known plane')
+    else if (n.labelPlane === 'screen') {
+      warn(n.id + ' has labelPlane "screen" — that sits on top of the picture, not in it. Use left or right')
+    }
+    if (n.label && [...n.label].length > 12) {
+      warn(n.id + ' caption is ' + [...n.label].length + ' characters ("' + n.label +
+           '") — cut it to a proper noun of ten or fewer')
+    }
+  }
+  for (const g of groups) {
+    if (!g.label?.trim()) warn('zone ' + g.id + ' has no caption — the renderer prints its kind name instead')
+  }
+
+  // --- notes -----------------------------------------------------------------
+  for (const t of texts) {
+    if (t.plane === 'screen') {
+      warn('note ' + t.id + ' is pinned to the viewer — a note belongs on the floor of the scene')
+    }
+    // Floor text is foreshortened, so the 14px default is unreadable there.
+    if ((t.plane ?? 'floor') === 'floor' && (t.size ?? 14) < 40) {
+      warn('note ' + t.id + ' is ' + (t.size ?? 14) + 'px on the floor — 50 is what it takes to read')
+    }
+  }
+  for (const e of edges) {
+    if (e.label?.trim() && (e.labelSize ?? 12) < 24) {
+      warn('edge ' + (e.id ?? e.from + '->' + e.to) + ' has a caption at ' + (e.labelSize ?? 12) +
+           'px — raise it to 30')
+    }
+  }
+
+  // --- zone contrast ---------------------------------------------------------
+  /** [hue in degrees, lightness 0-1] of a #rrggbb colour. */
+  const hsl = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
+    let h = 0
+    if (d) {
+      if (max === r) h = ((g - b) / d) % 6
+      else if (max === g) h = (b - r) / d + 2
+      else h = (r - g) / d + 4
+    }
+    return [((h * 60) % 360 + 360) % 360, (max + min) / 2]
+  }
+  const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
+
+  for (const g of groups) {
+    const parent = groups.find((p) => p.id === g.parent)
+    if (!parent || !/^#[0-9a-f]{6}$/i.test(g.color ?? '') || !/^#[0-9a-f]{6}$/i.test(parent.color ?? '')) continue
+    const [gh, gl] = hsl(g.color), [ph, pl] = hsl(parent.color)
+    // A nested zone is painted over its parent and captioned in a shade of
+    // itself, so a near hue makes both the slab edge and the caption vanish.
+    if (hueGap(gh, ph) < 40 && Math.abs(gl - pl) < 0.25) {
+      warn('zone ' + g.id + ' (' + g.color + ') is too close to its parent ' + parent.id +
+           ' (' + parent.color + ') — ' + Math.round(hueGap(gh, ph)) + '° of hue apart. Nested zones need a quarter turn')
+    }
+  }
+
+  // --- connections you can follow --------------------------------------------
+  const anchorOf = (id) => {
+    const n = nodes.find((x) => x.id === id)
+    if (n) return box(n)
+    const g = groups.find((x) => x.id === id)
+    return g ? rectBox(g) : null
+  }
+  const mid = (b) => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]
+
+  /** Does the segment p-q touch rectangle r? Liang-Barsky. */
+  const cuts = ([x0, y0], [x1, y1], [rx0, ry0, rx1, ry1]) => {
+    let t0 = 0, t1 = 1
+    const dx = x1 - x0, dy = y1 - y0
+    for (const [p, q] of [[-dx, x0 - rx0], [dx, rx1 - x0], [-dy, y0 - ry0], [dy, ry1 - y0]]) {
+      if (p === 0) { if (q < 0) return false; continue }
+      const t = q / p
+      if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t }
+      else { if (t < t0) return false; if (t < t1) t1 = t }
+    }
+    return true
+  }
+
+  for (const e of edges) {
+    const a = anchorOf(e.from), b = anchorOf(e.to)
+    if (!a || !b) continue
+    const [p, q] = [mid(a), mid(b)]
+    // The two elbows the router chooses between: along x first, or along y first.
+    const elbows = [[p, [q[0], p[1]], q], [p, [p[0], q[1]], q]]
+    const blockedBy = elbows.map((path) => nodes.filter((n) =>
+      n.id !== e.from && n.id !== e.to &&
+      (cuts(path[0], path[1], box(n)) || cuts(path[1], path[2], box(n)))).map((n) => n.id))
+    // Only when BOTH routes are obstructed is the line certain to vanish behind
+    // something; the router takes whichever passes through fewer blocks.
+    if (blockedBy.every((hit) => hit.length)) {
+      warn('edge ' + (e.id ?? e.from + '->' + e.to) + ' runs under ' +
+           [...new Set(blockedBy.flat())].join(', ') + ' whichever way it turns — move a block')
+    }
+  }
+
+  const side = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  for (let i = 0; i < edges.length; i++) {
+    for (let j = i + 1; j < edges.length; j++) {
+      const [x, y] = [edges[i], edges[j]]
+      if ([x.from, x.to].some((id) => id === y.from || id === y.to)) continue // meeting at a block is fine
+      const [a, b, c, d] = [anchorOf(x.from), anchorOf(x.to), anchorOf(y.from), anchorOf(y.to)]
+      if (!a || !b || !c || !d) continue
+      const [p, q, r, s] = [mid(a), mid(b), mid(c), mid(d)]
+      const straddles = (side(p, q, r) > 0) !== (side(p, q, s) > 0) &&
+                        (side(r, s, p) > 0) !== (side(r, s, q) > 0)
+      if (straddles) {
+        warn('edges ' + (x.id ?? x.from + '->' + x.to) + ' and ' + (y.id ?? y.from + '->' + y.to) +
+             ' cross — at this density that means two blocks are in the wrong order')
+      }
+    }
+  }
+  for (const o of [...nodes, ...groups, ...edges]) {
+    if (o.labelSize != null && (o.labelSize < 6 || o.labelSize > 96)) {
+      err(o.id + ' labelSize ' + o.labelSize + ' is outside the valid range, 6 to 96')
+    }
+  }
+
+  // --- uniformity, which is what the good diagrams have in common ------------
+  const sizes = new Set(nodes.map((n) => (n.size ?? [2, 2]).join('x')))
+  if (sizes.size > 2) warn(sizes.size + ' distinct block sizes — one uniform [2,2] reads better')
+  if (nodes.some((n) => heightOf(n) > 1)) warn('heights above 1 in use — 0 and 1 alone remove occlusion entirely')
+  const labelSizes = new Set(nodes.map((n) => n.labelSize ?? 12))
+  if (labelSizes.size > 2) warn(labelSizes.size + ' distinct block labelSizes — peers should share one')
+  const titles = groups.filter((g) => (g.labelSize ?? 12) >= 80).length
+  if (titles > 1) warn(titles + ' very large zone titles — they fight each other, so keep one')
+
+  // --- connection density ----------------------------------------------------
+  if (nodes.length) {
+    const ratio = edges.length / nodes.length
+    if (ratio > 0.5) {
+      warn(edges.length + ' edges over ' + nodes.length + ' nodes = ' + ratio.toFixed(2) +
+           ' — aim for 0.33. Sharing a zone needs no edge')
+    }
+    const degree = {}
+    for (const e of edges) {
+      degree[e.from] = (degree[e.from] ?? 0) + 1
+      degree[e.to] = (degree[e.to] ?? 0) + 1
+    }
+    for (const [id, d] of Object.entries(degree)) {
+      if (d > 5) warn(id + ' has ' + d + ' edges — a sign the grouping needs rework')
+    }
+  }
+
+  info(nodes.length + ' blocks · ' + edges.length + ' connections · ' + groups.length + ' zones · ' +
+       images.length + ' pictures · ' + texts.length + ' notes')
 }
 
-info(nodes.length + ' blocks · ' + edges.length + ' connections · ' + groups.length + ' zones · ' +
-     images.length + ' pictures · ' + texts.length + ' notes')
 
 for (const m of errors) console.log('ERROR  ' + m)
 for (const m of warns) console.log('WARN   ' + m)

@@ -196,6 +196,10 @@ here.
   changed it themselves.
 - Make changes with \`replace_diagram\`, passing the complete document as JSON
   text. Keep the ids that already exist.
+- A file may hold several drawings as tabs, but you only ever see and replace
+  **the one they are looking at**. Send it as a plain document — never wrap
+  what you send in \`tabs\`, which would replace the open drawing with a file
+  inside it. To work on another drawing, ask them to click its tab.
 - Count the connections before you send: at most one per three blocks. The tool
   result says so when you have overspent, and that is a thing to fix and send
   again — not a note to acknowledge in your reply.

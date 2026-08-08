@@ -34,6 +34,7 @@ export const SHORTCUTS = [
   ['2', 'Toggle 2D / 3D'],
   ['0', 'Zoom to fit'],
   ['Space + drag', 'Pan'],
+  ['The + in the corner', 'Add another drawing to this file — double-click a tab to rename it'],
   ['[ / ]', 'Show or hide the left / right panel'],
   ['Drag a panel edge', 'Resize the side panels (double-click to reset)'],
 ];

@@ -49,6 +49,8 @@ import { iconMarkup } from '../src/data/icons.js';
 import { LLM_PROMPT } from '../src/data/prompt.js';
 import { THREE_TIER } from '../src/data/samples.js';
 import { overConnected } from '../src/core/assistant.js';
+import { splitTabs, joinTabs, createTabs } from '../src/core/tabs.js';
+import { createStore } from '../src/core/store.js';
 import {
   createLibrary,
   withinBudget,
@@ -68,6 +70,7 @@ export function runCases(check) {
   cameraCases(check);
   depthCases(check);
   heightCases(check);
+  tabCases(check);
   documentCases(check);
   densityCases(check);
   libraryCases(check);
@@ -445,6 +448,184 @@ function heightCases(check) {
   check('positions stay whole cells', (() => {
     const doc = normalizeDoc({ nodes: [{ id: 'n', type: 'ec2', pos: [1.5, 2.5] }] }).doc;
     return doc.nodes[0].pos.every(Number.isInteger);
+  })());
+}
+
+/**
+ * Several drawings in one file.
+ *
+ * The rule the whole design rests on is that a one-drawing file is written
+ * exactly as it always was, so most of these are about the wrapper *not*
+ * appearing rather than about it working.
+ */
+function tabCases(check) {
+  const node = (id, x = 0) => ({ id, type: 'ec2', pos: [x, 0] });
+  const twoTabs = () => normalizeDoc({
+    meta: { title: 'Both' },
+    tabs: [
+      { name: 'Overview', nodes: [node('a')] },
+      { name: 'Detail', nodes: [node('b'), node('c', 4)] },
+    ],
+  }).doc;
+
+  check('a tabbed file loads its drawings separately', (() => {
+    const doc = twoTabs();
+    return doc.tabs.length === 2 && doc.tabs[0].nodes.length === 1 && doc.tabs[1].nodes.length === 2;
+  })());
+  check('a tabbed file keeps nothing at the top level', (() => {
+    const doc = twoTabs();
+    return CONTENT_KEYS.every((key) => doc[key] === undefined);
+  })());
+  check('an unnamed tab is numbered from one', (() => {
+    const doc = normalizeDoc({ tabs: [{ nodes: [node('a')] }, { nodes: [node('b')] }] }).doc;
+    return doc.tabs[0].name === 'Tab 1' && doc.tabs[1].name === 'Tab 2';
+  })());
+  check('a tabbed file round-trips unchanged', (() => {
+    const text = serializeDoc(twoTabs());
+    return serializeDoc(parseDoc(text).doc) === text;
+  })());
+  check('ids may repeat between tabs', (() => {
+    // Each drawing stands alone, so the same name in two of them is not a
+    // clash and must not be renamed to `a-2` behind the author's back.
+    const doc = normalizeDoc({
+      tabs: [{ nodes: [node('a')] }, { nodes: [node('a')] }],
+    }).doc;
+    return doc.tabs[0].nodes[0].id === 'a' && doc.tabs[1].nodes[0].id === 'a';
+  })());
+  check('one drawing is written without a wrapper', (() => {
+    const doc = normalizeDoc({ tabs: [{ name: 'Only', nodes: [node('a')] }] }).doc;
+    const text = serializeDoc(doc);
+    return !text.includes('tabs') && text.includes('"nodes"');
+  })());
+  check('a plain file is still refused when it holds no diagram',
+    docRejection({ tabs: [] }) !== null && docRejection({ tabs: [{ nodes: [] }] }) === null);
+
+  // --- splitting and joining ------------------------------------------------
+  check('a plain document splits into one drawing', (() => {
+    const doc = normalizeDoc({ nodes: [node('a')] }).doc;
+    const parts = splitTabs(doc);
+    return parts.length === 1 && parts[0].doc === doc;
+  })());
+  check('a split drawing carries the file title and canvas', (() => {
+    const doc = normalizeDoc({
+      meta: { title: 'Shared' },
+      canvas: { background: '#123456' },
+      tabs: [{ name: 'One', nodes: [node('a')] }, { name: 'Two', nodes: [node('b')] }],
+    }).doc;
+    return splitTabs(doc).every((t) => t.doc.meta.title === 'Shared' && t.doc.canvas.background === '#123456');
+  })());
+  check('splitting and joining is a round trip', (() => {
+    const doc = twoTabs();
+    return serializeDoc(joinTabs(splitTabs(doc))) === serializeDoc(doc);
+  })());
+  check('joining one drawing produces a plain document', (() => {
+    const doc = normalizeDoc({ nodes: [node('a')] }).doc;
+    return joinTabs(splitTabs(doc)).tabs === undefined;
+  })());
+
+  // --- the controller -------------------------------------------------------
+  const controller = () => {
+    const parts = splitTabs(twoTabs());
+    const store = createStore(parts[0].doc);
+    return { store, tabs: createTabs({ store, initial: parts }) };
+  };
+
+  check('the store holds one drawing at a time', (() => {
+    const { store, tabs } = controller();
+    return store.state.doc.nodes.length === 1 && tabs.count === 2;
+  })());
+  check('switching swaps the drawing on screen', (() => {
+    const { store, tabs } = controller();
+    tabs.select(1);
+    return store.state.doc.nodes.length === 2 && tabs.active === 1;
+  })());
+  check('an edit made in one tab is still there after visiting another', (() => {
+    const { store, tabs } = controller();
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    tabs.select(1);
+    tabs.select(0);
+    return store.state.doc.nodes.some((n) => n.id === 'z');
+  })());
+  check('undo does not reach across a switch', (() => {
+    // The stacks hold whole documents, so a shared one would undo an edit made
+    // in a drawing you are no longer looking at — by replacing the one you are.
+    const { store, tabs } = controller();
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    tabs.select(1);
+    const before = store.state.doc.nodes.length;
+    return store.canUndo() === false && before === 2;
+  })());
+  check('each tab keeps its own history across a switch', (() => {
+    const { store, tabs } = controller();
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    tabs.select(1);
+    tabs.select(0);
+    return store.canUndo() && store.undo() && !store.state.doc.nodes.some((n) => n.id === 'z');
+  })());
+  check('the file is every tab, not the one on screen', (() => {
+    const { store, tabs } = controller();
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    const whole = tabs.document();
+    return whole.tabs.length === 2 && whole.tabs[0].nodes.some((n) => n.id === 'z');
+  })());
+  check('adding a tab shows it, empty', (() => {
+    const { store, tabs } = controller();
+    tabs.add();
+    return tabs.count === 3 && tabs.active === 2 && store.state.doc.nodes.length === 0;
+  })());
+  check('a duplicated tab is a copy, not a second reference', (() => {
+    const { store, tabs } = controller();
+    tabs.duplicate(0);
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    return tabs.all()[0].doc.nodes.length === 1 && tabs.all()[1].doc.nodes.length === 2;
+  })());
+  check('the last tab cannot be closed', (() => {
+    const { tabs } = controller();
+    return Boolean(tabs.remove(0)) && tabs.remove(0) === null && tabs.count === 1;
+  })());
+  check('a closed tab comes back where it was, with its history', (() => {
+    const { store, tabs } = controller();
+    tabs.select(1);
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    const gone = tabs.remove(1);
+    tabs.insert(1, gone);
+    return tabs.count === 2 && tabs.active === 1 &&
+      store.state.doc.nodes.some((n) => n.id === 'z') && store.canUndo();
+  })());
+  check('closing the tab before the open one keeps the open one', (() => {
+    const { store, tabs } = controller();
+    tabs.select(1);
+    tabs.remove(0);
+    return tabs.active === 0 && store.state.doc.nodes.length === 2;
+  })());
+  check('a closed tab takes its history with it', (() => {
+    const { store, tabs } = controller();
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    tabs.remove(0);
+    // Undoing here would put the closed drawing back on top of this one.
+    return store.canUndo() === false && store.state.doc.nodes.length === 2;
+  })());
+  check('closing another tab leaves this one and its history alone', (() => {
+    const { store, tabs } = controller();
+    tabs.select(1);
+    store.commit('Add', (doc) => doc.nodes.push(node('z', 8)));
+    tabs.remove(0);
+    return tabs.active === 0 && store.canUndo() && store.state.doc.nodes.length === 3;
+  })());
+  check('loading a file replaces every tab', (() => {
+    const { store, tabs } = controller();
+    tabs.load(normalizeDoc({ nodes: [node('solo')] }).doc);
+    return tabs.count === 1 && store.state.doc.nodes[0].id === 'solo';
+  })());
+  check('a renamed tab keeps its name in the file', (() => {
+    const { tabs } = controller();
+    tabs.rename(1, '  Write path  ');
+    return tabs.document().tabs[1].name === 'Write path';
+  })());
+  check('a name erased falls back to its number', (() => {
+    const { tabs } = controller();
+    tabs.rename(1, '   ');
+    return tabs.document().tabs[1].name === 'Tab 2';
   })());
 }
 

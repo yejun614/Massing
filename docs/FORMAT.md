@@ -336,10 +336,45 @@ first, and the inspector shows what each picture weighs.
 `size` is `[width, height]` in cells, measured within the plane. An image with
 no `src` is dropped on load.
 
+## Several drawings in one file
+
+A file may hold more than one drawing, shown in the editor as tabs. The
+collections move one level down and each tab carries its own:
+
+```json
+{
+  "version": 1,
+  "meta": { "title": "Payments service" },
+  "canvas": { "background": "#eef1f5" },
+  "tabs": [
+    { "name": "Overview", "nodes": [], "edges": [] },
+    { "name": "Write path", "nodes": [], "edges": [] }
+  ]
+}
+```
+
+- **A file with one drawing writes no `tabs` key at all**, exactly as above in
+  [Minimal document](#minimal-document). The editor only wraps a document once
+  it has a second drawing to wrap, so every file written before tabs existed
+  round-trips byte for byte, and saving a single-tab file never adds a layer.
+- `meta` and `canvas` belong to the file. A tab has a `name` and its five
+  collections, and nothing else.
+- **Ids are unique within a tab, not across the file.** Two drawings may both
+  call something `api`; they are separate documents that happen to travel
+  together. A connection can only join two things in its own tab.
+- Undo does not cross a switch. Each drawing keeps a history of its own, since
+  history here is whole-document snapshots — one shared stack would undo an
+  edit into a drawing you are no longer looking at.
+
+Use it when one picture would have to answer two questions: an overview and the
+inside of one service, a before and an after. Splitting a crowded drawing down
+the middle for want of space reads worse than the crowd did.
+
 ## Identifiers
 
 Ids are readable slugs — lower case, hyphen separated — and must be unique
-across nodes, groups, edges, texts **and** images in one document. Derive them from the label:
+across nodes, groups, edges, texts **and** images in one drawing (in a tabbed
+file, that means within one tab). Derive them from the label:
 `"Web Server"` → `web-server`. Do not use UUIDs. A duplicate id is renamed on
 load (`web-1`, `web-1-2`) and reported.
 
@@ -373,7 +408,7 @@ Each of those is reported as a warning when the file opens.
 
 There are two hard failures. Text that is not JSON is one. The other is JSON
 that is not a diagram: an object carrying none of `nodes`, `groups`, `edges`,
-`texts` or `images` is refused rather than opened, since reading it as an empty
+`texts`, `images` or `tabs` is refused rather than opened, since reading it as an empty
 canvas would throw away the drawing already on screen and say nothing about
 why. An empty collection is enough to be recognised, so a saved empty diagram
 still opens.

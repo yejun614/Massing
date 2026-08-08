@@ -42,6 +42,8 @@ import { createFeatures } from './core/features.js';
 import { createCloud, publishedKeyFrom } from './core/cloud.js';
 import { createAssistant } from './core/assistant.js';
 import { createLibrary } from './core/library.js';
+import { createTabs, splitTabs } from './core/tabs.js';
+import { createTabStrip } from './ui/tabs.js';
 import { createHandleStore } from './core/handles.js';
 import { createLibraryDialog } from './ui/library.js';
 import { createTheme } from './ui/theme.js';
@@ -63,7 +65,15 @@ let frame = 0;
 
 installCrashReporting();
 
-const store = createStore(startingDocument());
+/*
+ * The store holds one drawing; the file may hold several.
+ *
+ * Splitting here rather than inside the store is what keeps tabs out of every
+ * other module: nothing below this line has to know whether the file it came
+ * from had one drawing in it or five. See core/tabs.js.
+ */
+const startingTabs = splitTabs(startingDocument());
+const store = createStore(startingTabs[0].doc);
 
 /*
  * A finger starts by moving the drawing, not by selecting things in it.
@@ -114,8 +124,20 @@ const overlay = createOverlay(scene.overlay);
 // outside has no reason to land under the camera the last one left behind.
 const handles = createHandleStore();
 const library = createLibrary({ store, files: handles });
+// Before `io`, which writes and reads the whole file rather than the drawing on
+// screen, and so has to be able to ask what the whole file is.
+const tabs = createTabs({
+  store,
+  initial: startingTabs,
+  // A different drawing is a different thing to look at, so it arrives framed.
+  onSwitch: () => {
+    commands?.zoomFit();
+    scheduleRender();
+  },
+});
 const io = createIO({
   store,
+  tabs,
   toaster,
   onOpened: () => commands.zoomFit(),
   // Whichever way a file arrived, the library learns which file it was — and
@@ -125,12 +147,12 @@ const io = createIO({
     // and a different file is a different diagram rather than an edit to this.
     const known = library.matching({ fileName });
     if (!known) library.startFresh();
-    const entry = library.remember(store.state.doc, { id: known?.id, source: 'file', fileName });
+    const entry = library.remember(tabs.document(), { id: known?.id, source: 'file', fileName });
     if (handle) await handles.keep(entry.id, handle);
-    library.remember(store.state.doc, { id: entry.id, handleKey: handle ? entry.id : null });
+    library.remember(tabs.document(), { id: entry.id, handleKey: handle ? entry.id : null });
   },
 });
-const commands = createCommands({ store, scene, toaster, io, library });
+const commands = createCommands({ store, scene, toaster, io, library, tabs });
 const exporter = createExporter({ store, scene, toaster });
 
 const shortcuts = createShortcutsDialog(document.body);
@@ -138,7 +160,7 @@ const feedback = createFeedbackPrompt(document.body);
 // Nothing here reaches the network until `features.load()` has been answered,
 // and in a build without the hosted marker it never asks.
 const features = createFeatures();
-const cloud = createCloud({ store, toaster });
+const cloud = createCloud({ store, toaster, document: () => tabs.document() });
 const assistant = createAssistant({ store, commands, library });
 const exportDialog = createExportDialog(document.body, {
   store,
@@ -200,6 +222,9 @@ const palette = createPalette({
   onArm: () => panels.armed(),
 });
 const inspector = createInspector({ root: region('inspector'), store, commands });
+// Inside the canvas, so it sits over the drawing rather than taking a strip of
+// the window from it — and so it is beside what it switches between.
+createTabStrip(canvasEl, { tabs, toaster, onChange: () => scheduleRender() });
 
 const pointer = attachPointer({
   canvas: canvasEl,
@@ -241,7 +266,7 @@ let libraryTimer = 0;
 store.subscribe((state, what) => {
   if (what !== 'doc') return;
   clearTimeout(libraryTimer);
-  libraryTimer = setTimeout(() => library.remember(state.doc), 1500);
+  libraryTimer = setTimeout(() => library.remember(tabs.document()), 1500);
 });
 io.startAutosave();
 
@@ -310,7 +335,7 @@ async function openFromLibrary(entry) {
 
   const stored = library.read(entry.id);
   if (stored?.doc) {
-    store.replaceDoc(stored.doc, 'Open', { markSaved: true });
+    tabs.load(stored.doc);
     io.forget();
     commands.zoomFit();
     toaster.info(`Opened ${entry.title}`);
@@ -344,12 +369,12 @@ async function openPublishedDiagram(key, entryId = null) {
   try {
     const result = await cloud.fetchDiagram(key);
     if (result.rejection) throw new Error(result.rejection);
-    store.replaceDoc(result.doc, 'Open', { markSaved: true });
+    tabs.load(result.doc);
     io.forget();
     commands.zoomFit();
     const known = entryId ? { id: entryId } : library.matching({ displayId: key });
     if (!known) library.startFresh();
-    library.remember(store.state.doc, { id: known?.id, source: 'published' });
+    library.remember(tabs.document(), { id: known?.id, source: 'published' });
     toaster.warnings(result.warnings);
     if (!result.warnings.length) toaster.info(`Opened ${key}`);
   } catch (err) {
@@ -378,7 +403,7 @@ function offerRecovery() {
     // The draft and the library's newest entry are the same document by two
     // routes. Reuniting them is what keeps a restore from arriving as an
     // untitled stranger with none of its conversations attached.
-    const known = library.matchingText(serializeDoc(store.state.doc));
+    const known = library.matchingText(serializeDoc(tabs.document()));
     if (known) library.setCurrent(known.id);
     el.remove();
   });
@@ -413,7 +438,7 @@ async function openSharedDiagram() {
  */
 async function copyShareLink() {
   try {
-    const url = shareUrlFrom(await encodeShareText(serializeDoc(store.state.doc)));
+    const url = shareUrlFrom(await encodeShareText(serializeDoc(tabs.document())));
     if (!(await copyText(url))) {
       toaster.error('Could not reach the clipboard.', { detail: url });
       return;

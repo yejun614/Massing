@@ -148,6 +148,33 @@ export function createStore(doc = createEmptyDoc()) {
       notify('ui');
     },
 
+    /**
+     * Lift the undo history out, and put one back.
+     *
+     * For tabs, which swap the whole document: each drawing keeps its own
+     * history rather than sharing one stack, because a shared stack undoes an
+     * edit made in a drawing you are no longer looking at — the entries are
+     * whole documents, so it would quietly overwrite the tab you *are* looking
+     * at with a snapshot of a different one.
+     *
+     * `detachHistory` empties the stacks as it hands them over, so the
+     * `replaceDoc` that follows is the first entry of the incoming tab's
+     * history and is then discarded by `attachHistory`.
+     */
+    detachHistory() {
+      const taken = { undo: undoStack.splice(0), redo: redoStack.splice(0) };
+      notify('history');
+      return taken;
+    },
+
+    attachHistory(history) {
+      undoStack.length = 0;
+      redoStack.length = 0;
+      undoStack.push(...(history?.undo ?? []));
+      redoStack.push(...(history?.redo ?? []));
+      notify('history');
+    },
+
     canUndo: () => undoStack.length > 0,
     canRedo: () => redoStack.length > 0,
     undoLabel: () => undoStack.at(-1)?.label ?? null,

@@ -557,6 +557,104 @@ body.is-resizing .resizer::after { opacity: 1; }
   pointer-events: none;
 }
 
+/* --- tab strip ------------------------------------------------------------
+ *
+ * Several drawings in one file, along the bottom-left of the canvas. A file
+ * with one drawing shows only the `+`, faint until it is pointed at: it is an
+ * invitation rather than a control, and a strip of chrome naming the only tab
+ * there is would be neither.
+ */
+
+.tab-strip {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: calc(100% - 20px);
+}
+
+.tab-list {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgb(15 23 42 / 0.1);
+  /* Twenty drawings in one file is unusual and should still be reachable. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab-strip.is-single .tab-list { display: none; }
+.tab-strip.is-single .tab-add { opacity: 0.35; }
+.tab-strip.is-single:hover .tab-add,
+.tab-strip.is-single .tab-add:focus-visible { opacity: 1; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 190px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover { background: var(--surface-2); color: var(--ink); }
+
+.tab.is-active {
+  border-color: var(--border);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Small, and not so small they cannot be hit: 18px of box around a 10px mark. */
+.tab-act {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 5px;
+  color: var(--ink-muted);
+  opacity: 0.6;
+}
+
+.tab-act svg { width: 10px; height: 10px; }
+.tab-act:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
+
+.tab-rename {
+  width: 120px;
+  padding: 5px 7px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.tab-add { flex: none; transition: opacity 0.12s ease; }
+
 /* --- shortcuts sheet ------------------------------------------------------ */
 
 .sheet {
@@ -896,6 +994,13 @@ kbd {
     border-radius: 12px;
     background: var(--surface);
     box-shadow: 0 6px 20px rgb(15 23 42 / 0.16);
+  }
+
+  /* The rail is laid over the canvas, so the strip starts where it ends. */
+  .tab-strip {
+    left: calc(var(--rail-w) + 8px);
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    max-width: calc(100% - var(--rail-w) - 74px); /* clear of the zoom dock */
   }
 
   /* The scrim and the drawers start where the rail ends, so the rail stays

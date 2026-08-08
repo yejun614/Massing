@@ -11,6 +11,10 @@ export const UI_ICONS = {
   file: wrap('<path d="M9 1.5H4.2a1.2 1.2 0 0 0-1.2 1.2v10.6a1.2 1.2 0 0 0 1.2 1.2h7.6a1.2 1.2 0 0 0 1.2-1.2V5.5Z"/><path d="M9 1.5V5.5H13"/>'),
   open: wrap('<path d="M1.8 12.8V4.2A1.2 1.2 0 0 1 3 3h3.3l1.4 1.8H13a1.2 1.2 0 0 1 1.2 1.2v6.8A1.2 1.2 0 0 1 13 14H3a1.2 1.2 0 0 1-1.2-1.2Z"/>'),
   save: wrap('<path d="M2.6 3.8A1.2 1.2 0 0 1 3.8 2.6h6.6L13.4 5.6v6.6a1.2 1.2 0 0 1-1.2 1.2H3.8a1.2 1.2 0 0 1-1.2-1.2Z"/><path d="M5.2 2.6v3.6h5.2V2.6M5.2 13.4V9.6h5.6v3.8"/>'),
+  // The tab strip's three.
+  plus: wrap('<path d="M8 3.2v9.6M3.2 8h9.6"/>'),
+  close: wrap('<path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/>'),
+  copy: wrap('<rect x="5.6" y="5.6" width="8" height="8" rx="1.2"/><path d="M10.8 5.6V3.6a1.2 1.2 0 0 0-1.2-1.2H3.6a1.2 1.2 0 0 0-1.2 1.2v6a1.2 1.2 0 0 0 1.2 1.2h2"/>'),
   more: wrap('<circle cx="3.6" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="12.4" cy="8" r="1.3" fill="currentColor" stroke="none"/>'),
   refresh: wrap('<path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"/><path d="M13.6 2.2v3.9h-3.9"/>'),
   clipboard: wrap('<rect x="4.2" y="2.6" width="7.6" height="11" rx="1.2"/><path d="M6.4 2.6V1.8h3.2v.8"/><path d="M6.6 6.6h2.8M6.6 9.2h2.8"/>'),

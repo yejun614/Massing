@@ -166,13 +166,16 @@ export function docRejection(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return `the top level is ${jsonKind(raw)}, and a diagram is an object.`;
   }
+  // A tabbed file carries its drawings one level down, so it has none of the
+  // collections at the top and would otherwise be refused as not a diagram.
+  if (Array.isArray(raw.tabs) && raw.tabs.length) return null;
   if (CONTENT_KEYS.some((key) => Array.isArray(raw[key]))) return null;
 
   const keys = Object.keys(raw);
   const found = keys.length
     ? `its top-level keys are ${keys.slice(0, 8).join(', ')}${keys.length > 8 ? ', …' : ''}`
     : 'it has no keys at all';
-  return `it carries none of ${CONTENT_KEYS.join(', ')} — ${found}.`;
+  return `it carries none of ${CONTENT_KEYS.join(', ')}, tabs — ${found}.`;
 }
 
 /**
@@ -210,12 +213,56 @@ export function normalizeDoc(raw) {
     doc.canvas.background = color(raw.canvas.background);
   }
 
+  /*
+   * A file with `tabs` holds several drawings that share a title and a
+   * background. Each is read exactly as a whole document's body is, with its
+   * own id space -- two tabs may both have a block called `api`, because they
+   * are two drawings rather than two halves of one.
+   *
+   * The shapes stay separate: a tabbed document has `tabs` and no collections
+   * of its own, a plain one has collections and no `tabs`. Carrying both would
+   * be two sources of truth for the same blocks.
+   */
+  if (Array.isArray(raw.tabs)) {
+    doc.tabs = [];
+    for (const [index, tab] of raw.tabs.entries()) {
+      if (!tab || typeof tab !== 'object' || Array.isArray(tab)) {
+        warnings.push(`Dropped tabs[${index}]: it is ${jsonKind(tab)}, not an object.`);
+        continue;
+      }
+      const body = emptyBody();
+      readBody(tab, body, warnings, `tabs[${index}].`);
+      doc.tabs.push({ name: str(tab.name) || `Tab ${index + 1}`, ...body });
+    }
+    if (!doc.tabs.length) doc.tabs.push({ name: 'Tab 1', ...emptyBody() });
+    for (const key of CONTENT_KEYS) delete doc[key];
+    return { doc, warnings, rejection: null };
+  }
+
+  readBody(raw, doc, warnings, '');
+  return { doc, warnings, rejection: null };
+}
+
+/** The five collections a drawing is made of, empty. */
+function emptyBody() {
+  return { groups: [], nodes: [], edges: [], texts: [], images: [] };
+}
+
+/**
+ * Read one drawing's worth of collections into `doc`.
+ *
+ * Split out of `normalizeDoc` so a tab and a whole document are read by the
+ * same code rather than by two that drift. `where` prefixes the warnings, so
+ * "tabs[1].nodes[4]" stays as findable in a tabbed file as "nodes[4]" is in a
+ * plain one.
+ */
+function readBody(raw, doc, warnings, where = '') {
   const usedIds = new Set();
 
   // --- groups (parents resolved in a second pass) ---------------------------
   const groupIndex = new Map();
   const pendingParents = [];
-  for (const g of readCollection(raw, 'groups', warnings)) {
+  for (const g of readCollection(raw, 'groups', warnings, where)) {
     const kindDef = groupKindFor(str(g.kind));
     if (g.kind && kindDef.kind !== g.kind) {
       warnings.push(`Group kind "${g.kind}" is unknown; used "group".`);
@@ -253,7 +300,7 @@ export function normalizeDoc(raw) {
 
   // --- nodes ----------------------------------------------------------------
   const nodeIndex = new Map();
-  for (const n of readCollection(raw, 'nodes', warnings)) {
+  for (const n of readCollection(raw, 'nodes', warnings, where)) {
     let type = str(n.type) || FALLBACK_TYPE;
     if (!isKnownType(type)) {
       warnings.push(`Node type "${type}" is unknown; drawn as a generic block.`);
@@ -299,7 +346,7 @@ export function normalizeDoc(raw) {
   }
 
   // --- edges ----------------------------------------------------------------
-  for (const e of readCollection(raw, 'edges', warnings)) {
+  for (const e of readCollection(raw, 'edges', warnings, where)) {
     const from = str(e.from) ?? str(e.source);
     const to = str(e.to) ?? str(e.target);
     // Either end may be a block or a zone: both are rectangles on the grid,
@@ -337,7 +384,7 @@ export function normalizeDoc(raw) {
   }
 
   // --- text annotations -----------------------------------------------------
-  for (const t of readCollection(raw, 'texts', warnings)) {
+  for (const t of readCollection(raw, 'texts', warnings, where)) {
     // Leading and trailing whitespace is kept -- it may be deliberate
     // indentation -- but a note that is *only* whitespace renders as nothing
     // and would sit in the document as an invisible, unfindable entity.
@@ -362,7 +409,7 @@ export function normalizeDoc(raw) {
   }
 
   // --- pictures -------------------------------------------------------------
-  for (const im of readCollection(raw, 'images', warnings)) {
+  for (const im of readCollection(raw, 'images', warnings, where)) {
     const src = typeof im.src === 'string' ? im.src.trim() : '';
     if (!src) {
       warnings.push('Dropped an image with no src.');
@@ -378,8 +425,6 @@ export function normalizeDoc(raw) {
       ...readPlanar(im, IMAGE_DEFAULTS.plane),
     });
   }
-
-  return { doc, warnings, rejection: null };
 }
 
 /**
@@ -390,16 +435,16 @@ export function normalizeDoc(raw) {
  * hand opens missing most of itself with nothing said. Every skip is named,
  * with its index, because "nodes[4]" is what makes it findable in the file.
  */
-function* readCollection(raw, key, warnings) {
+function* readCollection(raw, key, warnings, where = '') {
   const value = raw[key];
   if (value === undefined || value === null) return;
   if (!Array.isArray(value)) {
-    warnings.push(`"${key}" is ${jsonKind(value)}, not a list; ignored it.`);
+    warnings.push(`"${where}${key}" is ${jsonKind(value)}, not a list; ignored it.`);
     return;
   }
   for (const [index, entry] of value.entries()) {
     if (entry && typeof entry === 'object' && !Array.isArray(entry)) yield entry;
-    else warnings.push(`Dropped ${key}[${index}]: it is ${jsonKind(entry)}, not an object.`);
+    else warnings.push(`Dropped ${where}${key}[${index}]: it is ${jsonKind(entry)}, not an object.`);
   }
 }
 
@@ -427,6 +472,24 @@ function breakGroupCycles(groups, warnings) {
 
 /** Deterministic text form of a document. Always ends with a newline. */
 export function serializeDoc(doc) {
+  /*
+   * A tabbed document writes its drawings under `tabs`; a plain one writes its
+   * collections at the top exactly as it always has.
+   *
+   * One tab is written as a plain document rather than as a list of one, so a
+   * file grows the wrapper only once it has something to wrap — and every
+   * diagram written before tabs existed still round-trips byte for byte.
+   */
+  if (doc.tabs?.length > 1) {
+    return stringify({
+      version: FORMAT_VERSION,
+      meta: { title: doc.meta.title },
+      canvas: omitEmpty({ background: doc.canvas.background }),
+      tabs: doc.tabs.map((tab) => ({ name: tab.name, ...bodyWire(doc, tab) })),
+    }, 0) + '\n';
+  }
+  if (doc.tabs?.length === 1) return serializeDoc({ ...doc, ...doc.tabs[0], tabs: undefined });
+
   const wire = {
     version: FORMAT_VERSION,
     meta: { title: doc.meta.title },
@@ -497,6 +560,26 @@ export function serializeDoc(doc) {
     })),
   };
   return stringify(wire, 0) + '\n';
+}
+
+/**
+ * The five collections of one tab, in wire form.
+ *
+ * Written by handing the tab to `serializeDoc` as though it were a whole
+ * document and keeping the collections off the result. Roundabout, and the
+ * point: every field's default, omission and key order is decided in exactly
+ * one place, so a tab and a plain document cannot be written differently.
+ */
+function bodyWire(doc, tab) {
+  const whole = JSON.parse(serializeDoc({
+    meta: doc.meta,
+    canvas: doc.canvas,
+    ...emptyBody(),
+    ...tab,
+    tabs: undefined,
+  }));
+  const { groups, nodes, edges, texts, images } = whole;
+  return { groups, nodes, edges, texts, images };
 }
 
 /**

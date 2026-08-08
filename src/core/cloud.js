@@ -62,7 +62,12 @@ function rememberToken(displayId, token) {
   }
 }
 
-export function createCloud({ store, toaster } = {}) {
+/**
+ * @param {{document?: () => object}} deps
+ *    is what gets published — the whole file, tabs and all, which is
+ *   not the same thing as the drawing the store has on screen.
+ */
+export function createCloud({ store, toaster, document: documentOf } = {}) {
   return {
     /** Whether this browser holds the token that may re-point `displayId`. */
     ownsName(displayId) {
@@ -76,7 +81,7 @@ export function createCloud({ store, toaster } = {}) {
      * @returns {Promise<{hash, shortHash, displayId, url} | null>}
      */
     async publish({ displayId } = {}) {
-      const text = serializeDoc(store.state.doc);
+      const text = serializeDoc(documentOf ? documentOf() : store.state.doc);
       const name = displayId?.trim() || null;
       try {
         const response = await fetch('/api/diagrams', {

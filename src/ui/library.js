@@ -54,7 +54,9 @@ export function createLibraryDialog(root, { library, onOpen, onDelete, toaster }
     }, [
       h('span', { class: 'library-title', text: entry.title || 'Untitled diagram' }),
       h('span', { class: 'library-meta', text:
-        `${ago(entry.at)}${entry.blocks ? ` · ${entry.blocks} blocks` : ''}` }),
+        [ago(entry.at),
+         entry.blocks ? `${entry.blocks} blocks` : null,
+         entry.tabs > 1 ? `${entry.tabs} drawings` : null].filter(Boolean).join(' · ') }),
       h('span', { class: 'library-marks' }, marks.map(([name, why]) =>
         h('span', { class: `library-mark is-${name}`, title: why, text: name })
       )),

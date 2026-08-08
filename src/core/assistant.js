@@ -262,6 +262,19 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
         return 'Refused: `document` must be a complete .arch.json document.';
       }
+      /*
+       * A whole file where a drawing was asked for.
+       *
+       * The editor shows one drawing at a time, so a document wrapped in
+       * `tabs` would replace it with something the renderer cannot draw. It is
+       * refused rather than unwrapped: unwrapping would silently discard every
+       * tab but one, and the model is the only thing here that knows which of
+       * its drawings it meant.
+       */
+      if (Array.isArray(incoming.tabs)) {
+        return 'Refused: `document` is wrapped in `tabs`. Send the one drawing ' +
+          'that is open, as a plain document with `nodes` at the top level.';
+      }
       const parsed = normalizeDoc(incoming);
       if (parsed.rejection) {
         return `Refused: that is not a diagram — ${parsed.rejection}`;
