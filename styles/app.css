@@ -1224,7 +1224,42 @@ kbd {
   border-bottom: 1px solid var(--border);
 }
 .chat-title { font-weight: 650; font-size: 13px; margin-right: auto; }
-.chat-history { max-width: 130px; }
+
+/*
+ * The conversation switcher.
+ *
+ * Quiet by default, because it is a way back to something rather than an
+ * action: it sits in a header beside two buttons, and a control with a heavy
+ * border there would read as the most important thing in the row. It takes the
+ * button's height so the row has one baseline, and gives up width first when
+ * the panel is narrow -- a truncated conversation title is still recognisable,
+ * and "New" and the close button are not.
+ *
+ * The arrow is left native. `color-scheme` is already set on the root, so the
+ * one the browser draws follows the theme for free, and every other select in
+ * this app keeps its own for the same reason.
+ */
+.chat-history {
+  font: inherit;
+  font-size: 12px;
+  height: 28px;
+  min-width: 0;
+  flex: 0 1 150px;
+  padding: 0 4px 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.chat-history:hover { border-color: var(--border); color: var(--ink); }
+.chat-history:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  color: var(--ink);
+}
 
 .chat-log {
   overflow-y: auto;
@@ -1262,12 +1297,68 @@ kbd {
   padding: 10px 12px 12px;
   border-top: 1px solid var(--border);
 }
+/*
+ * The message box, which is the one control in this panel worth giving weight
+ * to: everything else here is a way of getting back to it.
+ *
+ * Same border, radius and focus ring as every field in the inspector, so it
+ * reads as part of the same application rather than as a chat widget dropped
+ * into one. Bottom-aligned against Send, so the button stays put while the box
+ * grows upward.
+ */
 .chat-input {
   flex: 1;
+  min-width: 0;
   resize: none;
   font: inherit;
   font-size: 13px;
   line-height: 1.45;
+  padding: 7px 9px;
+  min-height: 56px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+}
+.chat-input::placeholder {
+  color: var(--ink-muted);
+  /* The default is the browser's own dimming of the text colour, which in the
+     dark theme comes out lighter than the muted ink used everywhere else. */
+  opacity: 1;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+/*
+ * Disabled while a turn is in flight, so it has to look unavailable rather than
+ * merely unresponsive.
+ *
+ * Fading rather than changing the background, which is what `.btn:disabled`
+ * does and what the two themes require: `--surface-2` is darker than `--surface`
+ * in the light theme and *lighter* in the dark one, so a swap that recedes in
+ * one stands out in the other. Not as far as a button fades — the placeholder
+ * still has to be readable, since it is the only thing in the box.
+ */
+.chat-input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/*
+ * Grow with what is typed, where the browser can.
+ *
+ * Two rows is right for a sentence and wrong for a paragraph, and a fixed box
+ * makes the fourth line of a long request invisible while you write it. The
+ * ceiling keeps it from eating the transcript it is a reply to. Everywhere else
+ * the `rows` attribute stands, which is the behaviour this replaces.
+ */
+@supports (field-sizing: content) {
+  .chat-input {
+    field-sizing: content;
+    max-height: 40vh;
+  }
 }
 
 @media (max-width: 720px) {
