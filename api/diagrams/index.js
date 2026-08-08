@@ -142,6 +142,13 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('store failed', err);
-    return fail(res, 502, 'The diagram could not be stored. The storage backend refused it.');
+    // The upstream status and message, not a shrug. This is the failure a
+    // freshly configured deployment hits, and "the backend refused it" is
+    // exactly as much help as no message at all.
+    return fail(res, 502, `The diagram could not be stored — ${err.message}`, {
+      storage: err.name === 'BlobError'
+        ? { operation: err.operation, status: err.status, detail: err.detail }
+        : undefined,
+    });
   }
 }

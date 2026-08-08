@@ -10,9 +10,9 @@
  * is unavailable.
  */
 
-import { h, clear } from '../util/dom.js';
+import { h, clear, setClass } from '../util/dom.js';
 
-export function createAssistantPanel(root, { assistant, toaster }) {
+export function createAssistantPanel(root, { assistant, toaster, onToggle }) {
   let open = false;
 
   const log = h('div', { class: 'chat-log' });
@@ -41,19 +41,116 @@ export function createAssistantPanel(root, { assistant, toaster }) {
     text: 'New',
     onClick: () => assistant.startNew(),
   });
-  const history = h('select', {
-    class: 'chat-history',
+  /*
+   * The conversation list, as a real menu rather than a `<select>`.
+   *
+   * A native option list is drawn by the operating system and cannot be styled
+   * at all, which in a panel like this shows up as a grey OS rectangle over a
+   * themed card. It also has no room for anything but a label — and the one
+   * thing a list of saved conversations needs beyond its labels is a way to
+   * throw one away.
+   */
+  const pickerLabel = h('span', { class: 'chat-picker-label' });
+  const picker = h('button', {
+    class: 'chat-picker',
+    type: 'button',
     title: 'Earlier conversations',
-    onChange: (e) => {
-      if (e.target.value) assistant.select(e.target.value);
-      else assistant.startNew();
+    'aria-haspopup': 'listbox',
+    'aria-expanded': 'false',
+    onClick: (e) => {
+      e.stopPropagation();
+      showMenu(!menuOpen);
     },
-  });
+  }, [pickerLabel, h('span', { class: 'chat-picker-arrow', 'aria-hidden': 'true', text: '▾' })]);
+
+  const menu = h('div', { class: 'chat-menu is-hidden', role: 'listbox' });
+  const picked = h('div', { class: 'chat-picker-wrap' }, [picker, menu]);
+
+  let menuOpen = false;
+
+  /** Close on anything that is not this menu: a click elsewhere, or Escape. */
+  const onOutside = (e) => {
+    if (!picked.contains(e.target)) showMenu(false);
+  };
+  const onEscape = (e) => {
+    if (e.key === 'Escape') {
+      showMenu(false);
+      picker.focus();
+    }
+  };
+
+  function showMenu(next) {
+    menuOpen = next;
+    menu.classList.toggle('is-hidden', !menuOpen);
+    picker.setAttribute('aria-expanded', String(menuOpen));
+    setClass(picker, 'is-open', menuOpen);
+    // Listeners only while it is open, so a closed menu costs nothing and
+    // cannot answer for a click meant for something else.
+    const method = menuOpen ? 'addEventListener' : 'removeEventListener';
+    document[method]('pointerdown', onOutside);
+    document[method]('keydown', onEscape, true);
+    if (menuOpen) buildMenu();
+  }
+
+  function buildMenu() {
+    clear(menu);
+    menu.append(
+      h('button', {
+        class: `chat-menu-item is-new${assistant.currentId ? '' : ' is-current'}`,
+        type: 'button',
+        role: 'option',
+        'aria-selected': String(!assistant.currentId),
+        text: 'New conversation',
+        onClick: () => {
+          assistant.startNew();
+          showMenu(false);
+          input.focus();
+        },
+      })
+    );
+    if (!assistant.sessions.length) {
+      menu.append(h('p', { class: 'chat-menu-empty', text: 'Nothing saved yet.' }));
+      return;
+    }
+    for (const session of assistant.sessions) {
+      const current = session.id === assistant.currentId;
+      menu.append(
+        h('div', { class: `chat-menu-row${current ? ' is-current' : ''}` }, [
+          h('button', {
+            class: 'chat-menu-item',
+            type: 'button',
+            role: 'option',
+            'aria-selected': String(current),
+            title: session.title,
+            text: session.title,
+            onClick: () => {
+              assistant.select(session.id);
+              showMenu(false);
+            },
+          }),
+          h('button', {
+            class: 'chat-menu-drop',
+            type: 'button',
+            title: `Delete "${session.title}"`,
+            'aria-label': `Delete "${session.title}"`,
+            text: '✕',
+            onClick: (e) => {
+              // Without this the row behind it would also fire and select the
+              // conversation being deleted.
+              e.stopPropagation();
+              assistant.remove(session.id);
+              buildMenu();
+            },
+          }),
+        ])
+      );
+    }
+  }
 
   const panel = h('section', { class: 'chat is-hidden', 'aria-label': 'Diagram assistant' }, [
     h('header', { class: 'chat-head' }, [
       h('span', { class: 'chat-title', text: 'Assistant' }),
-      history,
+      picked,
       newBtn,
       h('button', {
         class: 'btn btn-icon',
@@ -61,7 +158,12 @@ export function createAssistantPanel(root, { assistant, toaster }) {
         title: 'Close',
         'aria-label': 'Close the assistant',
         text: '✕',
-        onClick: () => api.toggle(false),
+        // The menu is a child of the panel, so closing one has to close the
+        // other or it is left listening for clicks on a hidden card.
+        onClick: () => {
+          showMenu(false);
+          api.toggle(false);
+        },
       }),
     ]),
     log,
@@ -101,16 +203,12 @@ export function createAssistantPanel(root, { assistant, toaster }) {
       log.scrollTop = log.scrollHeight;
     }
 
-    const wanted = assistant.sessions.map((s) => [s.id, s.title]);
-    const shown = [...history.options].map((o) => [o.value, o.text]);
-    const same = shown.length === wanted.length + 1 &&
-      wanted.every(([id], i) => shown[i + 1]?.[0] === id);
-    if (!same) {
-      clear(history);
-      history.append(h('option', { value: '', text: 'New conversation' }));
-      for (const [id, title] of wanted) history.append(h('option', { value: id, text: title }));
-    }
-    history.value = assistant.currentId ?? '';
+    const session = assistant.sessions.find((s) => s.id === assistant.currentId);
+    pickerLabel.textContent = session?.title ?? 'New conversation';
+    setClass(picker, 'is-empty', !session);
+    // Rebuilt in place while it is open, so deleting the conversation being
+    // shown does not leave a stale list behind.
+    if (menuOpen) buildMenu();
 
     sendBtn.disabled = assistant.busy;
     input.disabled = assistant.busy;
@@ -124,6 +222,9 @@ export function createAssistantPanel(root, { assistant, toaster }) {
       open = next;
       panel.classList.toggle('is-hidden', !open);
       if (open) input.focus();
+      // Announced rather than returned, because the close button and the escape
+      // key reach this too and neither has a caller to return to.
+      onToggle?.(open);
       return open;
     },
     get isOpen() {

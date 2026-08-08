@@ -64,10 +64,15 @@ and add it to the project.
 | Variable | Set by | Notes |
 |---|---|---|
 | `GEMINI_API_KEY` | You | Its presence is what makes the assistant flag default to on. |
-| `MASSING_AI_MODEL` | Optional | Defaults to `gemini-2.5-flash-lite`, which is the only model this has been built and tested against. |
+| `MASSING_AI_MODEL` | Optional | Defaults to `gemini-2.5-flash-lite`, which is the only model this has been built and tested against. A vendor prefix is tolerated — `google/gemini-2.5-flash-lite` and `models/gemini-2.5-flash-lite` both resolve to the same thing, since the first is what this project asked for while it went through a gateway. |
 
 The key is only ever read on the server and goes upstream in an `x-goog-api-key`
 header rather than the query string, so it stays out of access logs.
+
+> **Upgrading from the AI Gateway build?** Delete `AI_GATEWAY_API_KEY` and add
+> `GEMINI_API_KEY`. If you set `MASSING_AI_MODEL` to `google/gemini-2.5-flash-lite`
+> back then you can leave it — the prefix is stripped now — but unsetting it is
+> tidier.
 
 Put a **spend limit** on the key in Google AI Studio, or keep it on the free
 tier. The assistant sends the authoring guide as its system instruction on every

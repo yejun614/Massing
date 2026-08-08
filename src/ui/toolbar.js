@@ -90,10 +90,14 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     'Publish — store the diagram and get a short link to it',
     () => onPublish?.()
   );
+  // The panel reports its own state back through `setAssistantOpen`, because
+  // the toolbar is not the only thing that closes it -- the panel has a close
+  // button of its own, and a button that lit up here and stayed lit was the
+  // result of this deciding for itself what the panel was doing.
   const assistantBtn = btn(
     'chat',
     'Assistant — describe a change and have it made',
-    () => setClass(assistantBtn, 'is-active', onAssistant?.() === true)
+    () => onAssistant?.()
   );
   for (const button of [publishBtn, assistantBtn]) button.hidden = true;
 
@@ -279,6 +283,12 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     setHostedFeatures(flags) {
       publishBtn.hidden = !flags?.storage;
       assistantBtn.hidden = !flags?.assistant;
+    },
+
+    /** Whatever opened or closed the assistant, this is how the button learns. */
+    setAssistantOpen(open) {
+      setClass(assistantBtn, 'is-active', open === true);
+      setAttrs(assistantBtn, { 'aria-pressed': String(open === true) });
     },
   };
 }

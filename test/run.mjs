@@ -329,6 +329,24 @@ check('every flag is off on a deployment with nothing configured', (() => {
 check('the document ceiling is stated in bytes, not vibes', MAX_DOCUMENT_BYTES === 2 * 1024 * 1024);
 
 /*
+ * The model id survives every spelling it gets configured in. This project
+ * itself told people to set the vendor-prefixed form while it went through a
+ * gateway, and an environment variable that was right last week must not be a
+ * 404 today -- which is exactly what it was.
+ */
+const { modelId } = await import('../api/chat.js');
+for (const [given, want] of [
+  ['gemini-2.5-flash-lite', 'gemini-2.5-flash-lite'],
+  ['google/gemini-2.5-flash-lite', 'gemini-2.5-flash-lite'],
+  ['models/gemini-2.5-flash-lite', 'gemini-2.5-flash-lite'],
+  ['  gemini-2.5-pro  ', 'gemini-2.5-pro'],
+  ['', 'gemini-2.5-flash-lite'],
+  [undefined, 'gemini-2.5-flash-lite'],
+]) {
+  check(`model ${JSON.stringify(given)} resolves to ${want}`, modelId(given) === want, modelId(given));
+}
+
+/*
  * Retention is sliding: the clock runs from the last time a link was opened,
  * not from when it was published, so the links that die are the ones nobody is
  * using. Everything below is that rule and the arithmetic under it.

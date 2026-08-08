@@ -129,6 +129,6 @@ export default async function handler(req, res) {
     return send(res, 200, result);
   } catch (err) {
     console.error('sweep failed', err);
-    return fail(res, 502, 'The sweep could not finish.');
+    return fail(res, 502, `The sweep could not finish — ${err.message}`);
   }
 }

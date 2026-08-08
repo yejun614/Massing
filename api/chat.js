@@ -35,6 +35,23 @@ import {
 const API = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
 
+/**
+ * The bare model id, whatever form it was configured in.
+ *
+ * Gemini wants `gemini-2.5-flash-lite`. Two other spellings turn up and both
+ * 404 without saying why: `models/gemini-2.5-flash-lite`, which is how the API
+ * names it in its own responses, and `google/gemini-2.5-flash-lite`, which is
+ * the vendor-prefixed form every gateway uses — and which this project's own
+ * setup notes told people to configure, back when it went through one. An
+ * environment variable that was correct last week should not be a 404 today.
+ */
+export function modelId(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return DEFAULT_MODEL;
+  const bare = trimmed.split('/').filter(Boolean).pop();
+  return bare || DEFAULT_MODEL;
+}
+
 const limiter = createRateLimiter(RATE_LIMITS.chat);
 
 /**
@@ -240,12 +257,16 @@ function fromCandidate(candidate) {
 }
 
 /** The refusals worth telling someone apart from "it did not work". */
-function describeRefusal(status, body) {
+function describeRefusal(status, body, model) {
   const message = body?.error?.message ?? '';
   if (status === 429) return [429, 'Gemini is rate limited right now, or the quota is spent. Try again in a moment.'];
   if (status === 400 && /API key not valid/i.test(message)) return [502, 'The Gemini API key is not valid.'];
   if (status === 403) return [502, 'The Gemini API key is not allowed to use this model.'];
-  if (status === 404) return [502, 'That model does not exist, or the key cannot see it.'];
+  if (status === 404) {
+    // Naming it is the whole point: this is nearly always a model id that is
+    // right for some other provider, and unnameable it looks like an outage.
+    return [502, `No model called "${model}" — check MASSING_AI_MODEL, or leave it unset for ${DEFAULT_MODEL}.`];
+  }
   return [502, `The model could not be reached (${status}).`];
 }
 
@@ -268,7 +289,7 @@ export default async function handler(req, res) {
   const sanitised = sanitiseMessages(body.value?.messages);
   if (sanitised.error) return fail(res, 400, sanitised.error);
 
-  const model = process.env.MASSING_AI_MODEL || DEFAULT_MODEL;
+  const model = modelId(process.env.MASSING_AI_MODEL);
 
   try {
     const upstream = await fetch(`${API}/${encodeURIComponent(model)}:generateContent`, {
@@ -294,8 +315,8 @@ export default async function handler(req, res) {
 
     const result = await upstream.json().catch(() => null);
     if (!upstream.ok) {
-      console.error('gemini refused', upstream.status, result?.error?.message ?? '');
-      const [status, message] = describeRefusal(upstream.status, result);
+      console.error('gemini refused', model, upstream.status, result?.error?.message ?? '');
+      const [status, message] = describeRefusal(upstream.status, result, model);
       return fail(res, status, message);
     }
 

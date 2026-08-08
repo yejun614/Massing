@@ -92,7 +92,14 @@ export function createCloud({ store, toaster } = {}) {
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
-          toaster?.error(body.error ?? `Publishing failed (${response.status}).`);
+          // The storage detail goes in the copyable part rather than the line
+          // on screen: it is the thing worth pasting into an issue, and the
+          // wrong length for a toast.
+          toaster?.error(body.error ?? `Publishing failed (${response.status}).`, {
+            detail: [body.error, body.storage && JSON.stringify(body.storage, null, 2)]
+              .filter(Boolean)
+              .join('\n\n'),
+          });
           return null;
         }
         rememberToken(body.displayId, body.editToken);

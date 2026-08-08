@@ -15,6 +15,39 @@
 const API = 'https://blob.vercel-storage.com';
 
 /**
+ * A refusal from the store, with what it actually said still attached.
+ *
+ * The handlers used to answer "the storage backend refused it" and log the rest,
+ * which is unhelpful in exactly the situation it exists for: a deployment that
+ * has just been configured and is failing for a reason nobody can see. The
+ * upstream status and message are the whole diagnosis -- a wrong API version, a
+ * token for a store that was deleted, a quota -- and none of them is a secret.
+ * The token is never in here; the message is.
+ */
+export class BlobError extends Error {
+  constructor(operation, status, detail) {
+    super(`Blob ${operation} failed (${status})${detail ? `: ${detail}` : ''}`);
+    this.name = 'BlobError';
+    this.operation = operation;
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** Whatever the store put in the body, in as few words as it offered them. */
+async function refusal(operation, response) {
+  const text = await response.text().catch(() => '');
+  let detail = text.slice(0, 400);
+  try {
+    const parsed = JSON.parse(text);
+    detail = parsed?.error?.message ?? parsed?.message ?? detail;
+  } catch {
+    /* not JSON; the text stands */
+  }
+  return new BlobError(operation, response.status, detail);
+}
+
+/**
  * The API version header the service expects.
  *
  * Pinned rather than omitted, because an unversioned call is one that changes
@@ -82,9 +115,7 @@ export function createBlobStore(env = process.env, fetchImpl = fetch) {
       body,
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) {
-      throw new Error(`Blob write failed (${response.status}): ${await response.text().catch(() => '')}`);
-    }
+    if (!response.ok) throw await refusal('write', response);
     const result = await response.json();
     remember(result.url);
     return result;
@@ -116,7 +147,7 @@ export function createBlobStore(env = process.env, fetchImpl = fetch) {
     if (!url) return null;
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`Blob read failed (${response.status}).`);
+    if (!response.ok) throw await refusal('read', response);
     return { text: await response.text(), url };
   }
 
@@ -145,7 +176,7 @@ export function createBlobStore(env = process.env, fetchImpl = fetch) {
     url.searchParams.set('limit', String(limit));
     if (cursor) url.searchParams.set('cursor', cursor);
     const response = await fetchImpl(url, { headers: auth(), signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) throw new Error(`Blob list failed (${response.status}).`);
+    if (!response.ok) throw await refusal('list', response);
     const body = await response.json();
     if (body.blobs?.[0]?.url) remember(body.blobs[0].url);
     return { blobs: body.blobs ?? [], cursor: body.hasMore ? body.cursor : null };
@@ -160,9 +191,7 @@ export function createBlobStore(env = process.env, fetchImpl = fetch) {
       body: JSON.stringify({ urls }),
       signal: AbortSignal.timeout(20_000),
     });
-    if (!response.ok) {
-      throw new Error(`Blob delete failed (${response.status}): ${await response.text().catch(() => '')}`);
-    }
+    if (!response.ok) throw await refusal('delete', response);
     return urls.length;
   }
 

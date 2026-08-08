@@ -126,7 +126,11 @@ const exportDialog = createExportDialog(document.body, {
   onExported: () => feedback.maybeAsk(),
 });
 const publishDialog = createPublishDialog(document.body, { cloud, store, toaster });
-const assistantPanel = createAssistantPanel(document.body, { assistant, toaster });
+const assistantPanel = createAssistantPanel(document.body, {
+  assistant,
+  toaster,
+  onToggle: (open) => toolbar.setAssistantOpen(open),
+});
 // The theme decides the canvas colour for any document that has not named one,
 // so what it resolves to has to reach the store the render reads.
 const theme = createTheme((state) => {

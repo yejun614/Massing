@@ -116,6 +116,10 @@ export default async function handler(req, res) {
     res.end(document.text);
   } catch (err) {
     console.error('read failed', err);
-    return fail(res, 502, 'The diagram could not be read. The storage backend refused it.');
+    return fail(res, 502, `The diagram could not be read — ${err.message}`, {
+      storage: err.name === 'BlobError'
+        ? { operation: err.operation, status: err.status, detail: err.detail }
+        : undefined,
+    });
   }
 }
