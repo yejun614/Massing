@@ -6,26 +6,39 @@
   "canvas": {},
   "groups": [
     {
+      "id": "edge-tier",
+      "kind": "group",
+      "label": "Edge",
+      "rect": [0, 0, 8, 16],
+      "color": "#2563eb",
+      "labelSize": 44
+    },
+    {
       "id": "prod-vpc",
       "kind": "vpc",
-      "label": "Production VPC",
-      "rect": [0, 0, 18, 12],
-      "color": "#8c4fff"
+      "label": "Production",
+      "rect": [10, 0, 29, 16],
+      "color": "#eab308",
+      "labelSize": 96
     },
     {
       "id": "public-subnet",
       "kind": "subnet",
-      "label": "Public subnet",
-      "rect": [1, 1, 7, 10],
-      "color": "#7aa116",
+      "label": "Public",
+      "rect": [11, 1, 8, 14],
+      "color": "#e7157b",
+      "labelPlane": "left",
+      "labelSize": 44,
       "parent": "prod-vpc"
     },
     {
       "id": "private-subnet",
       "kind": "subnet",
-      "label": "Private subnet",
-      "rect": [10, 1, 7, 10],
-      "color": "#7aa116",
+      "label": "Private",
+      "rect": [21, 1, 17, 14],
+      "color": "#a855f7",
+      "labelPlane": "left",
+      "labelSize": 44,
       "parent": "prod-vpc"
     }
   ],
@@ -34,226 +47,218 @@
       "id": "visitors",
       "type": "user",
       "label": "Visitors",
-      "pos": [-9, 4],
+      "pos": [3, 3],
       "size": [2, 2],
       "height": 1,
-      "color": "#5a6b7b"
+      "color": "#5a6b7b",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "edge-tier"
     },
     {
       "id": "cdn",
       "type": "cloudfront",
       "label": "CloudFront",
-      "pos": [-5, 4],
+      "pos": [3, 8],
       "size": [2, 2],
-      "height": 2,
-      "color": "#8c4fff"
+      "height": 1,
+      "color": "#1f8f8f",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "edge-tier"
     },
     {
       "id": "assets",
       "type": "s3",
-      "label": "Static assets",
-      "pos": [-5, 8],
+      "label": "Assets",
+      "pos": [3, 12],
       "size": [2, 2],
-      "height": 2,
-      "color": "#7aa116"
+      "height": 1,
+      "color": "#b4530f",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "edge-tier"
     },
     {
       "id": "igw",
       "type": "igw",
-      "label": "Internet Gateway",
-      "pos": [2, 2],
+      "label": "Gateway",
+      "pos": [14, 3],
       "size": [2, 2],
       "height": 1,
-      "color": "#8c4fff",
-      "group": "public-subnet"
-    },
-    {
-      "id": "nat",
-      "type": "natgw",
-      "label": "NAT Gateway",
-      "pos": [5, 2],
-      "size": [2, 2],
-      "height": 1,
-      "color": "#8c4fff",
+      "color": "#1f8f8f",
+      "labelPlane": "right",
+      "labelSize": 40,
       "group": "public-subnet"
     },
     {
       "id": "alb",
       "type": "elb",
-      "label": "Application LB",
-      "pos": [2, 5],
+      "label": "ALB",
+      "pos": [14, 8],
       "size": [2, 2],
       "height": 1,
-      "color": "#8c4fff",
+      "color": "#1f8f8f",
+      "labelPlane": "right",
+      "labelSize": 40,
       "group": "public-subnet"
     },
     {
-      "id": "web-1",
-      "type": "ec2",
-      "label": "Web 1",
-      "pos": [11, 2],
+      "id": "nat",
+      "type": "natgw",
+      "label": "NAT",
+      "pos": [14, 12],
       "size": [2, 2],
-      "height": 2,
-      "color": "#ed7100",
-      "group": "private-subnet"
+      "height": 1,
+      "color": "#1f8f8f",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "public-subnet"
     },
     {
       "id": "web-2",
       "type": "ec2",
       "label": "Web 2",
-      "pos": [14, 2],
+      "pos": [24, 3],
       "size": [2, 2],
-      "height": 2,
-      "color": "#ed7100",
+      "height": 1,
+      "color": "#12a37a",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "private-subnet"
+    },
+    {
+      "id": "web-1",
+      "type": "ec2",
+      "label": "Web 1",
+      "pos": [24, 8],
+      "size": [2, 2],
+      "height": 1,
+      "color": "#12a37a",
+      "labelPlane": "right",
+      "labelSize": 40,
       "group": "private-subnet"
     },
     {
       "id": "worker",
       "type": "ecs",
       "label": "Worker",
-      "pos": [14, 5],
+      "pos": [24, 12],
       "size": [2, 2],
-      "height": 2,
-      "color": "#ed7100",
+      "height": 1,
+      "color": "#12a37a",
+      "labelPlane": "right",
+      "labelSize": 40,
       "group": "private-subnet"
     },
     {
       "id": "jobs",
       "type": "sqs",
-      "label": "Job queue",
-      "pos": [11, 5],
+      "label": "Queue",
+      "pos": [30, 12],
       "size": [2, 2],
       "height": 1,
-      "color": "#e7157b",
-      "group": "private-subnet"
-    },
-    {
-      "id": "db",
-      "type": "rds",
-      "label": "PostgreSQL",
-      "pos": [11, 8],
-      "size": [2, 2],
-      "height": 3,
-      "color": "#c925d1",
+      "color": "#2c7de0",
+      "labelPlane": "right",
+      "labelSize": 40,
       "group": "private-subnet"
     },
     {
       "id": "cache",
       "type": "elasticache",
       "label": "Redis",
-      "pos": [14, 8],
+      "pos": [35, 3],
       "size": [2, 2],
-      "height": 2,
-      "color": "#c925d1",
+      "height": 1,
+      "color": "#b4530f",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "private-subnet"
+    },
+    {
+      "id": "db",
+      "type": "rds",
+      "label": "Postgres",
+      "pos": [35, 8],
+      "size": [2, 2],
+      "height": 1,
+      "color": "#b4530f",
+      "labelPlane": "right",
+      "labelSize": 40,
+      "group": "private-subnet"
+    },
+    {
+      "id": "backups",
+      "type": "s3",
+      "label": "Backups",
+      "pos": [35, 12],
+      "size": [2, 2],
+      "height": 1,
+      "color": "#b4530f",
+      "labelPlane": "right",
+      "labelSize": 40,
       "group": "private-subnet"
     }
   ],
   "edges": [
     {
-      "id": "e-visit",
-      "from": "visitors",
-      "to": "cdn",
-      "style": "solid",
-      "arrow": "end",
-      "color": "#64748b"
-    },
-    {
-      "id": "e-assets",
+      "id": "e-https",
       "from": "cdn",
-      "to": "assets",
-      "style": "dashed",
-      "arrow": "end",
-      "color": "#64748b"
-    },
-    {
-      "id": "e-in",
-      "from": "cdn",
-      "to": "igw",
-      "style": "solid",
-      "arrow": "end",
-      "color": "#64748b"
-    },
-    {
-      "id": "e-alb",
-      "from": "igw",
       "to": "alb",
+      "label": "HTTPS",
       "style": "solid",
       "arrow": "end",
-      "color": "#64748b"
+      "color": "#1f8f8f",
+      "labelSize": 30
     },
     {
-      "id": "e-web1",
+      "id": "e-web",
       "from": "alb",
       "to": "web-1",
       "style": "solid",
       "arrow": "end",
-      "color": "#64748b"
+      "color": "#12a37a"
     },
     {
-      "id": "e-web2",
-      "from": "alb",
-      "to": "web-2",
-      "style": "solid",
-      "arrow": "end",
-      "color": "#64748b"
-    },
-    {
-      "id": "e-queue",
+      "id": "e-enqueue",
       "from": "web-1",
       "to": "jobs",
       "style": "solid",
       "arrow": "end",
-      "color": "#64748b"
+      "route": "x",
+      "color": "#2c7de0"
     },
     {
-      "id": "e-worker",
+      "id": "e-work",
       "from": "jobs",
       "to": "worker",
       "style": "solid",
       "arrow": "end",
-      "color": "#64748b"
+      "color": "#2c7de0"
     },
     {
-      "id": "e-db",
-      "from": "web-1",
-      "to": "db",
-      "label": "5432",
-      "style": "solid",
-      "arrow": "end",
-      "color": "#64748b"
-    },
-    {
-      "id": "e-cache",
-      "from": "web-2",
-      "to": "cache",
-      "label": "6379",
-      "style": "solid",
-      "arrow": "end",
-      "color": "#64748b"
-    },
-    {
-      "id": "e-nat",
+      "id": "e-outbound",
       "from": "worker",
       "to": "nat",
       "style": "dashed",
       "arrow": "end",
-      "color": "#64748b"
+      "color": "#1f8f8f"
     }
   ],
   "texts": [
     {
       "id": "note-edge",
-      "text": "Edge tier",
-      "pos": [-9, 1],
-      "size": 17,
-      "color": "#334155",
-      "bold": true
+      "text": "Static assets never\nreach the VPC.",
+      "pos": [1, 19],
+      "size": 50,
+      "color": "#64748b",
+      "italic": true
     },
     {
       "id": "note-private",
-      "text": "No inbound route from the internet.\nOutbound traffic leaves via the NAT gateway.",
-      "pos": [1, 13],
-      "size": 13,
+      "text": "No route in from\nthe internet.",
+      "pos": [24, 19],
+      "size": 50,
       "color": "#64748b",
       "italic": true
     }
