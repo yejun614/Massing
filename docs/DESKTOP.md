@@ -208,6 +208,23 @@ Both plug into the same workflow through environment variables —
 `APPLE_PASSWORD` — and `tauri-action` picks them up without further changes
 here. The updater works whether or not any of this is done.
 
+**This is deliberately not done yet**, so releases are unsigned as far as the
+operating system is concerned. That is a decision about money, not about
+safety — the bundles are still signed for the updater — but it has a
+consequence worth putting in the release notes rather than leaving people to
+discover:
+
+> **Windows** — SmartScreen shows "Windows protected your PC". *More info* →
+> *Run anyway*. The warning fades as more people install the same build.
+>
+> **macOS** — Gatekeeper refuses a double-click. Right-click the app → *Open*,
+> then *Open* again; or `xattr -dr com.apple.quarantine /Applications/Massing.app`.
+>
+> **Linux** — nothing to do.
+
+The updater is unaffected on all three: it verifies its own signature and does
+not consult the OS.
+
 ---
 
 ## Things worth knowing

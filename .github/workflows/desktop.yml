@@ -51,6 +51,28 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # A tagged build with no key produces bundles and a `latest.json` with no
+      # signatures in it, which every installed app then refuses. Failing here
+      # costs a minute; not failing is a release that looks fine, gets
+      # published, and updates nobody.
+      #
+      # The secret is read through `env` rather than tested in `if`, because
+      # the `secrets` context is not available in a step condition — and
+      # `shell: bash` because the matrix includes a Windows runner, where `run`
+      # would otherwise be PowerShell.
+      - name: A release needs a signing key
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Tagged a release but TAURI_SIGNING_PRIVATE_KEY is not set."
+            echo "Generate one with 'cargo tauri signer generate', put the public half"
+            echo "in tauri.conf.json and the private half in repository secrets."
+            echo "See docs/DESKTOP.md."
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
