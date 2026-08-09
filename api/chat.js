@@ -144,7 +144,7 @@ const limiter = createRateLimiter(RATE_LIMITS.chat);
  * already being told to write this document, and malformed JSON comes back as a
  * tool result it can correct rather than as a schema violation it cannot see.
  */
-const FUNCTIONS = [
+export const FUNCTIONS = [
   {
     /*
      * The third tool, and the only one whose answer is not the document.
@@ -248,6 +248,49 @@ const FUNCTIONS = [
       required: ['document'],
     },
   },
+  {
+    /*
+     * The way to draw a second picture without touching the first.
+     *
+     * The authoring rules say a system too big for one diagram is two
+     * diagrams — and a model with only `replace_diagram` has one way to obey
+     * that, which is to send a whole file with both drawings in it. It is
+     * refused there, and it should be: the person's file is not the model's to
+     * rewrite, and the drawings it cannot see would go with it.
+     *
+     * So the second diagram gets a tool of its own, and the description is
+     * written mostly to say when *not* to reach for it. A model given a way to
+     * make tabs will make a tab per subsystem out of tidiness, and four
+     * half-empty drawings are worse than one honest crowded one.
+     */
+    name: 'add_tab',
+    description:
+      'Add a new drawing to the file as a tab, beside the one already open, and switch ' +
+      'to it. Use it when one picture genuinely will not hold the answer — a system past ' +
+      'about 25 blocks, or a second view (a write path, a failover) the person asked for ' +
+      'alongside the first. Never use it to tidy one diagram into several, and never as a ' +
+      'way to avoid editing what is open: a change to the drawing they are looking at is ' +
+      '`replace_diagram`. You cannot create files, delete tabs or reach the drawings in ' +
+      'other tabs; to work in one of those, ask the person to click it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description:
+            'What the tab is called, after what it shows — "Overview", "Write path", ' +
+            '"Failover". A few words, in the language the person is writing in.',
+        },
+        document: {
+          type: 'string',
+          description:
+            'The new drawing as a complete .arch.json document in JSON text, with `nodes` ' +
+            'at the top level. Never wrapped in `tabs`: this is one drawing, not a file.',
+        },
+      },
+      required: ['name', 'document'],
+    },
+  },
 ];
 
 /**
@@ -274,7 +317,12 @@ here.
 - A file may hold several drawings as tabs, but you only ever see and replace
   **the one they are looking at**. Send it as a plain document — never wrap
   what you send in \`tabs\`, which would replace the open drawing with a file
-  inside it. To work on another drawing, ask them to click its tab.
+  inside it. To work on another existing drawing, ask them to click its tab.
+- **You never create files.** The file is theirs; it may be saved on their disk
+  and it may hold drawings you cannot see. When the rules above call for a
+  second diagram, that second diagram is a **tab** — call \`add_tab\` with the
+  new drawing. Nothing else about their file changes, and closing the tab is
+  how they undo you.
 - Count the connections before you send: at most one per three blocks. The tool
   result says so when you have overspent, and that is a thing to fix and send
   again — not a note to acknowledge in your reply.

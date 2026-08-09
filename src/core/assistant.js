@@ -45,6 +45,16 @@ const MAX_STEPS = 8;
 const MAX_SESSIONS = 20;
 
 /**
+ * How many drawings the assistant may leave in one file.
+ *
+ * Not a rule about files — somebody clicking `+` can have as many tabs as they
+ * like, and that is their file to fill. It is a rule about a model in a loop:
+ * `add_tab` is the one tool here that *accumulates*, and eight is already more
+ * drawings than any one question has ever needed.
+ */
+const MAX_TABS = 8;
+
+/**
  * The house rule the loader cannot enforce, said back in the tool result.
  *
  * Written into the prompt, it is advice a model agrees with and then overspends
@@ -345,9 +355,11 @@ export function writeSessions(sessions) {
 // ---------------------------------------------------------------------------
 
 /**
- * @param {{store: object, commands?: object}} deps
+ * @param {{store: object, commands?: object, tabs?: object}} deps
+ *   `tabs` is the file the open drawing belongs to. Absent, `add_tab` refuses
+ *   and the assistant works on the one document, which is what it always did.
  */
-export function createAssistant({ store, commands, library, fetchImpl = fetch } = {}) {
+export function createAssistant({ store, commands, library, tabs, fetchImpl = fetch } = {}) {
   let sessions = readSessions();
   /**
    * Conversations belong to the diagram they were about.
@@ -448,6 +460,81 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
   }
 
   /**
+   * A drawing the model sent, parsed and put through the loader — or a refusal.
+   *
+   * Both tools that take a document share this, because the ways one arrives
+   * wrong have nothing to do with where it is going: the same JSON, the same
+   * wrapper mistake, the same loader. Only the sentence about the wrapper
+   * differs, since the way out of it depends on which tool was called.
+   *
+   * @returns {{doc?: object, warnings?: string[], refusal?: string}}
+   */
+  function readDocument(incoming, wrapped) {
+    /*
+     * The document arrives as JSON text, because that is the only way to ask
+     * for "a document of the shape you were taught" through a function schema
+     * that cannot express it. An object is accepted too: a model that sends
+     * one has done nothing wrong, and refusing it would be pedantry.
+     */
+    if (typeof incoming === 'string') {
+      try {
+        incoming = JSON.parse(incoming);
+      } catch (err) {
+        return { refusal: `Refused: \`document\` is not valid JSON — ${err.message}` };
+      }
+    }
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      return { refusal: 'Refused: `document` must be a complete .arch.json document.' };
+    }
+    /*
+     * A whole file where a drawing was asked for.
+     *
+     * The editor holds one drawing at a time, so a document wrapped in `tabs`
+     * would put a file where the renderer expects a picture. It is refused
+     * rather than unwrapped: unwrapping would silently discard every tab but
+     * one, and the model is the only thing here that knows which it meant.
+     */
+    if (Array.isArray(incoming.tabs)) {
+      return { refusal: `Refused: \`document\` is wrapped in \`tabs\`. ${wrapped}` };
+    }
+    const parsed = normalizeDoc(incoming);
+    if (parsed.rejection) return { refusal: `Refused: that is not a diagram — ${parsed.rejection}` };
+    return { doc: parsed.doc, warnings: parsed.warnings };
+  }
+
+  /**
+   * What the model reads after a document lands somewhere.
+   *
+   * The repairs first, because they are problems in what it sent and it is
+   * about to write a reply saying the edit worked; then the counts, so a
+   * drawing that lost half its blocks to a typo is visible without asking for
+   * it back; then the house rules the loader cannot enforce.
+   */
+  function documentReport(doc, { opening, subject, warnings, fromScratch }) {
+    const lines = [];
+    if (warnings.length) {
+      lines.push(
+        `${opening}, with ${warnings.length} thing(s) the loader had to repair.`,
+        'These are problems in what you sent. Fix them and send the document again:',
+        ...warnings.map((w) => `- ${w}`)
+      );
+    } else {
+      lines.push(`${opening}.`);
+    }
+    lines.push(
+      `${subject} has ${doc.nodes.length} blocks, ${doc.groups.length} zones, ` +
+      `${doc.edges.length} connections, ${doc.texts.length} notes.`
+    );
+    const overspent = overConnected(doc);
+    if (overspent) lines.push(overspent);
+    const thin = underDrawn(doc, { fromScratch });
+    if (thin) lines.push(thin);
+    const strays = misplaced(doc);
+    if (strays) lines.push(strays);
+    return lines.join('\n');
+  }
+
+  /**
    * Carry out one tool call against the open document.
    *
    * The result string is what the model reads next, so it is written for a
@@ -496,70 +583,85 @@ export function createAssistant({ store, commands, library, fetchImpl = fetch } 
     }
 
     if (name === 'replace_diagram') {
-      /*
-       * The document arrives as JSON text, because that is the only way to ask
-       * for "a document of the shape you were taught" through a function schema
-       * that cannot express it. An object is accepted too: a model that sends
-       * one has done nothing wrong, and refusing it would be pedantry.
-       */
-      let incoming = args?.document;
-      if (typeof incoming === 'string') {
-        try {
-          incoming = JSON.parse(incoming);
-        } catch (err) {
-          return `Refused: \`document\` is not valid JSON — ${err.message}`;
-        }
-      }
-      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
-        return 'Refused: `document` must be a complete .arch.json document.';
-      }
-      /*
-       * A whole file where a drawing was asked for.
-       *
-       * The editor shows one drawing at a time, so a document wrapped in
-       * `tabs` would replace it with something the renderer cannot draw. It is
-       * refused rather than unwrapped: unwrapping would silently discard every
-       * tab but one, and the model is the only thing here that knows which of
-       * its drawings it meant.
-       */
-      if (Array.isArray(incoming.tabs)) {
-        return 'Refused: `document` is wrapped in `tabs`. Send the one drawing ' +
-          'that is open, as a plain document with `nodes` at the top level.';
-      }
-      const parsed = normalizeDoc(incoming);
-      if (parsed.rejection) {
-        return `Refused: that is not a diagram — ${parsed.rejection}`;
-      }
+      const read = readDocument(
+        args?.document,
+        'Send the one drawing that is open, as a plain document with `nodes` at ' +
+          'the top level. To put a second drawing beside it, call `add_tab`.'
+      );
+      if (read.refusal) return read.refusal;
       // Worked out before the swap, or there is nothing left to compare with.
-      const touched = touchedIds(store.state.doc, parsed.doc);
+      const touched = touchedIds(store.state.doc, read.doc);
       // Read before the swap too: whether this was a whole system drawn from
       // nothing is what decides if a thin result is worth remarking on.
       const fromScratch = store.state.doc.nodes.length === 0;
       // Through the store, so it is one undo away like any other edit.
-      store.replaceDoc(parsed.doc, 'Assistant edit');
+      store.replaceDoc(read.doc, 'Assistant edit');
       commands?.zoomFit?.();
       highlight(touched);
-      const counts =
-        `${parsed.doc.nodes.length} blocks, ${parsed.doc.groups.length} zones, ` +
-        `${parsed.doc.edges.length} connections, ${parsed.doc.texts.length} notes`;
-      const lines = [];
-      if (parsed.warnings.length) {
-        lines.push(
-          `Applied, with ${parsed.warnings.length} thing(s) the loader had to repair.`,
-          'These are problems in what you sent. Fix them and send the document again:',
-          ...parsed.warnings.map((w) => `- ${w}`)
-        );
-      } else {
-        lines.push('Applied.');
+      return documentReport(read.doc, {
+        opening: 'Applied',
+        subject: 'The diagram now',
+        warnings: read.warnings,
+        fromScratch,
+      });
+    }
+
+    /*
+     * A second drawing, beside the first, in the file already open.
+     *
+     * This exists because of what a model does without it. Asked for a system
+     * too big for one picture — the case the authoring rules answer with "two
+     * diagrams" — it writes a whole new *file*: both drawings wrapped in
+     * `tabs`, handed over as a replacement for what the person had. That is not
+     * its call to make. The file may be on disk, it may hold drawings the model
+     * has never seen, and swapping it for a two-drawing copy loses them without
+     * anybody being asked.
+     *
+     * A tab is the same intention at a size that fits: the file stays theirs,
+     * every other drawing in it is untouched, and the way to undo it is to
+     * close the tab. So the wrapper stays refused and this is the way through.
+     */
+    if (name === 'add_tab') {
+      if (!tabs) return 'Refused: this editor holds one drawing and cannot add another.';
+      const label = String(args?.name ?? '').trim();
+      if (!label) {
+        return 'Refused: `name` is required — name the tab after what it shows, ' +
+          'such as "Write path" or "Failover".';
       }
-      lines.push(`The diagram now has ${counts}.`);
-      const overspent = overConnected(parsed.doc);
-      if (overspent) lines.push(overspent);
-      const thin = underDrawn(parsed.doc, { fromScratch });
-      if (thin) lines.push(thin);
-      const strays = misplaced(parsed.doc);
-      if (strays) lines.push(strays);
-      return lines.join('\n');
+      if (tabs.count >= MAX_TABS) {
+        return `Refused: the file already holds ${tabs.count} drawings, which is as ` +
+          'many as this tool will add. Work in one of them, or ask the person to ' +
+          'make room.';
+      }
+      const read = readDocument(
+        args?.document,
+        'Send the one new drawing, as a plain document with `nodes` at the top level.'
+      );
+      if (read.refusal) return read.refusal;
+      /*
+       * Whether this tab is the system or a view of it — read before the swap,
+       * while the store still holds the drawing they were looking at.
+       *
+       * It decides whether a thin result is worth remarking on. A second tab
+       * beside a drawn system is a failover path or a write path, and four
+       * blocks is the right size for one; telling it to go back over the
+       * inventory would be pushing the whole system into every view.
+       */
+      const firstDrawing = store.state.doc.nodes.length === 0;
+      tabs.add(read.doc);
+      tabs.rename(tabs.active, label);
+      // No `zoomFit` here, unlike the edit above: arriving at a tab already
+      // frames what is on it, and asking twice would fight the animation.
+      //
+      // Nothing here was *changed*, and the highlight from the last edit points
+      // at ids in the drawing they have just been moved away from.
+      highlight([]);
+      return documentReport(read.doc, {
+        opening: `Added "${label}" as a new tab, and switched to it`,
+        subject: 'The new tab',
+        warnings: read.warnings,
+        fromScratch: firstDrawing,
+      });
     }
 
     return `Refused: there is no tool called "${name}".`;

@@ -324,15 +324,25 @@ the editor runs them against the document actually on screen — through the sam
 store and the same undo history as a change made by hand. A server editing its
 own copy would be editing a document nobody is looking at.
 
-Three tools are declared, and the third is the one that behaves differently:
+Five tools are declared, and the last one behaves differently from the rest:
 
 | Tool | What the editor does with it |
 |---|---|
 | `get_diagram` | Serialises the open document and hands it back |
 | `replace_diagram` | Loads the document, applies it, and answers with what the loader repaired plus what is wrong with the drawing — too many connections, a caption that names a group of things rather than one thing, a first draft too thin to be a whole system, a block standing outside the zone it claims |
+| `validate_diagram` | Runs the readability checks against the document **on screen**, never against one the model passes in, and answers with the report |
+| `add_tab` | Adds a drawing to the open file as a new tab and switches to it, with the same checks as `replace_diagram`. Capped at eight, and it is the only tool that accumulates |
 | `ask_user` | **Parks the turn.** The question appears under the transcript with its options as buttons, and the tool result is whatever the person clicks or types. Nothing is sent upstream until then |
 
-That third one exists because the assistant can see only what was typed into the
+`add_tab` exists to close off the thing a model does otherwise. The authoring
+rules say a system too big for one picture is two pictures, and a model with
+only `replace_diagram` obeys that by sending a whole *file* — both drawings
+wrapped in `tabs`, as a replacement for the one the person has. That is refused,
+because their file may be on disk and may hold drawings the model has never
+seen. A tab is the same intention at a size that fits, and closing it is the
+undo.
+
+`ask_user` exists because the assistant can see only what was typed into the
 box — no repository, no URL, no disk. Without it, a model handed a GitHub link
 draws what the name suggests, which comes back plausible and wrong.
 

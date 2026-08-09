@@ -161,7 +161,7 @@ const feedback = createFeedbackPrompt(document.body);
 // and in a build without the hosted marker it never asks.
 const features = createFeatures();
 const cloud = createCloud({ store, toaster, document: () => tabs.document() });
-const assistant = createAssistant({ store, commands, library });
+const assistant = createAssistant({ store, commands, library, tabs });
 const exportDialog = createExportDialog(document.body, {
   store,
   exporter,

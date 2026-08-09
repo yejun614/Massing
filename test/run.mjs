@@ -424,6 +424,145 @@ check('nothing may be cached past the moment it stops resolving', (() => {
 })());
 
 
+/*
+ * The tools, from both ends.
+ *
+ * They are declared on the server and carried out in the browser, and nothing
+ * links the two but the name in the string. A tool declared and not dispatched
+ * is a model calling something that answers "there is no tool called that";
+ * dispatched and not declared is code no model will ever reach.
+ */
+{
+  const { FUNCTIONS } = await import('../api/chat.js');
+  const source = readFileSync(new URL('../src/core/assistant.js', import.meta.url), 'utf8');
+  const declared = FUNCTIONS.map((f) => f.name).sort();
+  const dispatched = [...source.matchAll(/name === '([a-z_]+)'/g)].map((m) => m[1]).sort();
+  check('every tool the model is offered is one the editor carries out',
+    sameList(declared, dispatched), `declared ${declared.join()} / dispatched ${dispatched.join()}`);
+  check('a tool that takes a document says so in its schema',
+    FUNCTIONS.filter((f) => f.parameters?.properties?.document)
+      .every((f) => f.parameters.required.includes('document')));
+}
+
+/*
+ * `add_tab`, driven through a whole turn.
+ *
+ * The loop is the thing worth testing rather than the tool body: what a model
+ * sends arrives as JSON text inside a tool call, and the result it reads next
+ * goes back as a message. So the model is a scripted `fetch` and the editor is
+ * a real `createTabs` over a fake store -- the parts in between are the ones
+ * that have to agree.
+ */
+{
+  const { createAssistant } = await import('../src/core/assistant.js');
+  const { createTabs } = await import('../src/core/tabs.js');
+  const { createEmptyDoc } = await import('../src/core/schema.js');
+
+  const drawing = (id) => ({ nodes: [{ id, type: 'server', label: id, pos: [0, 0] }] });
+
+  /** Run one tool call and hand back what the model reads next. */
+  async function callTool(name, args, { fill = 1, open = null } = {}) {
+    const state = { doc: open ? normalizeDoc(open).doc : createEmptyDoc('A file'), dirty: false };
+    const store = {
+      state,
+      replaceDoc(doc) { state.doc = doc; },
+      setUI() {},
+      detachHistory: () => null,
+      attachHistory() {},
+    };
+    const tabs = createTabs({ store });
+    // Somewhere to add to, for the cases about a file that is already full.
+    for (let i = 1; i < fill; i++) tabs.add();
+    const turns = [
+      { message: { tool_calls: [{ id: 'c1', function: { name, arguments: JSON.stringify(args) } }] } },
+      { message: { content: 'Done.' } },
+    ];
+    let sent = [];
+    const assistant = createAssistant({
+      store,
+      tabs,
+      fetchImpl: async (_url, init) => {
+        sent = JSON.parse(init.body).messages;
+        return { ok: true, json: async () => turns.shift() };
+      },
+    });
+    await assistant.ask('draw the failover path too');
+    const result = [...sent].reverse().find((m) => m.role === 'tool');
+    return { said: result?.content ?? '', tabs, store };
+  }
+
+  {
+    const { said, tabs, store } = await callTool('add_tab', {
+      name: 'Failover',
+      document: JSON.stringify(drawing('standby')),
+    });
+    check('add_tab adds a drawing to the file rather than replacing it', (() => {
+      const list = tabs.list;
+      return list.length === 2 && list[0].name === 'Tab 1' && list[1].name === 'Failover';
+    })(), tabs.list.map((t) => t.name).join());
+    check('add_tab switches to what it drew',
+      tabs.active === 1 && store.state.doc.nodes[0]?.id === 'standby');
+    check('add_tab reports the new tab, not the whole file',
+      said.startsWith('Added "Failover" as a new tab') && said.includes('The new tab has 1 blocks'),
+      said);
+  }
+
+  {
+    // A second view of a system already drawn is allowed to be small: a
+    // failover path is four blocks, and telling it to go back over the
+    // inventory would push the whole system into every tab.
+    const { said } = await callTool(
+      'add_tab',
+      { name: 'Write path', document: JSON.stringify(drawing('queue')) },
+      { open: drawing('api') }
+    );
+    check('a second view beside a drawn system is not nagged for being small',
+      !said.includes('for a whole system'), said);
+  }
+  {
+    const { said } = await callTool('add_tab', {
+      name: 'Everything',
+      document: JSON.stringify(drawing('api')),
+    });
+    check('the first drawing in an empty file is still measured against the target',
+      said.includes('for a whole system'), said);
+  }
+  {
+    const { said, tabs } = await callTool('add_tab', {
+      name: 'Both',
+      document: JSON.stringify({ tabs: [{ name: 'a', nodes: [] }, { name: 'b', nodes: [] }] }),
+    });
+    check('add_tab refuses a whole file too, and says to send the one drawing',
+      said.startsWith('Refused:') && said.includes('one new drawing') && tabs.count === 1, said);
+  }
+  {
+    const { said, tabs } = await callTool('add_tab', { document: JSON.stringify(drawing('a')) });
+    check('add_tab needs a name for the tab',
+      said.startsWith('Refused:') && said.includes('`name` is required') && tabs.count === 1, said);
+  }
+  {
+    const { said, tabs } = await callTool(
+      'add_tab',
+      { name: 'One more', document: JSON.stringify(drawing('a')) },
+      { fill: 8 }
+    );
+    check('add_tab stops before a model can fill the file with tabs',
+      said.startsWith('Refused:') && tabs.count === 8, said);
+  }
+  {
+    const { said } = await callTool('replace_diagram', { document: JSON.stringify(drawing('api')) });
+    check('replace_diagram still reports on the diagram itself',
+      said.startsWith('Applied.') && said.includes('The diagram now has 1 blocks'), said);
+  }
+  {
+    const { said, tabs } = await callTool('replace_diagram', {
+      document: JSON.stringify({ tabs: [{ name: 'a', nodes: [] }] }),
+    });
+    check('replace_diagram refuses a file and names the tool that takes one drawing',
+      said.includes('wrapped in `tabs`') && said.includes('`add_tab`') && tabs.count === 1, said);
+  }
+}
+
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`${passed} passed, ${failures.length} failed`);
 process.exit(failures.length ? 1 : 0);
