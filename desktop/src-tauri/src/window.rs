@@ -57,7 +57,17 @@ pub fn install_menu(window: &WebviewWindow, bridge: Arc<Bridge>) -> tauri::Resul
         ],
     )?;
 
-    let menu = Menu::with_items(app, &[&file, &edit])?;
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[
+            &MenuItem::with_id(app, "checkUpdates", "Check for updates", true, None::<&str>)?,
+            &MenuItem::with_id(app, "about", "About Massing", true, None::<&str>)?,
+        ],
+    )?;
+
+    let menu = Menu::with_items(app, &[&file, &edit, &help])?;
     window.set_menu(menu)?;
 
     /*
@@ -72,7 +82,13 @@ pub fn install_menu(window: &WebviewWindow, bridge: Arc<Bridge>) -> tauri::Resul
      * here reaches nothing at all, which is exactly what the first version of
      * this did.
      */
-    app.on_menu_event(move |_app, event| {
+    app.on_menu_event(move |app, event| {
+        // One item the shell answers itself: the page has no updater to ask.
+        // Everything else belongs to the editor.
+        if event.id().0 == "checkUpdates" {
+            crate::update::check_now(app, Arc::clone(&bridge));
+            return;
+        }
         bridge.push(serde_json::json!({ "type": "menu", "id": event.id().0 }));
     });
     Ok(())

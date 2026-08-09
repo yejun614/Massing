@@ -333,6 +333,19 @@ not consult the OS.
 
 ---
 
+## The Help menu
+
+**Check for updates** answers either way — "0.1.2 is the latest version", or
+what went wrong reaching the channel. The automatic check at launch stays quiet
+when there is nothing to report, because an app that says "no update" every
+morning is a nuisance; the cost of that silence is that a working channel and a
+broken one look identical, and this is how you tell them apart.
+
+**About Massing** shows the version the running binary actually reports, plus
+the platform, the Tauri version and the MCP endpoint. Everything in it is read
+from the app at runtime rather than written into the page, because a version
+number somebody forgot to bump is worse than none.
+
 ## Things worth knowing
 
 - **Tauri's IPC is deliberately not used.** The editor is served over loopback

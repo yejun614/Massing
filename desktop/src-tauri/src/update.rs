@@ -24,42 +24,75 @@ pub enum Updates {
     Off(String),
 }
 
-/// Start checking, if this build has a channel to check.
+/// Build the updater, or say why not.
 ///
-/// The endpoint and the key normally come from `tauri.conf.json`, because that
-/// is what a released build carries. `MASSING_RELEASES` overrides the endpoint
-/// so a build can be pointed at a staging channel without a rebuild — the key
-/// is never overridden, since the whole point of it is that it is fixed at
-/// build time.
+/// Shared by the automatic check and the menu item, so the two cannot disagree
+/// about what a working channel is.
 ///
-/// An empty `pubkey` in the config means the plugin itself refuses to run, and
-/// that is the signal used here: no key, no channel, said once and plainly
-/// rather than checking silently for ever.
-pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
+/// The endpoint and the key come from `tauri.conf.json`, because that is what a
+/// released build carries. `MASSING_RELEASES` overrides the endpoint so a build
+/// can be pointed at a staging channel without a rebuild; the key is never
+/// overridden, since being fixed at build time is the whole point of it.
+fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     if !app.config().plugins.0.get("updater").is_some_and(has_key) {
-        return Updates::Off("this build is not signed for updates".into());
+        return Err("this build is not signed for updates".into());
     }
-    let staging = std::env::var("MASSING_RELEASES").ok();
+    let mut builder = app.updater_builder();
+    if let Some(url) = std::env::var("MASSING_RELEASES")
+        .ok()
+        .and_then(|u| u.parse().ok())
+    {
+        builder = builder.endpoints(vec![url]).map_err(|e| e.to_string())?;
+    }
+    builder.build().map_err(|e| e.to_string())
+}
 
+/// Check because somebody clicked, and say so either way.
+///
+/// The automatic check is deliberately quiet when there is nothing to report —
+/// an app that announced "no update" every launch would be a nuisance. That
+/// leaves no way to tell a working channel from a broken one, which is exactly
+/// the question a person asking this has. So this one always answers.
+pub fn check_now(app: &AppHandle, bridge: Arc<Bridge>) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let mut builder = handle.updater_builder();
-        if let Some(url) = staging.and_then(|u| u.parse().ok()) {
-            builder = match builder.endpoints(vec![url]) {
-                Ok(b) => b,
-                Err(err) => {
-                    eprintln!("massing: that staging URL will not do: {err}");
-                    return;
-                }
-            };
-        }
-        let updater = match builder.build() {
+        let updater = match updater(&handle) {
             Ok(updater) => updater,
-            Err(err) => {
-                eprintln!("massing: the updater would not start: {err}");
-                return;
-            }
+            Err(why) => return bridge.notice(format!("Cannot check for updates: {why}.")),
         };
+        match updater.check().await {
+            Ok(Some(update)) => {
+                let version = update.version.clone();
+                bridge.notice(format!("Massing {version} found — downloading it now."));
+                match update.download_and_install(|_, _| {}, || {}).await {
+                    Ok(()) => bridge.notice(format!(
+                        "Massing {version} is ready, and will be there next time you open it."
+                    )),
+                    Err(err) => bridge.notice(format!("That update would not install: {err}")),
+                }
+            }
+            Ok(None) => bridge.notice(format!(
+                "Massing {} is the latest version.",
+                handle.package_info().version
+            )),
+            Err(err) => bridge.notice(format!("Could not reach the update channel: {err}")),
+        }
+    });
+}
+
+/// Check once at launch, and stay quiet unless there is something to say.
+///
+/// An app that announced "no update" on every start would be a nuisance, which
+/// is why the silence is deliberate here and why `check_now` exists for the
+/// person who wants to know.
+pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
+    let built = match updater(app) {
+        Ok(updater) => updater,
+        Err(why) => return Updates::Off(why),
+    };
+
+    tauri::async_runtime::spawn(async move {
+        let updater = built;
         match updater.check().await {
             Ok(Some(update)) => {
                 let version = update.version.clone();

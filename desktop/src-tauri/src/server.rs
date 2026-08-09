@@ -281,6 +281,26 @@ async fn theme(State(state): State<AppState>, Json(body): Json<Value>) -> Json<V
     Json(json!({ "ok": true }))
 }
 
+/// What the About box shows. Read from the app rather than hard-coded, so it
+/// cannot drift from the binary somebody is actually running.
+async fn about(State(state): State<AppState>) -> Json<Value> {
+    let package = state.app.package_info();
+    Json(json!({
+        "name": package.name,
+        "version": package.version.to_string(),
+        "tauri": tauri::VERSION,
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "mcp": state.bridge.mcp_url.lock().unwrap().clone(),
+    }))
+}
+
+/// The same check the Help menu runs, for the button in the About box.
+async fn check_updates(State(state): State<AppState>) -> Json<Value> {
+    crate::update::check_now(&state.app, Arc::clone(&state.bridge));
+    Json(json!({ "ok": true }))
+}
+
 async fn mcp_targets(State(state): State<AppState>) -> Json<Value> {
     let url = state.bridge.mcp_url.lock().unwrap().clone();
     let targets = if url.is_some() {
@@ -330,6 +350,8 @@ pub fn router(state: AppState) -> Router {
         .route("/__massing/watch", post(watch))
         .route("/__massing/result", post(result))
         .route("/__massing/theme", post(theme))
+        .route("/__massing/about", post(about))
+        .route("/__massing/check-updates", post(check_updates))
         .route("/__massing/mcp/targets", post(mcp_targets))
         .route("/__massing/mcp/register", post(mcp_register))
         .fallback(editor)

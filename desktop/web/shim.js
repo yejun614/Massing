@@ -31,6 +31,7 @@ import { normalizeDoc, serializeDoc } from '/src/core/schema.js';
 import { formatReport, validateDocument } from '/src/core/validate.js';
 import { misplaced, overConnected, underDrawn } from '/src/core/assistant.js';
 import { installMcpButton } from './mcp-ui.js';
+import { showAbout } from './about.js';
 
 const API = '/__massing';
 
@@ -199,12 +200,16 @@ const MENU = {
   saveAs: () => window.massing.io.save({ saveAs: true }),
   export: () => window.massing.exportDialog.open(),
   reload: () => window.massing.io.reload(),
+  // `checkUpdates` is not here: the shell answers that one itself, because the
+  // page has no updater to ask.
+  about: () => showAbout(),
 };
 
 function runMenu(id) {
   const action = MENU[id];
   if (!action) return;
-  if (!window.massing) return;
+  // Everything but About goes through the editor; About only needs the shell.
+  if (!window.massing && id !== 'about') return;
   try {
     action();
   } catch (err) {
