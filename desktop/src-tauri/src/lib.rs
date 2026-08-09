@@ -158,7 +158,7 @@ pub fn run() {
             .inner_size(1180.0, 800.0)
             .min_inner_size(640.0, 480.0)
             .build()?;
-            window::install_menu(&window)?;
+            window::install_menu(&window, Arc::clone(&bridge))?;
 
             Ok(())
         })

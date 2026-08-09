@@ -144,6 +144,7 @@ function install() {
     }
     if (message.type === 'file-changed') window.massing?.io?.reload();
     if (message.type === 'call') answer(message);
+    if (message.type === 'menu') runMenu(message.id);
     // The runtime has something to say — a staged update, a rollback. Through
     // the editor's own toasts, because a desktop app that talks to you in a
     // console is a desktop app that never talks to you.
@@ -182,6 +183,35 @@ function followTheme() {
       if (what === 'ui') send(Boolean(state.dark));
     });
   }, 100);
+}
+
+/**
+ * The native menu, doing what the toolbar already does.
+ *
+ * The shell knows the ids and nothing else — deliberately, so "Save" has one
+ * implementation rather than two that drift. Every entry here is the same call
+ * the toolbar button and the keyboard shortcut make.
+ */
+const MENU = {
+  new: () => window.massing.commands.newDoc(),
+  open: () => window.massing.io.open(),
+  save: () => window.massing.io.save(),
+  saveAs: () => window.massing.io.save({ saveAs: true }),
+  export: () => window.massing.exportDialog.open(),
+  reload: () => window.massing.io.reload(),
+};
+
+function runMenu(id) {
+  const action = MENU[id];
+  if (!action) return;
+  if (!window.massing) return;
+  try {
+    action();
+  } catch (err) {
+    // A menu item that throws should say something rather than look inert,
+    // which is exactly how the first version of this failed.
+    window.massing.toaster?.error(`${id} did not work — ${err?.message ?? err}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -5,8 +5,12 @@
 //! `DwmSetWindowAttribute` over FFI, and a title the backend refused to accept.
 //! Here they are three ordinary calls, which is the reason for the move.
 
+use std::sync::Arc;
+
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, Theme, WebviewWindow, Wry};
+use tauri::{AppHandle, Manager, Theme, WebviewWindow, Wry};
+
+use crate::bridge::Bridge;
 
 /// Menu items that map to what the page already does.
 ///
@@ -22,7 +26,7 @@ const ITEMS: [(&str, &str, &str); 6] = [
     ("reload", "Reload from disk", "CmdOrCtrl+R"),
 ];
 
-pub fn install_menu(window: &WebviewWindow) -> tauri::Result<()> {
+pub fn install_menu(window: &WebviewWindow, bridge: Arc<Bridge>) -> tauri::Result<()> {
     let app = window.app_handle();
 
     let mut file_items: Vec<MenuItem<Wry>> = Vec::new();
@@ -57,16 +61,19 @@ pub fn install_menu(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_menu(menu)?;
 
     /*
-     * Forwarded rather than handled.
+     * Forwarded rather than handled: the shell has no idea what "Save" means.
+     * That lives in `core/io.js`, behind the same call the toolbar button
+     * makes, and the menu should be a second way in rather than a second
+     * implementation.
      *
-     * The shell has no idea what "Save" means — that lives in `core/io.js`
-     * behind the same call the toolbar button makes. Emitting keeps the menu
-     * and the keyboard one implementation, which is the only way they stay in
-     * step.
+     * Down the same push channel as everything else, **not** through
+     * `window.emit`. The page is served over loopback HTTP, so it is not a
+     * Tauri origin and has no `@tauri-apps/api` to listen with — an emit from
+     * here reaches nothing at all, which is exactly what the first version of
+     * this did.
      */
-    let target = window.clone();
     app.on_menu_event(move |_app, event| {
-        let _ = target.emit("massing:menu", event.id().0.clone());
+        bridge.push(serde_json::json!({ "type": "menu", "id": event.id().0 }));
     });
     Ok(())
 }
