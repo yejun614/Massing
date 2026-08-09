@@ -51,8 +51,8 @@ The same two scripts run under Deno, which is what the desktop build needs.
 ```sh
 deno task test                    # the identical suite
 deno task build                   # a byte-identical dist/index.html
-deno task desktop                 # → dist/desktop/, the app
-deno task desktop:dev             # the app as a plain server, with DevTools
+deno task dev                     # run the desktop app, watching the tree
+deno task desktop                 # build it → dist/desktop/
 deno task test:desktop            # start it, drive it as a CLI would, stop it
 ```
 

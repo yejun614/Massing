@@ -16,22 +16,39 @@ Three things a browser cannot do, and they are the whole reason it exists:
 ## Running it
 
 ```sh
+deno task dev            # run it, with the tree watched
 deno task desktop        # build it → dist/desktop/
-deno task desktop:dev    # run it as a plain server, in your own browser
+deno task dev:browser    # run it as a plain server, no window
 deno task test:desktop   # start it, drive it as a CLI would, stop it
 ```
 
 Deno **2.9 or newer** — `deno desktop` does not exist before that.
 
-`deno task desktop` compiles rather than runs. It produces a bundle under
-`dist/desktop/`; the launcher inside it is what you start. It is around 80 MB,
-almost all of which is the Deno runtime and the webview shim, and
-`--compress` shrinks the distributed copy at the cost of a one-off unpack on
-first launch.
+`deno task dev` is the one you want: `--hmr` compiles into a cache, opens the
+window, and watches the tree, so an edit does not cost a rebuild. The first run
+takes a while — it downloads the runtime and the webview backend — and later
+ones start in a couple of seconds.
 
-`desktop:dev` is the one to develop against. The app is a loopback HTTP server
-either way, so opening the printed URL in Chrome or Firefox gives you the
-editor with DevTools — which the shipping webview backend does not have.
+`deno task desktop` **compiles and does not run.** It produces a bundle under
+`dist/desktop/`; the launcher inside it is what you start. It is around 80 MB,
+almost all of it the Deno runtime and the webview backend, and `--compress`
+shrinks the distributed copy at the cost of a one-off unpack on first launch.
+
+`dev:browser` opens no window at all. It runs the same program as a plain
+loopback server and prints a URL, which is the only way to get DevTools — the
+webview backend has none.
+
+### When a build says "access denied"
+
+`laufey_webview.exe` is the process that owns the window, and it **outlives its
+parent**. Kill `deno` from a terminal rather than closing the window and it
+stays behind holding the compiled `Massing.dll` open, so the next build fails
+with `os error 5` on a path under `AppData\Local\deno\desktop`. Close the
+window, or:
+
+```powershell
+Get-Process -Name laufey_webview | Stop-Process -Force
+```
 
 ### What it is allowed to do
 

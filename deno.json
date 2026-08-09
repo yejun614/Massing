@@ -53,11 +53,17 @@
     // them in. `desktop/web/` is in the same position: it is browser code the
     // server hands out, not a module the runtime imports.
     "desktop": "deno desktop --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
-    // The same program as a plain server, which is how it is developed: open
-    // the printed URL in a real browser and you get DevTools, which the
-    // webview backend does not have.
-    "desktop:dev": "deno run --allow-read --allow-write --allow-net --allow-run --allow-env desktop/main.ts",
-    "dev": "deno task desktop:dev"
+    // The app itself, running, with the tree watched: `--hmr` builds into a
+    // cache and starts it, so a source edit does not cost a rebuild.
+    //
+    // The same `--include` list as above, and it has to be: HMR still starts
+    // from a compiled bundle, so anything the server reads at runtime has to
+    // be in it.
+    "dev": "deno desktop --hmr --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
+    // The same program as a plain server, with no window. Worth having because
+    // the printed URL opens in a real browser, and that is the only way to get
+    // DevTools -- the webview backend has none.
+    "dev:browser": "deno run --allow-read --allow-write --allow-net --allow-run --allow-env desktop/main.ts"
   },
   "desktop": {
     "app": {
