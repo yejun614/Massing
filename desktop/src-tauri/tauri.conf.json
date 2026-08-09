@@ -15,9 +15,19 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
+    "targets": [
+      "nsis",
+      "app",
+      "dmg",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "createUpdaterArtifacts": true,
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "resources": {
       "../../index.html": "editor/index.html",
       "../../src": "editor/src",
@@ -36,7 +46,7 @@
       "endpoints": [
         "https://github.com/yejun614/Massing/releases/latest/download/latest.json"
       ],
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE1RTNCQzE0NDhDMDU0MzcKUldRM1ZNQklGTHpqRmNGaFhDNVZIS1R2UXc2LzB4TExvTnVaZnI5MXBoSExPck1sU2dpVzRQNWcK",
       "windows": {
         "installMode": "passive"
       }

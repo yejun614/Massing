@@ -48,6 +48,12 @@ jobs:
           - { os: macos-13, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          # arm64 Linux on an arm64 runner rather than cross-compiled from
+          # x86. Cross-compiling this target means an arm64 cross toolchain
+          # *and* arm64 WebKitGTK headers through multiarch, which is a long
+          # way to go for a build no machine here has run. These runners are
+          # free on public repositories; on a private one they are billed.
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +82,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - if: matrix.os == 'ubuntu-latest'
+      # Both Linux runners, not one of them by name: pinning this to
+      # `ubuntu-latest` silently skipped the arm64 job, which then failed in
+      # the compiler with a missing `webkit2gtk` rather than here.
+      - if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
