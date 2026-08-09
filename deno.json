@@ -52,14 +52,14 @@
     // anything -- they are read at runtime and served, so nothing would pull
     // them in. `desktop/web/` is in the same position: it is browser code the
     // server hands out, not a module the runtime imports.
-    "desktop": "deno desktop --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
+    "desktop": "deno desktop --icon desktop/icon.ico --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
     // The app itself, running, with the tree watched: `--hmr` builds into a
     // cache and starts it, so a source edit does not cost a rebuild.
     //
     // The same `--include` list as above, and it has to be: HMR still starts
     // from a compiled bundle, so anything the server reads at runtime has to
     // be in it.
-    "dev": "deno desktop --hmr --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
+    "dev": "deno desktop --hmr --icon desktop/icon.ico --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
     // The same program as a plain server, with no window. Worth having because
     // the printed URL opens in a real browser, and that is the only way to get
     // DevTools -- the webview backend has none.
@@ -67,8 +67,19 @@
   },
   "desktop": {
     "app": {
+      // The backend truncates this to its first character when it names the
+      // window; `desktop/win32.ts` finds the window by that character and puts
+      // the real title back. Changing this name means changing `APP_NAME` in
+      // `desktop/main.ts` with it.
       "name": "Massing",
-      "identifier": "dev.massing.editor"
+      "identifier": "dev.massing.editor",
+      // Generated from the same isometric mark as the favicon by
+      // `node scripts/icon.mjs`, and committed — a normal build needs nothing.
+      "icons": {
+        "windows": "./desktop/icon.ico",
+        "macos": "./desktop/icon.png",
+        "linux": "./desktop/icon.png"
+      }
     },
     // The OS's own webview rather than a bundled Chromium. CEF would add
     // ~150 MB for a rendering engine this app does not need: the shim in

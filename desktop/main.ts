@@ -31,6 +31,19 @@ const ROOT = new URL('../', import.meta.url);
 /** Reported to MCP clients as the server version; the one in `deno.json`. */
 const VERSION = '0.1.0';
 
+/*
+ * The window is titled `M`, and this file cannot fix it.
+ *
+ * Deno Desktop names the window from `desktop.app.name` and something on the
+ * way there reads a UTF-16 string as a C string, so "Massing" stops at the NUL
+ * byte after `M`. Three ways out were tried and measured: `document.title`
+ * from the page does not reach the frame; there is no window object to call
+ * `setTitle` on, because `Deno.BrowserWindow` blocks (see `bridge.ts`); and
+ * renaming it from outside with `user32!SetWindowTextW` through FFI crashed
+ * the process on the first call. A one-letter title is worse than a good one
+ * and much better than a crash, so it stands until Deno fixes it.
+ */
+
 const app = createAppServer(ROOT);
 const bridge = createBridge();
 
