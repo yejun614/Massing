@@ -30,6 +30,7 @@
 import { normalizeDoc, serializeDoc } from '/src/core/schema.js';
 import { formatReport, validateDocument } from '/src/core/validate.js';
 import { misplaced, overConnected, underDrawn } from '/src/core/assistant.js';
+import { installMcpButton } from './mcp-ui.js';
 
 const API = '/__massing';
 
@@ -131,6 +132,7 @@ function install() {
    * written for the person who presses `R` while a model finishes writing.
    */
   followTheme();
+  installMcpButton();
 
   const events = new EventSource(`${API}/events`);
   events.onmessage = (event) => {

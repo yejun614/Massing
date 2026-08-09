@@ -79,6 +79,23 @@ more:
 
 ## Connecting a CLI
 
+**Press the ⇄ button in the toolbar.** It lists the agents it can find, writes
+the right entry into each one's config, and tells you to restart anything that
+was already running. That is the whole setup.
+
+It reads each file, adds or replaces the one entry named `massing`, and writes
+everything else back exactly as it was — with the previous version saved beside
+it as `<name>.massing-backup`. Your own settings survive, and pressing it again
+after the port changes replaces the entry rather than adding a second.
+
+| Agent | What it writes |
+|---|---|
+| Claude Code | `~/.claude.json` → `mcpServers.massing = { type: "http", url }` |
+| Codex | `~/.codex/config.toml` → `[mcp_servers.massing]` |
+| Antigravity | `~/.gemini/config/mcp_config.json` → `mcpServers.massing.serverUrl` |
+
+### By hand
+
 The app serves MCP over Streamable HTTP at `http://127.0.0.1:7337/`. If that
 port was taken it took another one and wrote it down — the running app's real
 URL is always in:

@@ -99,6 +99,7 @@ const mcp = Deno.env.get('MASSING_MCP') === 'off' ? null : startMcp(bridge, {
   version: VERSION,
   port: Number(Deno.env.get('MASSING_MCP_PORT') ?? 0) || undefined,
 });
+bridge.setMcpUrl(mcp?.url ?? null);
 if (mcp) {
   console.error(`massing: MCP on ${mcp.url}`);
   await writePortFile(mcp.port);

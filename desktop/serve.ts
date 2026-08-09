@@ -91,8 +91,15 @@ export function createAppServer(rootUrl: URL) {
         return new Response(desktopify(html), { headers: noStore(TYPES.html) });
       }
 
-      if (pathname === '/__massing/shim.js') {
-        return await send('desktop/web/shim.js', TYPES.js);
+      /*
+       * The shell's own browser code, served from a path the editor does not
+       * use. A single named file was enough until the shim grew a sibling it
+       * imports; anything under `desktop/web/` is fair game now, and nothing
+       * else is -- the containment check below still applies, and `desktop/`
+       * is not in `SERVED`, so this is the only door to it.
+       */
+      if (pathname.startsWith('/__massing/') && pathname.endsWith('.js')) {
+        return await send(`desktop/web/${pathname.slice('/__massing/'.length)}`, TYPES.js);
       }
 
       const relative = decodeURIComponent(pathname).replace(/^\/+/, '');

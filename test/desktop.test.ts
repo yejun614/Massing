@@ -171,6 +171,72 @@ try {
   check('our own save does not', changes.length === before, `${changes.length - before} extra`);
   void watching;
 
+  // --- registering with the CLIs --------------------------------------------
+  //
+  // Run against a fake HOME rather than the real one: these are the files a
+  // person keeps their own settings in, and a test suite that edits them is a
+  // test suite nobody should run twice.
+  {
+    const home = await Deno.makeTempDir();
+    Deno.env.set('USERPROFILE', home);
+    Deno.env.set('HOME', home);
+    const { registerWith, surveyTargets } = await import('../desktop/setup.ts');
+    const url = 'http://127.0.0.1:7337/';
+
+    check('nothing is claimed to be installed on an empty machine',
+      (await surveyTargets()).every((t) => !t.registered));
+
+    // Existing settings, of the kind this must not eat.
+    await Deno.mkdir(`${home}/.codex`, { recursive: true });
+    await Deno.writeTextFile(
+      `${home}/.codex/config.toml`,
+      '# my notes\nmodel = "gpt-5"\n\n[mcp_servers.other]\nurl = "http://example.com/mcp"\n',
+    );
+    await Deno.writeTextFile(
+      `${home}/.claude.json`,
+      JSON.stringify({ numStartups: 42, mcpServers: { other: { type: 'http', url: 'http://x/' } } }),
+    );
+
+    const done = await registerWith(['claude', 'codex', 'antigravity'], url);
+    check('every chosen target is written', done.length === 3 && done.every((t) => t.registered),
+      JSON.stringify(done.map((t) => [t.id, t.problem])));
+
+    const codex = await Deno.readTextFile(`${home}/.codex/config.toml`);
+    check('the Codex file keeps what was already in it',
+      codex.includes('# my notes') && codex.includes('model = "gpt-5"') &&
+        codex.includes('[mcp_servers.other]'),
+      codex);
+    check('and gains ours', codex.includes('[mcp_servers.massing]') && codex.includes(url), codex);
+
+    const claude = JSON.parse(await Deno.readTextFile(`${home}/.claude.json`));
+    check('Claude Code keeps its unrelated state',
+      claude.numStartups === 42 && claude.mcpServers.other,
+      JSON.stringify(claude));
+    check('and is pointed at us, with the type it insists on',
+      claude.mcpServers.massing?.type === 'http' && claude.mcpServers.massing?.url === url);
+
+    const anti = JSON.parse(await Deno.readTextFile(`${home}/.gemini/config/mcp_config.json`));
+    check('Antigravity gets serverUrl, not url',
+      anti.mcpServers.massing?.serverUrl === url && !anti.mcpServers.massing?.url);
+
+    check('the previous file is kept beside the new one',
+      (await Deno.readTextFile(`${home}/.codex/config.toml.massing-backup`)).includes('# my notes'));
+
+    // Doing it twice is the normal case: the port can change between runs.
+    await registerWith(['codex', 'claude'], 'http://127.0.0.1:9999/');
+    const twice = await Deno.readTextFile(`${home}/.codex/config.toml`);
+    check('running it again replaces rather than duplicates',
+      twice.split('[mcp_servers.massing]').length === 2 && twice.includes('9999') &&
+        twice.includes('[mcp_servers.other]'),
+      twice);
+    check('a second run is still one entry in Claude Code',
+      JSON.parse(await Deno.readTextFile(`${home}/.claude.json`)).mcpServers.massing.url
+        .includes('9999'));
+
+    check('a machine with the config present reads as connected',
+      (await surveyTargets()).filter((t) => t.registered).length === 3);
+  }
+
   // --- MCP ------------------------------------------------------------------
   const init = await rpc('initialize', {
     protocolVersion: '2025-06-18',

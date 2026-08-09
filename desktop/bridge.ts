@@ -18,6 +18,7 @@
  */
 
 import { pickPath, readFile, watchFile, writeBytes, writeFile } from './files.ts';
+import { registerWith, surveyTargets } from './setup.ts';
 
 type Watcher = ReturnType<typeof watchFile>;
 
@@ -56,6 +57,8 @@ export function createBridge() {
   let watching: string | null = null;
   /** Told when the editor's theme changes, so the window frame can follow. */
   let onTheme: ((dark: boolean) => void) | null = null;
+  /** Where a CLI should point to reach this app's MCP server. */
+  let mcpUrl: string | null = null;
 
   /**
    * Calls the runtime has made into the page and is waiting on.
@@ -140,6 +143,10 @@ export function createBridge() {
     },
     ask,
     push,
+    /** Told once the MCP server knows which port it got. */
+    setMcpUrl(url: string | null) {
+      mcpUrl = url;
+    },
     onTheme(handler: (dark: boolean) => void) {
       onTheme = handler;
     },
@@ -276,6 +283,26 @@ export function createBridge() {
         const { dark } = await body(req);
         onTheme?.(Boolean(dark));
         return json({ ok: true });
+      }
+
+      /*
+       * Registering with the CLIs, which is the one bit of setup that is
+       * genuinely fiddly: three tools, three config formats, one of them TOML.
+       *
+       * Split in two on purpose. `mcp/targets` only reads, so the window can
+       * show what is on the machine and what state it is in before anybody
+       * commits to anything; `mcp/register` is the half that writes, and only
+       * to the targets it was named.
+       */
+      if (route === 'mcp/targets') {
+        return json({ url: mcpUrl, targets: mcpUrl ? await surveyTargets() : [] });
+      }
+
+      if (route === 'mcp/register') {
+        if (!mcpUrl) return json({ error: 'the MCP server is switched off' }, 409);
+        const { ids } = await req.json().catch(() => ({ ids: [] }));
+        if (!Array.isArray(ids) || !ids.length) return json({ error: 'nothing chosen' }, 400);
+        return json({ url: mcpUrl, targets: await registerWith(ids, mcpUrl) });
       }
 
       if (route === 'watch') {
