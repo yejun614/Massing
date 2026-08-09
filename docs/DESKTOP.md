@@ -210,7 +210,7 @@ attaches the bundles to a draft release, along with `latest.json`.
 | Target | Runner | Produces |
 |---|---|---|
 | `aarch64-apple-darwin` | macos-14 | `.app`, `.dmg` |
-| `x86_64-apple-darwin` | macos-13 | `.app`, `.dmg` |
+| `x86_64-apple-darwin` | macos-15-intel | `.app`, `.dmg` |
 | `x86_64-pc-windows-msvc` | windows-latest | NSIS installer |
 | `aarch64-pc-windows-msvc` | windows-11-arm | NSIS installer |
 | `x86_64-unknown-linux-gnu` | ubuntu-latest | `.deb`, `.rpm`, AppImage |
