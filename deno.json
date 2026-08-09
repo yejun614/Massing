@@ -56,13 +56,19 @@
     // The app itself, running, with the tree watched: `--hmr` builds into a
     // cache and starts it, so a source edit does not cost a rebuild.
     //
+    // On `webview` rather than the `cef` the release uses, because CEF and
+    // `--hmr` together start the runtime and then never open a window --
+    // measured, waiting two minutes. Developing against a window that is not
+    // there is worse than developing against one whose title bar says `M`, and
+    // the difference between the backends stops at the frame: the page is the
+    // same page. `dev:browser` is there when you want Chromium's DevTools.
+    //
     // The same `--include` list as above, and it has to be: HMR still starts
     // from a compiled bundle, so anything the server reads at runtime has to
     // be in it.
-    "dev": "MASSING_FRAME=off deno desktop --hmr --icon desktop/icon.ico --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
-    // The same program as a plain server, with no window. Worth having because
-    // the printed URL opens in a real browser, and that is the only way to get
-    // DevTools -- the webview backend has none.
+    "dev": "MASSING_FRAME=off deno desktop --hmr --backend webview --icon desktop/icon.ico --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
+    // The same program as a plain server, with no window. Worth having when
+    // you would rather have the page in a browser you already have open.
     "dev:browser": "deno run --allow-read --allow-write --allow-net --allow-run --allow-env desktop/main.ts"
   },
   "desktop": {
@@ -81,14 +87,21 @@
         "linux": "./desktop/icon.png"
       }
     },
-    // The OS's own webview rather than a bundled Chromium. CEF would add
-    // ~150 MB for a rendering engine this app does not need: the shim in
-    // `desktop/web/shim.js` supplies the one web API the system webviews lack,
-    // and everything else here is ordinary DOM the editor already runs in
-    // Safari and Firefox.
-    "backend": "webview",
+    // Chromium, bundled, rather than the OS's own webview.
+    //
+    // It costs about 400 MB an install -- 478 against 80 -- and it is the only
+    // way to get a window that says what it is. The `webview` backend titles
+    // the window `M`, because it reads a UTF-16 string as a C string, and
+    // refuses to be corrected: `SetWindowTextW` on the real handle returns
+    // success and is discarded. It also drops the application icon, from both
+    // `--icon` and the block above. CEF honours both.
+    //
+    // Two things come with it that are worth having anyway: DevTools, which
+    // the system webviews have none of, and one rendering engine everywhere
+    // instead of WebKit on macOS, WebKit again on Linux and Chromium here.
+    "backend": "cef",
     // Under `dist/`, which `.gitignore` already covers. Left to itself the
-    // build drops an 80 MB bundle in the repo root.
+    // build drops a half-gigabyte bundle in the repo root.
     "output": {
       "windows": "./dist/desktop/Massing",
       "macos": "./dist/desktop/Massing.app",

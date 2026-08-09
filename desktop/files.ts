@@ -10,11 +10,15 @@
  * A native file dialog, by subprocess.
  *
  * Deno Desktop does not expose a file picker — its dialogs page documents
- * `alert`, `confirm` and `prompt` and lists pickers as roadmap — and the
- * webview backend cannot fall back on the browser's own, because WKWebView on
- * macOS and WebKitGTK on Linux do not implement the File System Access API at
- * all. So the app brings its own by asking each OS for the dialog it already
- * ships.
+ * `alert`, `confirm` and `prompt` and lists pickers as roadmap. So the app
+ * brings its own by asking each OS for the dialog it already ships.
+ *
+ * The CEF backend does carry Chromium's File System Access API, which is the
+ * obvious alternative and the wrong one: a `FileSystemFileHandle` deliberately
+ * hides the path it came from, and the path is the thing the watcher and the
+ * MCP setup are built on. Asking the OS directly is also the only version that
+ * survives a switch back to `webview`, where WKWebView on macOS and WebKitGTK
+ * on Linux do not implement that API at all.
  *
  * The answer comes back through a temp file rather than through stdout. A Deno
  * Desktop binary on Windows is a GUI-subsystem process with no console

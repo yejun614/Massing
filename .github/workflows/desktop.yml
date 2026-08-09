@@ -59,6 +59,8 @@ jobs:
       # then produced by a toolchain nobody ran it on. One runner per target
       # costs minutes and buys a build that has at least started on the OS it
       # is for.
+      # `--compress` is not optional here: an uncompressed CEF bundle is about
+      # 478 MB, and four of those is more than the artifact storage is worth.
       - run: deno task desktop --target ${{ matrix.target }} --compress
       - uses: actions/upload-artifact@v4
         with:
