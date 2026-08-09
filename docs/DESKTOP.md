@@ -161,9 +161,21 @@ nowhere else:
 **Until `pubkey` is filled in the app does not check for updates at all**, and
 says so on startup. That is deliberate: without a key, anything that can answer
 for the release host — a redirect, a stale CDN entry, a hostile network — could
-hand the app a bundle to install. Losing the private key means shipping a new
-public key in a new release and every older install stops updating, so treat it
-like a signing key, because it is one.
+hand the app a bundle to install.
+
+#### Back the private key up before the first release
+
+Losing it cannot be undone by generating another one. The public key is baked
+into every installed binary at build time, so a release signed with a new key
+fails verification on every copy already out there, and those copies can never
+auto-update again — the only way back is for each person to download and
+reinstall by hand. There is one `pubkey` field and no rotation mechanism.
+
+An installed app that hits this now says so, in a toast, instead of failing
+silently for ever. That is a consolation, not a fix.
+
+Right now there are no releases, so losing the key costs nothing. That will
+never be true again, which makes this the moment to put it somewhere safe.
 
 ### 2. Releases from GitHub Actions — already wired
 

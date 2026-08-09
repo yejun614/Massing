@@ -78,7 +78,36 @@ pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
                 }
             }
             Ok(None) => {}
-            Err(err) => eprintln!("massing: could not check for updates: {err}"),
+            /*
+             * A failed check is two different events wearing one error type.
+             *
+             * Not reaching the channel is a network on a train, and belongs on
+             * stderr. A manifest that *arrives and does not verify* means this
+             * install can never update again — the usual cause being a release
+             * signed with a key this build does not carry, which is what
+             * happens after a lost private key. Left on stderr it is silent,
+             * and silence is the worst possible handling: the app goes on
+             * looking healthy for ever while being permanently stranded.
+             *
+             * Told apart by the text, because the crate's error taxonomy is
+             * not something to depend on. Getting this wrong costs one toast
+             * too many, which is the right side to be wrong on.
+             */
+            Err(err) => {
+                let text = err.to_string();
+                let unverifiable = text.to_lowercase().contains("signature")
+                    || text.to_lowercase().contains("verify")
+                    || text.to_lowercase().contains("minisign");
+                eprintln!("massing: could not check for updates: {text}");
+                if unverifiable {
+                    bridge.push(json!({
+                        "type": "notice",
+                        "message": "This copy cannot verify updates any more, so it will not \
+                            receive them. Reinstall from the releases page to start getting \
+                            them again.",
+                    }));
+                }
+            }
         }
     });
 
