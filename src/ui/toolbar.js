@@ -101,7 +101,10 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   // result of this deciding for itself what the panel was doing.
   const assistantBtn = btn(
     'chat',
-    'Assistant — describe a change and have it made',
+    // "Beta" here as well as on the panel, because this is the tooltip read
+    // before deciding to open it, and the panel's badge is only visible to
+    // somebody who already has.
+    'Assistant (beta) — describe a change and have it made',
     () => onAssistant?.()
   );
   for (const button of [publishBtn, assistantBtn]) button.hidden = true;

@@ -352,6 +352,26 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
         // panel needs no reset button of its own.
         onDblClick: () => movable.reset(),
       }),
+      /*
+       * What the panel is honest about.
+       *
+       * Not decoration and not a disclaimer: it is the answer to "am I holding
+       * this wrong?", which is the question this feature actually raises in
+       * use. A model that redraws more than you asked is a surprise if you
+       * expected a finished tool and a known limit if you were told, and the
+       * difference between those two is a word in the header.
+       *
+       * It says where the safety net is, because the useful half of "beta" here
+       * is that nothing it does is permanent — the edits go through the same
+       * undo as everything else, and a person who knows that will try things.
+       */
+      h('span', {
+        class: 'chat-beta',
+        text: 'Beta',
+        title:
+          'Still finding its feet. It can misread a request and redraw more than you ' +
+          'asked for — everything it does is one undo away.',
+      }),
       picked,
       opacity,
       newBtn,

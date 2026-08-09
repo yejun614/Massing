@@ -1491,6 +1491,15 @@ kbd {
   max-width: 100vw;
   max-height: 100vh;
   /*
+   * The header has to answer to the panel's width, not the window's.
+   *
+   * Everything else in this stylesheet asks the viewport, which is the wrong
+   * question for a card the person can drag a corner on: a 300px panel on a
+   * 27-inch monitor is narrow, and no media query will ever say so. Safe to
+   * contain, because the width above never depends on what is inside it.
+   */
+  container-type: inline-size;
+  /*
    * Set from the header's slider. A custom property rather than the `opacity`
    * declaration itself, so the panel's own states can still fade it without
    * two things writing one inline property and one of them silently winning.
@@ -1521,7 +1530,47 @@ kbd {
   cursor: grab;
 }
 .chat-head button { cursor: pointer; }
-.chat-title { font-weight: 650; font-size: 13px; margin-right: auto; }
+.chat-title { font-weight: 650; font-size: 13px; }
+
+/*
+ * The Beta mark, and what it is doing in the header.
+ *
+ * Beside the title rather than in the empty state, because the empty state is
+ * read once and this has to still be there on the twentieth conversation —
+ * which is when a wrong answer actually turns up. Outlined rather than filled:
+ * the accent in this panel means "this is where the action is", and spending it
+ * on a label nobody clicks would point the eye at the one thing in the header
+ * that does nothing.
+ */
+.chat-beta {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  /* Part of the drag handle like the title is, so it keeps the header's cursor. */
+  white-space: nowrap;
+}
+
+/*
+ * Narrow enough and the mark goes, before the conversation name does.
+ *
+ * The header's order of sacrifice is stated on the picker below: it gives up
+ * width first, because a truncated conversation title is still recognisable
+ * while "New" and the close button are not. That holds until the picker has
+ * nothing left to give — at the 300px minimum this badge is the difference
+ * between a conversation name of ten characters and one of two. A label saying
+ * the feature is young is worth less than being able to find yesterday's chat,
+ * so it is the one that yields.
+ */
+@container (width < 360px) {
+  .chat-beta { display: none; }
+}
 
 /*
  * The opacity slider, sized down to fit a header that already carries three
@@ -1553,7 +1602,14 @@ kbd {
  * the one thing this list needs beyond its labels, which is a way to throw a
  * conversation away.
  */
-.chat-picker-wrap { position: relative; flex: 0 1 150px; min-width: 0; }
+/*
+ * The gap between the name of the panel and the controls belongs here rather
+ * than on the title, which is where it used to be. A `margin-right: auto` on
+ * the title only works while everything to its left is present, and the Beta
+ * mark beside it is allowed to disappear on a narrow panel — taking the layout
+ * with it. Pushing from this side depends on nothing that can vanish.
+ */
+.chat-picker-wrap { position: relative; flex: 0 1 150px; min-width: 0; margin-left: auto; }
 
 .chat-picker {
   display: flex;
