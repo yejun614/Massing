@@ -1705,6 +1705,86 @@ kbd {
 .chat-turn.is-working { color: var(--ink-muted); font-size: 12.5px; }
 
 /*
+ * An answer, with its Markdown rendered.
+ *
+ * `pre-wrap` comes off: the parser has already turned the line breaks into
+ * elements, and leaving it on would show the blank line between two paragraphs
+ * as well as the gap between them.
+ *
+ * Everything below is a descendant selector rather than a class per element,
+ * because the renderer emits ordinary tags — the point of it is that an answer
+ * is a small piece of HTML, and it should be styled like one.
+ */
+.chat-md { white-space: normal; }
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0 0 8px; }
+.chat-md h3,
+.chat-md h4,
+.chat-md h5,
+.chat-md h6 {
+  margin: 12px 0 5px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.chat-md h3 { font-size: 14px; }
+.chat-md h4 { font-size: 13px; }
+.chat-md h5,
+.chat-md h6 { font-size: 12.5px; color: var(--ink-muted); }
+.chat-md ul,
+.chat-md ol { margin: 0 0 8px; padding-left: 20px; }
+.chat-md li { margin-bottom: 2px; }
+/* A nested list is part of the line above it, not a new block after it. */
+.chat-md li > ul,
+.chat-md li > ol { margin: 2px 0 0; }
+.chat-md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+.chat-md pre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  /* Code is the one thing that must not be reflowed to fit the panel. */
+  overflow-x: auto;
+}
+.chat-md pre code {
+  padding: 0;
+  background: none;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.chat-md blockquote {
+  margin: 0 0 8px;
+  padding: 1px 0 1px 9px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--ink-muted);
+}
+.chat-md hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.chat-md a { color: var(--accent); }
+.chat-md strong { font-weight: 650; }
+.chat-md .md-scroll { margin: 0 0 8px; overflow-x: auto; }
+.chat-md table { border-collapse: collapse; font-size: 12px; }
+.chat-md th,
+.chat-md td {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.chat-md th { background: var(--surface-2); font-weight: 650; }
+
+/*
  * The panel talking about itself — which model is answering from here on.
  *
  * Indented behind a rule rather than given an author line, because it is not

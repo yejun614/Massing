@@ -33,6 +33,7 @@ import {
 import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
 import { estimateTextBox, estimateLineWidth, textAnchorFor } from '../src/util/text.js';
+import { parseMarkdown } from '../src/util/markdown.js';
 import {
   planeTransform,
   planeAxes,
@@ -2670,4 +2671,158 @@ function textMetricCases(check) {
 
   check('an empty caption has no width', (() =>
     estimateTextBox('', 12).width === 0 && estimateTextBox(null, 12).width === 0)());
+
+  /*
+   * The Markdown the transcript renders.
+   *
+   * Only the parser is checked, which is deliberate: it is the half with all
+   * the rules in it, and keeping it a pure function from text to a tree is what
+   * lets the suite run here rather than in a browser.
+   */
+
+  /** Every piece of text in a span tree, concatenated. */
+  const spanText = (spans) =>
+    spans.map((s) => (s.type === 'text' ? s.text : s.spans ? spanText(s.spans) : s.text ?? '')).join('');
+  /** The first span of a given type, anywhere in the tree. */
+  const findSpan = (spans, type) => {
+    for (const span of spans) {
+      if (span.type === type) return span;
+      const inner = span.spans && findSpan(span.spans, type);
+      if (inner) return inner;
+    }
+    return null;
+  };
+
+  check('plain prose is one paragraph', (() => {
+    const blocks = parseMarkdown('Just a sentence.');
+    return blocks.length === 1 && blocks[0].type === 'p' && spanText(blocks[0].spans) === 'Just a sentence.';
+  })());
+
+  check('a blank line separates paragraphs', (() =>
+    parseMarkdown('one\n\ntwo').length === 2)());
+
+  check('a single newline stays a break rather than becoming a space', (() => {
+    const [p] = parseMarkdown('one\ntwo');
+    return p.spans.some((s) => s.type === 'break') && spanText(p.spans) === 'onetwo';
+  })());
+
+  check('emphasis nests inside strong', (() => {
+    const [p] = parseMarkdown('a **bold *and italic* here**');
+    const strong = findSpan(p.spans, 'strong');
+    return !!strong && !!findSpan(strong.spans, 'em') && spanText(strong.spans) === 'bold and italic here';
+  })());
+
+  check('underscores inside a word are left alone', (() => {
+    const [p] = parseMarkdown('the field user_id_value stays');
+    return !findSpan(p.spans, 'em') && spanText(p.spans) === 'the field user_id_value stays';
+  })());
+
+  check('a lone asterisk between numbers is not emphasis', (() => {
+    const [p] = parseMarkdown('2 * 3 * 4');
+    return !findSpan(p.spans, 'em') && spanText(p.spans) === '2 * 3 * 4';
+  })());
+
+  check('a backslash hides a marker', (() => {
+    const [p] = parseMarkdown('a \\*literal\\* star');
+    return !findSpan(p.spans, 'em') && spanText(p.spans) === 'a *literal* star';
+  })());
+
+  check('inline code keeps its markers as text', (() => {
+    const [p] = parseMarkdown('use `a **b** c` here');
+    const code = findSpan(p.spans, 'code');
+    return code?.text === 'a **b** c' && !findSpan(p.spans, 'strong');
+  })());
+
+  check('a fenced block keeps its language and its lines', (() => {
+    const [block] = parseMarkdown('```json\n{\n  "a": 1\n}\n```');
+    return block.type === 'code' && block.lang === 'json' && block.text === '{\n  "a": 1\n}';
+  })());
+
+  check('an unclosed fence still ends at the end of the text', (() => {
+    const [block] = parseMarkdown('```\nleft open');
+    return block.type === 'code' && block.text === 'left open';
+  })());
+
+  check('a heading carries its level', (() => {
+    const [block] = parseMarkdown('### Third');
+    return block.type === 'heading' && block.level === 3 && spanText(block.spans) === 'Third';
+  })());
+
+  check('a hash with no space is not a heading', (() =>
+    parseMarkdown('#tag').every((b) => b.type === 'p'))());
+
+  check('bullets become a tight list', (() => {
+    const [list] = parseMarkdown('- one\n- two\n- three');
+    return list.type === 'list' && !list.ordered && !list.loose && list.items.length === 3;
+  })());
+
+  check('a blank line between items makes the list loose', (() => {
+    const [list] = parseMarkdown('- one\n\n- two');
+    return list.loose && list.items.length === 2;
+  })());
+
+  check('an indented bullet nests inside the item above it', (() => {
+    const [list] = parseMarkdown('- one\n  - inner\n- two');
+    const nested = list.items[0].find((b) => b.type === 'list');
+    return list.items.length === 2 && !!nested && spanText(nested.items[0][0].spans) === 'inner';
+  })());
+
+  check('a numbered list keeps where it started', (() => {
+    const [list] = parseMarkdown('3. three\n4. four');
+    return list.ordered && list.start === 3 && list.items.length === 2;
+  })());
+
+  check('three dashes are a rule, not a bullet', (() =>
+    parseMarkdown('---')[0].type === 'rule')());
+
+  check('a quote holds blocks of its own', (() => {
+    const [quote] = parseMarkdown('> quoted\n>\n> - a bullet');
+    return quote.type === 'quote' && quote.blocks.some((b) => b.type === 'list');
+  })());
+
+  check('a pipe table reads its cells and its alignment', (() => {
+    const [table] = parseMarkdown('| a | b |\n| --- | ---: |\n| 1 | 2 |');
+    return (
+      table.type === 'table' &&
+      table.align[1] === 'right' &&
+      spanText(table.head[0]) === 'a' &&
+      spanText(table.rows[0][1]) === '2'
+    );
+  })());
+
+  check('a short table row is padded rather than shifted', (() => {
+    const [table] = parseMarkdown('| a | b |\n| --- | --- |\n| 1 |');
+    return table.rows[0].length === 2 && spanText(table.rows[0][1]) === '';
+  })());
+
+  check('pipes without the dashed line are just text', (() =>
+    parseMarkdown('a | b | c')[0].type === 'p')());
+
+  check('a link keeps its label and its target', (() => {
+    const [p] = parseMarkdown('see [the docs](https://example.com/x) for more');
+    const link = findSpan(p.spans, 'link');
+    return link?.href === 'https://example.com/x' && spanText(link.spans) === 'the docs';
+  })());
+
+  check('a bare URL becomes a link', (() => {
+    const [p] = parseMarkdown('at https://example.com/a.');
+    const link = findSpan(p.spans, 'link');
+    // The trailing full stop is a sentence ending, not part of the address.
+    return link?.href === 'https://example.com/a' && spanText(p.spans).endsWith('.');
+  })());
+
+  check('a javascript: link is dropped to its label', (() => {
+    const [p] = parseMarkdown('[click me](javascript:alert(1))');
+    return !findSpan(p.spans, 'link') && spanText(p.spans) === 'click me';
+  })());
+
+  check('markup in the source never becomes markup in the tree', (() => {
+    // The renderer builds text nodes, so the angle brackets have to survive
+    // parsing as characters -- this is the half of that promise a test can see.
+    const [p] = parseMarkdown('<script>alert(1)</script>');
+    return p.type === 'p' && spanText(p.spans) === '<script>alert(1)</script>';
+  })());
+
+  check('empty and missing text parse to nothing', (() =>
+    parseMarkdown('').length === 0 && parseMarkdown(null).length === 0)());
 }

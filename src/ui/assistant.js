@@ -11,6 +11,7 @@
  */
 
 import { h, clear, setClass, copyText } from '../util/dom.js';
+import { renderMarkdown } from '../util/markdown.js';
 import { MODEL_TIERS } from '../data/models.js';
 import { makeMovable } from './movable.js';
 
@@ -87,6 +88,20 @@ function copyButton(text) {
     },
   });
   return button;
+}
+
+/**
+ * What was said, as a bubble.
+ *
+ * The assistant's half is Markdown: it writes `**this**` and bulleted lists
+ * whether or not it was asked to, and showing the marks makes the reader
+ * assemble the answer themselves. What a person typed is left exactly as typed
+ * — their asterisks are asterisks, and a question rewritten on its way into the
+ * transcript is a question they cannot check they asked.
+ */
+function messageBody(role, said) {
+  if (role === 'user' || role === 'answer') return h('p', { class: 'chat-text', text: said });
+  return h('div', { class: 'chat-text chat-md' }, [renderMarkdown(said)]);
 }
 
 export function createAssistantPanel(root, { assistant, store, toaster, onToggle }) {
@@ -296,7 +311,7 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
    * answer: the compose box underneath stays live, and typing into it answers
    * the question too.
    */
-  const askText = h('p', { class: 'chat-ask-text' });
+  const askText = h('div', { class: 'chat-ask-text chat-md' });
   const askOptions = h('div', { class: 'chat-ask-options' });
   const ask = h('div', { class: 'chat-ask is-hidden', role: 'group' }, [askText, askOptions]);
 
@@ -437,7 +452,7 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
         const [said, attached] = splitAttachment(message.content);
         log.append(h('div', { class: `chat-turn is-${message.role}` }, [
           h('span', { class: 'chat-who', text: WHO[message.role] ?? 'Assistant' }),
-          h('p', { class: 'chat-text', text: said }),
+          messageBody(message.role, said),
           ...(attached ? [h('span', { class: 'chat-attached', text: `with ${attached}` })] : []),
           // Only on what the assistant said. Copying your own question back is
           // a button that does nothing you could not do by looking at it.
@@ -473,8 +488,14 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
     }
 
     ask.classList.toggle('is-hidden', !waiting);
-    if (waiting && askText.textContent !== waiting.question) {
-      askText.textContent = waiting.question;
+    // Compared against the source rather than what is on screen: the rendered
+    // question has lost its Markdown, so reading the text back would never
+    // match and the buttons would be rebuilt — and the box refocused — on every
+    // notification the store sends.
+    if (waiting && ask.dataset.question !== waiting.question) {
+      ask.dataset.question = waiting.question;
+      clear(askText);
+      askText.append(renderMarkdown(waiting.question));
       clear(askOptions);
       for (const option of waiting.options ?? []) {
         askOptions.append(h('button', {
