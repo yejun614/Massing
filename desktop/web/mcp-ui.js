@@ -15,6 +15,14 @@
  * and because a control nobody can find is not a shortcut.
  */
 
+/*
+ * The editor's own icon set, by the URL the editor loads it from. Every other
+ * button on that toolbar is an SVG from here, and a text glyph sitting among
+ * them reads as something that was bolted on afterwards -- which it was, and
+ * which is not a reason for it to look like it.
+ */
+import { UI_ICONS } from '/src/ui/icons-ui.js';
+
 const API = '/__massing';
 
 /** The app's own helper, minus the parts that only make sense in modules. */
@@ -23,6 +31,8 @@ function h(tag, attrs = {}, children = []) {
   for (const [key, value] of Object.entries(attrs)) {
     if (value === null || value === undefined || value === false) continue;
     if (key === 'text') el.textContent = String(value);
+    // Only ever handed a constant from the editor's own icon set.
+    else if (key === 'html') el.innerHTML = value;
     else if (key.startsWith('on')) el.addEventListener(key.slice(2).toLowerCase(), value);
     else el.setAttribute(key, value === true ? '' : String(value));
   }
@@ -62,9 +72,32 @@ const STYLE = `
 .mcp-fineprint { font-size: 11.5px; color: var(--ink-muted); }
 `;
 
+/**
+ * Wait for the editor to have built its toolbar.
+ *
+ * This module is loaded before `src/main.js` — that ordering is what lets the
+ * file-picker shim beside it win — and `createToolbar` *empties* the toolbar
+ * region before filling it (`src/ui/toolbar.js`, `clear(region('file'))`). A
+ * button added on load is therefore deleted a moment later, silently, which is
+ * exactly what happened the first time. `window.massing` is assigned on the
+ * last line of `main.js`, so it is the signal that the toolbar is built and
+ * will not be cleared again.
+ */
+function whenReady(then) {
+  if (window.massing) return then();
+  const waiting = setInterval(() => {
+    if (!window.massing) return;
+    clearInterval(waiting);
+    then();
+  }, 100);
+}
+
 export function installMcpButton() {
   document.head.append(h('style', { text: STYLE }));
+  whenReady(() => addButton());
+}
 
+function addButton() {
   const region = document.querySelector('[data-region="file"]');
   if (!region) return;
 
@@ -81,7 +114,7 @@ export function installMcpButton() {
     type: 'button',
     title: 'Connect a coding agent — set up MCP for Claude Code, Codex or Antigravity',
     'aria-label': 'Connect a coding agent',
-    text: '⇄',
+    html: UI_ICONS.link,
     onClick: () => open(),
   });
   region.append(button);
