@@ -159,9 +159,15 @@ nowhere else:
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the password you gave it |
 
 ```sh
-gh secret set TAURI_SIGNING_PRIVATE_KEY < massing.key
-gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+gh secret set TAURI_SIGNING_PRIVATE_KEY --env Production < massing.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --env Production
 ```
+
+They live on the **`Production` environment**, not on the repository, which is
+why the build job carries `environment: Production`. A job that does not name
+an environment sees environment secrets as empty strings — no warning, no
+error, just a blank where the key should be. Repository secrets would work
+too, and would need that line removed.
 
 The key file is two lines and **both** are part of it — the first is an
 `untrusted comment:` line that minisign requires. Pasting only the base64

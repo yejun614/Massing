@@ -63,6 +63,11 @@ jobs:
           # free on public repositories; on a private one they are billed.
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
     runs-on: ${{ matrix.os }}
+    # The signing secrets live on this environment rather than on the
+    # repository, so a job that does not name it sees empty strings — which is
+    # exactly how this failed the first time. It carries no protection rules,
+    # so naming it costs nothing but the line.
+    environment: Production
     steps:
       - uses: actions/checkout@v4
       # Every build needs the key, not only a tagged one: `createUpdaterArtifacts`
@@ -83,11 +88,13 @@ jobs:
           KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           if [ -z "$KEY" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set on this repository."
-            echo "Every bundle is signed for the updater, so no build can succeed without it."
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty in this job."
+            echo "Every bundle is signed for the updater, so no build succeeds without it."
+            echo "Either the secret is not set, or it is set somewhere this job cannot"
+            echo "see: an environment secret needs 'environment:' on the job."
             echo "  cargo tauri signer generate -w massing.key"
-            echo "  gh secret set TAURI_SIGNING_PRIVATE_KEY < massing.key"
-            echo "  gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            echo "  gh secret set TAURI_SIGNING_PRIVATE_KEY --env Production < massing.key"
+            echo "  gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --env Production"
             echo "The key file's FIRST LINE is part of it — set the whole file, not"
             echo "just the base64. See docs/DESKTOP.md."
             exit 1
