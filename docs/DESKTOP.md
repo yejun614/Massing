@@ -236,6 +236,23 @@ https://github.com/yejun614/Massing/releases/latest/download/latest.json
 `latest` rather than a version, so an app three releases behind finds the
 newest one rather than the next one.
 
+The manifest gets a job of its own because it is the one asset every build
+would otherwise write. `includeUpdaterJson: true` had each of the six download
+it, merge its platform in and upload it back; on v0.1.1 two jobs lost that race
+and the surviving manifest listed four platforms out of six. Every installer
+was present and correct, and x86_64 Linux and arm64 Windows would simply never
+have been offered the update.
+
+`scripts/updater-manifest.mjs` composes it from the finished release and
+**refuses to write a partial one** — a manifest missing a platform is worse
+than no manifest, because the release looks complete. It runs by hand too:
+
+```sh
+node scripts/updater-manifest.mjs v0.1.1            # dry run
+node scripts/updater-manifest.mjs v0.1.1 --write
+gh release upload v0.1.1 latest.json --clobber
+```
+
 The build job carries `permissions: contents: write`, because this repository's
 default workflow token is read-only. Without it every job builds for minutes
 and then fails on its last step with `Resource not accessible by integration`,
