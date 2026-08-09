@@ -204,7 +204,8 @@ never be true again, which makes this the moment to put it somewhere safe.
 
 ### 2. Releases from GitHub Actions — already wired
 
-`.github/workflows/desktop.yml` builds six targets on tagged pushes and
+`.github/workflows/desktop.yml` runs **on tags only** — a push to `main` builds
+nothing. Six targets on a tagged push, and it
 attaches the bundles to a draft release, along with `latest.json`.
 
 | Target | Runner | Produces |
@@ -258,11 +259,20 @@ default workflow token is read-only. Without it every job builds for minutes
 and then fails on its last step with `Resource not accessible by integration`,
 which names neither the permission nor the setting.
 
+`workflow_dispatch` runs the same six builds without creating a release, which
+is how to exercise the bundling before committing to a tag. Pull requests get
+`check` and nothing heavier.
+
 To cut a release: bump `version` in `tauri.conf.json`, tag, push the tag.
 
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+git push origin main          # the tag is what builds; this just publishes the commit
+git tag v0.2.0
+git push origin v0.2.0
 ```
+
+Pushing `main` starts nothing, so the order does not matter and the two no
+longer race each other for runners.
 
 The release is created as a **draft**, so nothing reaches anybody until it is
 published by hand — and `latest.json` is only served once it is. Pushes that

@@ -5,9 +5,17 @@
 # to what shipped.
 name: desktop
 
+# Tags only. A push to `main` does nothing at all.
+#
+# Building six installers per commit meant twelve jobs whenever a tag went out
+# with its branch, competing for the same runners — which is what left an Intel
+# macOS job unscheduled for a quarter of an hour. Nothing on `main` needed
+# them: the release is cut from a tag.
+#
+# `workflow_dispatch` is how you exercise the bundling without cutting a
+# release; it builds and uploads artifacts and creates nothing.
 on:
   push:
-    branches: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -49,6 +57,9 @@ jobs:
   # Tagged pushes cut a release; everything else just proves it builds.
   build:
     needs: check
+    # Not on pull requests: `check` is the gate there, and six bundles is not a
+    # thing to spend on a branch nobody is releasing from.
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
