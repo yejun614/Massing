@@ -18,6 +18,7 @@
 import { createAppServer } from './serve.ts';
 import { createBridge } from './bridge.ts';
 import { startMcp } from './mcp.ts';
+import { startUpdates } from './update.ts';
 
 /**
  * Where the app's own files are.
@@ -105,9 +106,22 @@ async function writePortFile(port: number) {
   } catch (err) {
     // Not being able to write it is not a reason not to run; the port is on
     // stderr either way.
-    console.error('massing: could not record the MCP port —', err);
+    console.error('massing: could not record the MCP port:', err);
   }
 }
+
+/*
+ * Updates, and what the window is told about them.
+ *
+ * Routed through the same push channel everything else uses, so a new version
+ * arrives as a toast in the editor rather than as a line in a log nobody is
+ * reading. Off in a source run: `deno task desktop:dev` is not an installed
+ * app and has nothing to patch.
+ */
+const updates = startUpdates((message) => bridge.push({ type: 'notice', message }));
+console.error(
+  updates.on ? 'massing: checking for updates daily' : `massing: updates off - ${updates.reason}`,
+);
 
 /*
  * Leave the disk as we found it.

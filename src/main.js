@@ -516,4 +516,4 @@ async function copyPrompt() {
  * some point while the one that answers "what is actually in this file" was
  * the one you could not get at.
  */
-window.massing = { store, scene, commands, io, exporter, pointer, tabs, prompt: LLM_PROMPT };
+window.massing = { store, scene, commands, io, exporter, pointer, tabs, toaster, prompt: LLM_PROMPT };

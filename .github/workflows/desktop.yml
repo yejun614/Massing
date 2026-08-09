@@ -1,0 +1,67 @@
+# Builds the desktop app for every platform, and runs the suites on one.
+#
+# The web app and the Vercel deployment are not built here — Vercel builds
+# those itself from `node build.js`, and duplicating it would give two answers
+# to what shipped.
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Everything that does not need a specific OS, on the cheapest runner.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: '2.9'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Both runtimes, because both are shipped: Vercel builds with Node and
+      # the desktop app is Deno. A suite that only ran on one would be checking
+      # half of what ships.
+      - run: deno task test
+      - run: node test/run.mjs
+      - run: deno task test:desktop
+      - run: deno check desktop/main.ts test/desktop.test.ts
+      - run: deno lint desktop/ test/desktop.test.ts
+      - run: deno fmt --check desktop/
+      # `build.js` writes the JSON Schema and the Claude skill from the
+      # component registry. A commit that edited the registry and not those is
+      # a commit that ships a schema describing a different program.
+      - run: deno task build
+      - run: git diff --exit-code schema/ .claude/
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, target: aarch64-apple-darwin }
+          - { os: macos-13, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: '2.9'
+      # Cross-compiling would let one runner do all four, but each bundle is
+      # then produced by a toolchain nobody ran it on. One runner per target
+      # costs minutes and buys a build that has at least started on the OS it
+      # is for.
+      - run: deno task desktop --target ${{ matrix.target }} --compress
+      - uses: actions/upload-artifact@v4
+        with:
+          name: massing-${{ matrix.target }}
+          path: dist/desktop/
+          if-no-files-found: error

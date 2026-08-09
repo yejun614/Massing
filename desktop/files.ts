@@ -41,13 +41,17 @@ Add-Type -AssemblyName PresentationFramework
 $d = New-Object Microsoft.Win32.${kind}
 ${name}
 $d.Filter = 'Massing diagram (*.arch.json;*.json)|*.arch.json;*.json|All files (*.*)|*.*'
-if ($d.ShowDialog()) { Set-Content -LiteralPath '${ps(out)}' -Value $d.FileName -Encoding utf8 -NoNewline }
+if ($d.ShowDialog()) { Set-Content -LiteralPath '${
+    ps(out)
+  }' -Value $d.FileName -Encoding utf8 -NoNewline }
 `;
 }
 
 function macScript({ mode, suggested }: Dialog, out: string): string {
   const ask = mode === 'save'
-    ? `choose file name with prompt "Save diagram" default name "${sh(suggested ?? 'diagram.arch.json')}"`
+    ? `choose file name with prompt "Save diagram" default name "${
+      sh(suggested ?? 'diagram.arch.json')
+    }"`
     : 'choose file with prompt "Open diagram"';
   // `POSIX path of` turns the HFS-style alias AppleScript returns into a path
   // the rest of this program can use.
@@ -75,7 +79,10 @@ function dialogCommand(spec: Dialog, out: string): Deno.Command | null {
   const args = spec.mode === 'save'
     ? ['--file-selection', '--save', '--confirm-overwrite', `--filename=${spec.suggested ?? ''}`]
     : ['--file-selection'];
-  return new Deno.Command('zenity', { args: [...args, `--title=${spec.mode === 'save' ? 'Save diagram' : 'Open diagram'}`], ...quiet });
+  return new Deno.Command('zenity', {
+    args: [...args, `--title=${spec.mode === 'save' ? 'Save diagram' : 'Open diagram'}`],
+    ...quiet,
+  });
 }
 
 /**
@@ -96,7 +103,7 @@ export async function pickPath(spec: Dialog): Promise<string | null> {
     const picked = (await Deno.readTextFile(out)).trim();
     return picked || null;
   } catch (err) {
-    console.error(`massing: the ${spec.mode} dialog could not be shown —`, err);
+    console.error(`massing: the ${spec.mode} dialog could not be shown:`, err);
     return null;
   } finally {
     await Deno.remove(out).catch(() => {});
@@ -147,7 +154,8 @@ export function watchFile(path: string, onChange: () => void) {
   const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   const directory = at > 0 ? path.slice(0, at) : '.';
   const name = path.slice(at + 1);
-  const named = (p: string) => p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) === name;
+  const named = (p: string) =>
+    p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) === name;
 
   let watcher: Deno.FsWatcher | null = null;
   // `ReturnType`, not `number`: Deno types `setTimeout` as Node's, which hands
@@ -160,7 +168,7 @@ export function watchFile(path: string, onChange: () => void) {
     try {
       watcher = Deno.watchFs(directory, { recursive: false });
     } catch (err) {
-      console.error(`massing: cannot watch ${directory} —`, err);
+      console.error(`massing: cannot watch ${directory}:`, err);
       return;
     }
     for await (const event of watcher) {

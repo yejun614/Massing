@@ -17,6 +17,12 @@ Three constraints shaped everything here:
 - **No framework.** No React, Vue or Svelte; no bundler; zero npm dependencies.
   Rendering, state and input are all written directly against the DOM.
 
+The third one is about `src/`, and it is exact rather than aspirational:
+`grep npm: src/` is empty and the bundle you can email has nothing in it that
+was not written here. The [desktop app](docs/DESKTOP.md) has two dependencies —
+the MCP SDK and the schema library under it — and they stop at `desktop/`. The
+editor does not know that shell exists.
+
 ## Running it
 
 ```sh
@@ -38,14 +44,22 @@ npm run dev:hosted                # the hosted build locally, real API handlers
 `test/iso.test.html` runs the identical suite in a browser, which also proves
 the modules load unbundled.
 
-### On Deno
+### On Deno, and on the desktop
 
 The same two scripts run under Deno, which is what the desktop build needs.
 
 ```sh
 deno task test                    # the identical suite
 deno task build                   # a byte-identical dist/index.html
+deno task desktop                 # → dist/desktop/, the app
+deno task desktop:dev             # the app as a plain server, with DevTools
+deno task test:desktop            # start it, drive it as a CLI would, stop it
 ```
+
+The desktop app is the editor with three things a browser cannot give it: an
+MCP server, so Claude Code or Codex can draw in the diagram you are looking at;
+a watcher, so a file edited elsewhere appears at once; and native Save and
+Export dialogs. See [DESKTOP.md](docs/DESKTOP.md).
 
 Both runtimes are supported rather than one replacing the other, because the
 two ends of this project disagree: the desktop build is Deno, and Vercel builds

@@ -140,6 +140,10 @@ function install() {
     }
     if (message.type === 'file-changed') window.massing?.io?.reload();
     if (message.type === 'call') answer(message);
+    // The runtime has something to say — a staged update, a rollback. Through
+    // the editor's own toasts, because a desktop app that talks to you in a
+    // console is a desktop app that never talks to you.
+    if (message.type === 'notice') window.massing?.toaster?.info(message.message);
   };
 }
 

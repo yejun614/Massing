@@ -81,19 +81,22 @@ function buildServer(bridge: Bridge, version: string) {
     }),
   }, ({ document }: { document: string }) => call('replace_diagram', { document }));
 
-  server.registerTool('add_tab', {
-    description:
-      'Add a new drawing to the open file as a tab, beside the one already open, and switch ' +
-      'to it. Use it when one picture genuinely will not hold the answer — a system past ' +
-      'about 25 blocks, or a second view the person asked for alongside the first. Never use ' +
-      'it to tidy one diagram into several, and never to avoid editing what is open. You ' +
-      'cannot create files: the file belongs to the person.',
-    inputSchema: z.object({
-      name: z.string().describe('What the tab is called, after what it shows.'),
-      document: z.string().describe('The new drawing as a complete .arch.json document.'),
-    }),
-  }, ({ name, document }: { name: string; document: string }) =>
-    call('add_tab', { name, document }));
+  server.registerTool(
+    'add_tab',
+    {
+      description:
+        'Add a new drawing to the open file as a tab, beside the one already open, and switch ' +
+        'to it. Use it when one picture genuinely will not hold the answer — a system past ' +
+        'about 25 blocks, or a second view the person asked for alongside the first. Never use ' +
+        'it to tidy one diagram into several, and never to avoid editing what is open. You ' +
+        'cannot create files: the file belongs to the person.',
+      inputSchema: z.object({
+        name: z.string().describe('What the tab is called, after what it shows.'),
+        document: z.string().describe('The new drawing as a complete .arch.json document.'),
+      }),
+    },
+    ({ name, document }: { name: string; document: string }) => call('add_tab', { name, document }),
+  );
 
   server.registerTool('validate_diagram', {
     description:
