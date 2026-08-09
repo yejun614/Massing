@@ -47,6 +47,11 @@ jobs:
           - { os: macos-14, target: aarch64-apple-darwin }
           - { os: macos-13, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          # Native again, for the same reason as arm64 Linux below: the x86
+          # image can cross-compile the Rust, but the WebView2 and NSIS pieces
+          # are where cross-builds go wrong and nothing in this matrix would
+          # have run the result. Same billing note as the arm64 Linux runner.
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           # arm64 Linux on an arm64 runner rather than cross-compiled from
           # x86. Cross-compiling this target means an arm64 cross toolchain
