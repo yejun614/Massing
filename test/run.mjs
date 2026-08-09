@@ -1,11 +1,17 @@
 /**
- * Node test runner: `node test/run.mjs`.
+ * Terminal test runner: `node test/run.mjs`, or `deno task test`.
  *
  * The suite itself lives in `cases.js` and is shared with `iso.test.html`,
  * so the browser and the terminal always check the same things.
+ *
+ * It runs on both runtimes for the same reason `build.js` does: the desktop
+ * build is a Deno program and the deployment is a Node one, and a suite that
+ * only ran on one of them would be checking half the shipping surface.
  */
 
 import { readFileSync } from 'node:fs';
+// A global in Node, an import in Deno. See the note in `build.js`.
+import { Buffer } from 'node:buffer';
 import { runCases } from './cases.js';
 import { COMPONENTS, GROUP_KINDS } from '../src/data/components.js';
 import { normalizeDoc, serializeDoc, DEFAULT_PLANE } from '../src/core/schema.js';

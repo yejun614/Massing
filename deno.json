@@ -1,0 +1,37 @@
+{
+  // The local toolchain runs on Deno; the deployment does not.
+  //
+  // `vercel.json` still says `node build.js`, and `api/` is still built around
+  // Node's `(req, res)` handlers, because that is what Vercel runs. What moved
+  // here is everything that runs on a developer's machine -- and, from Phase 2
+  // on, the desktop app, which is a Deno program and the reason for the switch.
+  //
+  // `package.json` stays for the same reason: `"type": "module"` is what makes
+  // Vercel parse `api/*.js` as ESM, and `engines.node` picks the function
+  // runtime. Deleting it would break the deployment, not tidy it.
+  "version": "0.1.0",
+  "tasks": {
+    // Permissions are named rather than `-A`, so the list itself says what the
+    // build is allowed to touch. Read the tree, write `dist/` and the two
+    // generated files, read the environment for MASSING_VERCEL_FEATURES.
+    "build": "deno run --allow-read --allow-write --allow-env build.js",
+    "test": "deno run --allow-read --allow-env test/run.mjs"
+    // No `dev` task yet, on purpose. Serving the unbundled app needs a static
+    // file server, and pulling one off JSR to get it would put a download in
+    // front of a project whose README says "nothing to install". The desktop
+    // shell has to write one anyway; `dev` will point at that.
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "singleQuote": true,
+    // The browser sources predate this config by a long way and are formatted
+    // by hand to match a house style `deno fmt` does not share. Only the
+    // desktop shell -- new code, written under Deno -- is formatted by it.
+    "include": ["desktop/"]
+  },
+  "lint": {
+    "include": ["desktop/"]
+  }
+}

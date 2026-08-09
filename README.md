@@ -27,7 +27,7 @@ python -m http.server 8123        # or any static server
 Nothing to install. `npm run dev` does the same thing if you prefer.
 
 ```sh
-node test/run.mjs                 # geometry + document suite (143 checks)
+node test/run.mjs                 # geometry + document suite
 node build.js                     # → dist/index.html, plus the Claude skill
 node build.js --doc my.arch.json   # the same, with a diagram baked in
 node build.js --font Pretendard.woff2   # inline the font: no network at all
@@ -37,6 +37,22 @@ npm run dev:hosted                # the hosted build locally, real API handlers
 
 `test/iso.test.html` runs the identical suite in a browser, which also proves
 the modules load unbundled.
+
+### On Deno
+
+The same two scripts run under Deno, which is what the desktop build needs.
+
+```sh
+deno task test                    # the identical suite
+deno task build                   # a byte-identical dist/index.html
+```
+
+Both runtimes are supported rather than one replacing the other, because the
+two ends of this project disagree: the desktop build is Deno, and Vercel builds
+with `node build.js` and runs `api/` on Node's `(req, res)` handlers. Keeping
+`build.js` and `test/run.mjs` to what both runtimes agree on costs one import
+(`node:buffer`) and means neither end is checked by a script the other never
+runs.
 
 ## Using it
 
