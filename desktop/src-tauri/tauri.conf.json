@@ -16,6 +16,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "app", "dmg", "deb", "appimage"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": {
       "../../index.html": "editor/index.html",
@@ -32,9 +33,13 @@
   },
   "plugins": {
     "updater": {
-      "active": false,
-      "endpoints": ["https://releases.massing.dev/{{target}}/{{arch}}/{{current_version}}"],
-      "pubkey": ""
+      "endpoints": [
+        "https://github.com/yejun614/Massing/releases/latest/download/latest.json"
+      ],
+      "pubkey": "",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

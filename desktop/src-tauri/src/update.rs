@@ -25,30 +25,36 @@ pub enum Updates {
     Off(String),
 }
 
-/// Where releases live, and the key they are signed with.
+/// Start checking, if this build has a channel to check.
 ///
-/// Environment rather than config so a build can be pointed at a staging
-/// channel without a rebuild, and so a fork does not inherit an endpoint it
-/// does not own.
+/// The endpoint and the key normally come from `tauri.conf.json`, because that
+/// is what a released build carries. `MASSING_RELEASES` overrides the endpoint
+/// so a build can be pointed at a staging channel without a rebuild — the key
+/// is never overridden, since the whole point of it is that it is fixed at
+/// build time.
+///
+/// An empty `pubkey` in the config means the plugin itself refuses to run, and
+/// that is the signal used here: no key, no channel, said once and plainly
+/// rather than checking silently for ever.
 pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
-    let Ok(endpoint) = std::env::var("MASSING_RELEASES") else {
-        return Updates::Off("no release URL is configured".into());
-    };
-    let key = std::env::var("MASSING_RELEASE_KEY").unwrap_or_default();
-    if key.is_empty() {
-        return Updates::Off("no release key is configured".into());
+    if !app.config().plugins.0.get("updater").is_some_and(has_key) {
+        return Updates::Off("this build is not signed for updates".into());
     }
-    let Ok(url) = endpoint.parse() else {
-        return Updates::Off(format!("{endpoint} is not a URL"));
-    };
+    let staging = std::env::var("MASSING_RELEASES").ok();
 
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let built = handle
-            .updater_builder()
-            .endpoints(vec![url])
-            .and_then(|b| b.pubkey(key).build());
-        let updater = match built {
+        let mut builder = handle.updater_builder();
+        if let Some(url) = staging.and_then(|u| u.parse().ok()) {
+            builder = match builder.endpoints(vec![url]) {
+                Ok(b) => b,
+                Err(err) => {
+                    eprintln!("massing: that staging URL will not do: {err}");
+                    return;
+                }
+            };
+        }
+        let updater = match builder.build() {
             Ok(updater) => updater,
             Err(err) => {
                 eprintln!("massing: the updater would not start: {err}");
@@ -77,4 +83,12 @@ pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
     });
 
     Updates::Watching
+}
+
+/// Whether the config carries a non-empty `pubkey`.
+fn has_key(config: &serde_json::Value) -> bool {
+    config
+        .get("pubkey")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|key| !key.trim().is_empty())
 }

@@ -37,6 +37,7 @@ jobs:
       - run: npm run build
       - run: git diff --exit-code schema/ .claude/
 
+  # Tagged pushes cut a release; everything else just proves it builds.
   build:
     needs: check
     strategy:
@@ -61,10 +62,27 @@ jobs:
         with:
           workspaces: desktop/src-tauri
       - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The Ed25519 key the updater checks. Without these two the bundles
+          # still build, but no `.sig` is produced and `latest.json` would
+          # describe an update no installed app will accept.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: --target ${{ matrix.target }}
           projectPath: desktop/src-tauri
-      - uses: actions/upload-artifact@v4
+          args: --target ${{ matrix.target }}
+          # Only on a tag. A release per push to main would be a release
+          # nobody asked for, and the updater points at `latest`.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: Massing ${{ github.ref_name }}
+          releaseDraft: true
+          # Writes `latest.json` beside the bundles, with the signature of each
+          # one in it. This is the file `tauri.conf.json` points the updater at,
+          # and the only reason the release and the updater are connected at all.
+          includeUpdaterJson: true
+      - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
         with:
           name: massing-${{ matrix.target }}
           path: desktop/src-tauri/target/${{ matrix.target }}/release/bundle/
