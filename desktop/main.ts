@@ -19,6 +19,7 @@ import { createAppServer } from './serve.ts';
 import { createBridge } from './bridge.ts';
 import { startMcp } from './mcp.ts';
 import { startUpdates } from './update.ts';
+import { followWindowsTheme, setDarkFrame } from './win32.ts';
 
 /**
  * Where the app's own files are.
@@ -39,10 +40,17 @@ const VERSION = '0.1.0';
  * byte after `M`. Three ways out were tried and measured: `document.title`
  * from the page does not reach the frame; there is no window object to call
  * `setTitle` on, because `Deno.BrowserWindow` blocks (see `bridge.ts`); and
- * renaming it from outside with `user32!SetWindowTextW` through FFI crashed
- * the process on the first call. A one-letter title is worse than a good one
- * and much better than a crash, so it stands until Deno fixes it.
+ * renaming it from outside with `user32!SetWindowTextW` returns success and is
+ * then ignored by the backend's window proc — the title reads back unchanged.
+ * So it stands until Deno fixes it, or until the `cef` backend is worth its
+ * 400 MB. `docs/DESKTOP.md` has the table.
+ *
+ * The same handle is good for the one thing that *does* work, though: the
+ * title bar can be told to go dark. See `win32.ts`.
  */
+
+/** How the window is found: what each backend titles it. See `win32.ts`. */
+const WINDOW_NAMES = ['M', 'Massing'];
 
 const app = createAppServer(ROOT);
 const bridge = createBridge();
@@ -131,6 +139,15 @@ async function writePortFile(port: number) {
  * reading. Off in a source run: `deno task desktop:dev` is not an installed
  * app and has nothing to patch.
  */
+/*
+ * The title bar follows the editor's theme.
+ *
+ * Not awaited: it polls for a window the runtime has not created yet, and
+ * nothing below depends on it.
+ */
+followWindowsTheme(WINDOW_NAMES);
+bridge.onTheme(setDarkFrame);
+
 const updates = startUpdates((message) => bridge.push({ type: 'notice', message }));
 console.error(
   updates.on ? 'massing: checking for updates daily' : `massing: updates off - ${updates.reason}`,

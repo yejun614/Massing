@@ -130,6 +130,8 @@ function install() {
    * selection rather than dropping it. Everything a watcher wants was already
    * written for the person who presses `R` while a model finishes writing.
    */
+  followTheme();
+
   const events = new EventSource(`${API}/events`);
   events.onmessage = (event) => {
     let message = {};
@@ -145,6 +147,39 @@ function install() {
     // console is a desktop app that never talks to you.
     if (message.type === 'notice') window.massing?.toaster?.info(message.message);
   };
+}
+
+/**
+ * Tell the runtime which way the editor is themed.
+ *
+ * Windows draws the title bar itself and will not follow the page, so the
+ * runtime has to ask it — see `desktop/win32.ts`. The store is watched rather
+ * than the system preference because the theme button cycles system → light →
+ * dark, and the forced settings are exactly where the two disagree.
+ *
+ * Polled into existence because this module runs before `main.js`: there is no
+ * store to subscribe to yet, and no event that says when there is.
+ */
+function followTheme() {
+  let last = null;
+  const send = (dark) => {
+    if (dark === last) return;
+    last = dark;
+    fetch(`${API}/theme`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dark }),
+    }).catch(() => {});
+  };
+  const waiting = setInterval(() => {
+    const store = window.massing?.store;
+    if (!store) return;
+    clearInterval(waiting);
+    send(Boolean(store.state.dark));
+    store.subscribe((state, what) => {
+      if (what === 'ui') send(Boolean(state.dark));
+    });
+  }, 100);
 }
 
 // ---------------------------------------------------------------------------

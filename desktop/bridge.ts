@@ -54,6 +54,8 @@ export function createBridge() {
 
   let watcher: Watcher | null = null;
   let watching: string | null = null;
+  /** Told when the editor's theme changes, so the window frame can follow. */
+  let onTheme: ((dark: boolean) => void) | null = null;
 
   /**
    * Calls the runtime has made into the page and is waiting on.
@@ -138,6 +140,9 @@ export function createBridge() {
     },
     ask,
     push,
+    onTheme(handler: (dark: boolean) => void) {
+      onTheme = handler;
+    },
     stop() {
       for (const [, pending] of waiting) {
         clearTimeout(pending.timer);
@@ -256,6 +261,20 @@ export function createBridge() {
         clearTimeout(pending.timer);
         if (payload.ok) pending.resolve(payload.value);
         else pending.reject(new Error(payload.error ?? 'the window did not say what went wrong'));
+        return json({ ok: true });
+      }
+
+      /*
+       * Which way the editor is themed, so the title bar can match.
+       *
+       * Reported by the page rather than read from the system, because the two
+       * disagree on purpose: the theme button cycles system, light and dark,
+       * and someone who forced the editor dark on a light desktop wants a dark
+       * frame around it.
+       */
+      if (route === 'theme') {
+        const { dark } = await body(req);
+        onTheme?.(Boolean(dark));
         return json({ ok: true });
       }
 

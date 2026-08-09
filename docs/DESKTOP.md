@@ -177,24 +177,25 @@ closes that gap.
 
 ## The window looks wrong, and here is exactly how
 
-Three cosmetic faults, all in the `webview` backend, all measured rather than
-guessed. None affects what the app does.
+Two cosmetic faults are left, both in the `webview` backend, all of this
+measured rather than guessed. Neither affects what the app does.
 
 | | `webview` (default, ~80 MB) | `cef` (~478 MB) |
 |---|---|---|
 | Window title | **`M`** | `Massing` |
 | Application icon | **none** | correct |
-| Title bar in dark mode | **stays light** | stays light |
+| Title bar in dark mode | follows the editor | follows the editor |
 
 **The title is one letter** because Deno Desktop names the window from
 `desktop.app.name` and something on the way there reads a UTF-16 string as a C
 string: `Massing` stops at the NUL byte after `M`. A spike app named `spike`
 came out as `s`, which is the same bug from the other end. Three fixes were
-tried: setting `document.title` from the page does not reach the frame; there
-is no window object to call a setter on, because `Deno.BrowserWindow` blocks;
-and renaming the window from outside with `user32!SetWindowTextW` over FFI
-**crashed the process on the first call**. A wrong title is better than a
-crash, so it stands.
+tried, all measured: setting `document.title` from the page does not reach the
+frame; there is no window object to call a setter on, because
+`Deno.BrowserWindow` blocks; and `user32!SetWindowTextW` on the real window
+handle **returns 1 and is then ignored** — read the title straight back and it
+is still `M`. The backend's window proc takes the message and discards it, so
+there is nothing left to try from outside.
 
 **The icon is missing** because neither `desktop.app.icons` nor `--icon`
 reaches a `webview` build — searching the 89 MB output for the icon's bytes
@@ -202,9 +203,16 @@ finds nothing. The same flags work on `cef`, which writes an `AppIcon.ico`
 beside the binary. `desktop/icon.ico` is generated and committed either way, so
 this fixes itself the day the backend honours it.
 
-**The title bar ignores dark mode** on both backends, because the frame is
-drawn by Windows and has to be asked with `DwmSetWindowAttribute` — which
-needs the window handle, which is the same thing neither backend hands out.
+**The title bar now follows the editor.** This one is fixed. The frame is drawn
+by Windows and has to be asked with `DwmSetWindowAttribute`, which needs a
+window handle — so `desktop/win32.ts` finds the window by the name it already
+has and asks. It follows the *editor's* theme rather than the system's, because
+the theme button cycles system → light → dark and the forced settings are
+exactly where the two disagree.
+
+It is off under `deno task dev`, which sets `MASSING_FRAME=off`: the same FFI
+calls in an `--hmr` build take the process down, while in an ordinary build
+they are fine. A dev task that crashes is not worth a matching title bar.
 
 Switching to `cef` is one line in `deno.json` (`"backend": "cef"`) and costs
 about 400 MB per install for a correct title and icon. The default stays
