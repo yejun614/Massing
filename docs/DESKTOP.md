@@ -236,6 +236,11 @@ https://github.com/yejun614/Massing/releases/latest/download/latest.json
 `latest` rather than a version, so an app three releases behind finds the
 newest one rather than the next one.
 
+The build job carries `permissions: contents: write`, because this repository's
+default workflow token is read-only. Without it every job builds for minutes
+and then fails on its last step with `Resource not accessible by integration`,
+which names neither the permission nor the setting.
+
 To cut a release: bump `version` in `tauri.conf.json`, tag, push the tag.
 
 ```sh

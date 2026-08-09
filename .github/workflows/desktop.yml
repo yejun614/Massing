@@ -12,6 +12,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read everywhere by default; the one job that needs to write says so. The
+# repository's own default is read-only and is deliberately left that way —
+# widening it there would widen it for every workflow, present and future.
+permissions:
+  contents: read
+
 jobs:
   # Everything that does not need a specific OS, on the cheapest runner.
   check:
@@ -66,6 +72,11 @@ jobs:
           # free on public repositories; on a private one they are billed.
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
     runs-on: ${{ matrix.os }}
+    # Creating the release needs write. Without it every job builds for
+    # minutes and then fails on the last step with "Resource not accessible by
+    # integration", which names no permission and no setting.
+    permissions:
+      contents: write
     # The signing secrets live on this environment rather than on the
     # repository, so a job that does not name it sees empty strings — which is
     # exactly how this failed the first time. It carries no protection rules,
