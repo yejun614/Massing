@@ -8,12 +8,7 @@
  * The result opens from `file://` with zero network requests, which is the
  * point: a diagram editor you can email.
  *
- * Runs on Node and on Deno, deliberately. `deno task build` is what the desktop
- * app is built with, and `vercel.json` still says `node build.js` -- putting a
- * Deno install into a Vercel build to produce the same bytes would be risk with
- * no return. So this file sticks to what both runtimes agree on: the `node:`
- * built-ins, and `Buffer` imported rather than assumed to be a global, which is
- * the one place they differ.
+ * `vercel.json` runs this with `node build.js`, and so does everything else.
  *
  * This works because the project's own rules make it safe. Every module uses
  * plain named imports and exports, there are no cycles, and no module has
@@ -34,8 +29,8 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-// Node has this as a global and Deno does not. Imported, it is the same object
-// in both -- and the import costs nothing on the runtime that already had it.
+// Imported rather than taken from the global, which is the same object and
+// says where it comes from.
 import { Buffer } from 'node:buffer';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));

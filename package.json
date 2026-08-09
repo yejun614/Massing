@@ -25,7 +25,11 @@
     "dev": "python -m http.server 8123 --bind 127.0.0.1",
     "dev:hosted": "node scripts/dev.mjs",
     "test": "node test/run.mjs",
-    "build": "node build.js"
+    "build": "node build.js",
+    "desktop": "cargo tauri build",
+    "desktop:dev": "cargo tauri dev",
+    "test:rust": "cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib -- --test-threads=1",
+    "test:desktop": "node test/desktop.e2e.mjs"
   },
   "engines": {
     "node": ">=18"

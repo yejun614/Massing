@@ -198,6 +198,10 @@ mod tests {
 
     /// A temporary home, and the settings somebody would already have in it.
     ///
+    /// `MASSING_HOME` is process-wide, so these run one at a time —
+    /// `--test-threads=1`, which the npm script passes. Two tests setting it at
+    /// once would each see the other's directory.
+    ///
     /// The whole point of these is the *keeping*: this code edits files people
     /// have their own work in, and the failure worth testing for is not "did we
     /// write our entry" but "did everything else survive".

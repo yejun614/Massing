@@ -17,11 +17,11 @@ Three constraints shaped everything here:
 - **No framework.** No React, Vue or Svelte; no bundler; zero npm dependencies.
   Rendering, state and input are all written directly against the DOM.
 
-The third one is about `src/`, and it is exact rather than aspirational:
-`grep npm: src/` is empty and the bundle you can email has nothing in it that
-was not written here. The [desktop app](docs/DESKTOP.md) has two dependencies —
-the MCP SDK and the schema library under it — and they stop at `desktop/`. The
-editor does not know that shell exists.
+The third one is about `src/`, and it is exact rather than aspirational: the
+bundle you can email contains nothing that was not written here, and the whole
+project has no npm dependencies at all. The [desktop app](docs/DESKTOP.md) is a
+Rust program with crates of its own, and it stops at `desktop/` — the editor
+does not know that shell exists.
 
 ## Running it
 
@@ -44,29 +44,20 @@ npm run dev:hosted                # the hosted build locally, real API handlers
 `test/iso.test.html` runs the identical suite in a browser, which also proves
 the modules load unbundled.
 
-### On Deno, and on the desktop
+### The desktop app
 
-The same two scripts run under Deno, which is what the desktop build needs.
+The editor with three things a browser cannot give it: an MCP server, so Claude
+Code or Codex can draw in the diagram you are looking at; a watcher, so a file
+edited elsewhere appears at once; and native Save and Export dialogs. It is a
+[Tauri](https://tauri.app) app, so building it needs a Rust toolchain — the web
+app still needs nothing. See [DESKTOP.md](docs/DESKTOP.md).
 
 ```sh
-deno task test                    # the identical suite
-deno task build                   # a byte-identical dist/index.html
-deno task dev                     # run the desktop app, watching the tree
-deno task desktop                 # build it → dist/desktop/
-deno task test:desktop            # start it, drive it as a CLI would, stop it
+npm run desktop:dev               # run it, watching the tree
+npm run desktop                   # build a bundle
+npm run test:desktop              # start it, drive it as a CLI would, stop it
+npm run test:rust                 # the config-writing tests
 ```
-
-The desktop app is the editor with three things a browser cannot give it: an
-MCP server, so Claude Code or Codex can draw in the diagram you are looking at;
-a watcher, so a file edited elsewhere appears at once; and native Save and
-Export dialogs. See [DESKTOP.md](docs/DESKTOP.md).
-
-Both runtimes are supported rather than one replacing the other, because the
-two ends of this project disagree: the desktop build is Deno, and Vercel builds
-with `node build.js` and runs `api/` on Node's `(req, res)` handlers. Keeping
-`build.js` and `test/run.mjs` to what both runtimes agree on costs one import
-(`node:buffer`) and means neither end is checked by a script the other never
-runs.
 
 ## Using it
 

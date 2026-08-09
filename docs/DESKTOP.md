@@ -16,66 +16,36 @@ Three things a browser cannot do, and they are the whole reason it exists:
 ## Running it
 
 ```sh
-deno task dev            # run it, with the tree watched
-deno task desktop        # build it → dist/desktop/
-deno task dev:browser    # run it as a plain server, no window
-deno task test:desktop   # start it, drive it as a CLI would, stop it
+npm run desktop:dev      # run it, with the tree watched
+npm run desktop          # build the installers
+npm run test:desktop     # start it, drive it as a CLI would, stop it
+npm run test:rust        # the config-writing tests
 ```
 
-Deno **2.9 or newer** — `deno desktop` does not exist before that.
+A **Rust toolchain** and the Tauri CLI (`cargo install tauri-cli`). On Windows
+that also means the MSVC build tools and the WebView2 runtime, which ships with
+Windows 11. The web app itself still needs nothing.
 
-`deno task dev` is the one you want: `--hmr` compiles into a cache, opens the
-window, and watches the tree, so an edit does not cost a rebuild. It starts in
-about six seconds after the first run.
+`npm run desktop:dev` is the one to develop against: it builds, opens the
+window and watches the tree. A debug build serves the editor straight out of
+the repo, so an edit to `src/` is a reload rather than a rebuild.
 
-**`dev` uses the `webview` backend, not the `cef` one the release uses.** CEF
-and `--hmr` together start the runtime and then never open a window — measured,
-waiting two minutes. So the dev window has the wrong title and no icon, and the
-page inside it is identical, which is the part being developed.
-
-`deno task desktop` **compiles and does not run.** It produces a bundle under
-`dist/desktop/`; the launcher inside it is what you start. It is around
-**478 MB**, almost all of it the bundled Chromium — see the backend note below
-for what that buys. `--compress` shrinks the distributed copy at the cost of a
-one-off unpack on first launch, and releases should use it.
-
-`dev:browser` opens no window at all. It runs the same program as a plain
-loopback server and prints a URL you open yourself, which is handy when you
-want the page in a browser you already have open.
-
-### When a build says "access denied"
-
-The process that owns the window **outlives its parent**. Kill `deno` from a
-terminal rather than closing the window and it stays behind holding the
-compiled `Massing.dll` open, so the next build fails with `os error 5` on a
-path under `AppData\Local\deno\desktop`. Close the window, or:
-
-```powershell
-Get-Process -Name Massing, bootstrap, bootstrapc, laufey_webview | Stop-Process -Force
-```
+`npm run desktop` writes the installers to
+`desktop/src-tauri/target/release/bundle/`. The app is about 10 MB, because it
+uses the operating system's own webview rather than shipping a browser with it.
 
 ### What it is allowed to do
 
-The permissions are fixed when the binary is built and it can never ask for
-more:
-
-| Permission | What for |
-|---|---|
-| `--allow-read` | serving `index.html`, `src/`, `styles/`; reading the diagram you opened |
-| `--allow-write` | saving and exporting to the path you chose |
-| `--allow-net` | the loopback server and the MCP port. It never binds to a public interface |
-| `--allow-run` | the operating system's file dialog, and nothing else |
-| `--allow-env` | the four `MASSING_*` variables below |
+Tauri gates capabilities per plugin, and the app takes two: the file dialog and
+the updater. Everything else it does — serving loopback, reading and writing
+the path you chose, watching its directory — is ordinary Rust.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MASSING_PORT` | `8123` | the editor's port, when run as a plain server |
 | `MASSING_MCP` | on | `off` disables the MCP server entirely |
 | `MASSING_MCP_PORT` | `7337` | where MCP listens; if taken, any free port is used |
-| `MASSING_RELEASES` | unset | the auto-update channel; unset means no updating |
-| `MASSING_RELEASE_KEY` | unset | the Ed25519 key releases are signed with |
-
----
+| `MASSING_RELEASES` | unset | the update channel; unset means no updating |
+| `MASSING_RELEASE_KEY` | unset | the Ed25519 public key releases are signed with |
 
 ## Connecting a CLI
 
@@ -153,9 +123,8 @@ you are not looking at. The file is yours.
 
 ### Why HTTP, and what guards it
 
-A Deno Desktop binary is a GUI process with no usable stdin or stdout, so it
-cannot be a stdio MCP server. HTTP is the only transport available from inside
-the app.
+A GUI process has no usable stdin or stdout, so the app cannot be a stdio MCP
+server. HTTP is the transport, which is also the one every CLI here supports.
 
 Binding to loopback is not access control — any page in any browser on this
 machine can post to `127.0.0.1:7337`. So requests arriving with a browser
@@ -166,11 +135,15 @@ listener at all, `MASSING_MCP=off`.
 
 ## Updating
 
-`deno.json` carries the version. Set `MASSING_RELEASES` to the base URL of a
-channel and `MASSING_RELEASE_KEY` to the public half of the Ed25519 key it is
-signed with, and the app checks once a day, downloads a binary diff against the
-version running, and stages it for the next launch. Nothing is swapped under a
-running editor.
+`tauri.conf.json` carries the version. Set `MASSING_RELEASES` to a channel URL
+and `MASSING_RELEASE_KEY` to the public half of the Ed25519 key it is signed
+with, and the app checks on launch, downloads the update and installs it for
+next time. Nothing is swapped under a running editor: the version fetched today
+is the one started tomorrow, which is the right trade when somebody has a
+document open.
+
+It works on Windows as well as macOS and Linux — the one thing the shell this
+replaced could not do.
 
 Unsigned updating is not offered. Without a key, anything that can answer for
 the release host — a redirect, a stale CDN entry, a hostile network — could
@@ -188,88 +161,32 @@ upgrading from:
 }
 ```
 
-**On Windows the update downloads and stages and then stops.** Applying a
-staged update and rolling back a failed launch are macOS and Linux only in Deno
-Desktop today, so the app does not pretend otherwise: on Windows updating is
-switched off and says so, and new versions are a manual download until Deno
-closes that gap.
+A channel that is configured but unsigned is refused rather than trusted:
+without a key, anything that can answer for the release host — a redirect, a
+stale CDN entry, a hostile network — could hand the app a bundle to install.
 
 ---
 
-## Why the backend is CEF, and what it cost
-
-`desktop.backend` is `cef`: a bundled Chromium rather than the operating
-system's own webview. It is the difference between an app that says what it is
-and one that does not, and it costs about 400 MB an install.
-
-| | `webview` (~80 MB) | **`cef` (~478 MB, in use)** |
-|---|---|---|
-| Window title | `M` | `Massing` |
-| Application icon | none | correct |
-| Title bar in dark mode | follows the editor | follows the editor |
-| DevTools | none | yes |
-| Rendering | WebKit, WebKit2GTK or Chromium, per platform | Chromium everywhere |
-
-Everything below is what `webview` does wrong, measured rather than guessed,
-and it is kept because the trade is reversible: `"backend": "webview"` is one
-line, and a 400 MB download is a real cost to weigh again later.
-
-**The title is one letter** because Deno Desktop names the window from
-`desktop.app.name` and something on the way there reads a UTF-16 string as a C
-string: `Massing` stops at the NUL byte after `M`. A spike app named `spike`
-came out as `s`, which is the same bug from the other end. Three fixes were
-tried, all measured: setting `document.title` from the page does not reach the
-frame; there is no window object to call a setter on, because
-`Deno.BrowserWindow` blocks; and `user32!SetWindowTextW` on the real window
-handle **returns 1 and is then ignored** — read the title straight back and it
-is still `M`. The backend's window proc takes the message and discards it, so
-there is nothing left to try from outside.
-
-**The icon goes missing** on `webview`, from both `desktop.app.icons` and
-`--icon`: searching the 89 MB output for the icon's own bytes finds nothing. On
-`cef` the same configuration writes an `AppIcon.ico` beside the binary that
-hashes equal to `desktop/icon.ico`. The icon itself is generated by
-`node scripts/icon.mjs` and committed, so a normal build needs nothing.
-
-**The title bar now follows the editor.** This one is fixed. The frame is drawn
-by Windows and has to be asked with `DwmSetWindowAttribute`, which needs a
-window handle — so `desktop/win32.ts` finds the window by the name it already
-has and asks. It follows the *editor's* theme rather than the system's, because
-the theme button cycles system → light → dark and the forced settings are
-exactly where the two disagree.
-
-It is off under `deno task dev`, which sets `MASSING_FRAME=off`: the same FFI
-calls in an `--hmr` build take the process down, while in an ordinary build
-they are fine. A dev task that crashes is not worth a matching title bar.
-
-Switching to `cef` is one line in `deno.json` (`"backend": "cef"`) and costs
-about 400 MB per install for a correct title and icon. The default stays
-`webview` because the trade did not look worth it, but it is yours to make.
-
 ## Things worth knowing
 
-- **`Deno.BrowserWindow` is not used.** It blocks for ever on Windows under
-  Deno 2.9.5, from module scope and equally from a later task, so there is no
-  window object and therefore no `win.bind()` and no native menu bar. The
-  runtime makes its own window; the loopback server is the only handle. The
-  page calls the runtime with `fetch` and the runtime calls the page over an
-  `EventSource`, which has the side benefit that every interaction can be
-  driven with `curl` against a running app.
-- **No native menu bar**, for the same reason. Every command is on the toolbar
-  and on a keyboard shortcut, which is where they were already.
-- **The dialogs are subprocesses** — PowerShell, `osascript`, `zenity` —
-  because Deno Desktop has no picker yet and the system webviews on macOS
-  (WKWebView) and Linux (WebKitGTK) do not implement the browser's. If no
-  dialog can be shown, saving falls back to a download rather than failing.
-- **Deep links are not wired up.** Schemes can be registered but Deno Desktop
-  cannot yet deliver the opened URL to running code, so "open this file with
-  Massing" waits on that.
+- **Tauri's IPC is deliberately not used.** The editor is served over loopback
+  so the shim can be injected as a module script *ahead of* `src/main.js` —
+  that ordering is the whole reason `src/core/io.js` needs no desktop code path
+  at all. Once there is a served document there is also a server, and one
+  channel is better than two. It has the side benefit that every interaction
+  can be driven with `curl` against a running app, which is how the tests
+  check it.
+- **The dialogs come from `tauri-plugin-dialog`**, not from the webview. The
+  browser's own File System Access API deliberately hides the path behind a
+  handle, and the path is what the watcher and the MCP setup are built on.
+- **Deep links are not wired up yet.** "Open this `.arch.json` with Massing" is
+  a plugin away and simply has not been done.
 
 ## How it fits together
 
 ```
   CLI ──MCP/HTTP──▶ :7337 ─┐
-                           ├─▶ Deno runtime ──SSE──▶ window ──▶ the document
+                           ├─▶ Tauri (Rust) ──SSE──▶ window ──▶ the document
   window ──fetch──▶ :auto ─┘        │                  ▲
                                     └── watchFs ───────┘
   other editor ──writes .arch.json──┘
@@ -277,10 +194,12 @@ about 400 MB per install for a correct title and icon. The default stays
 
 | File | Does |
 |---|---|
-| `desktop/main.ts` | starts the servers in the order that matters, wires the rest |
-| `desktop/serve.ts` | serves the editor, injecting the meta tag and the shim |
-| `desktop/bridge.ts` | `/__massing/*` — dialogs, read, write, watch, and the push channel |
-| `desktop/files.ts` | native dialogs, and the watcher |
-| `desktop/mcp.ts` | the MCP server and its four tools |
-| `desktop/update.ts` | the update channel |
+| `src-tauri/src/lib.rs` | starts the servers in the order that matters, builds the window |
+| `src-tauri/src/server.rs` | serves the editor and `/__massing/*` |
+| `src-tauri/src/bridge.rs` | the push channel, and the ask/settle pair the tools ride on |
+| `src-tauri/src/files.rs` | native dialogs, and the watcher |
+| `src-tauri/src/mcp.rs` | the MCP server and its four tools |
+| `src-tauri/src/setup.rs` | registering with the CLIs, and the tests for it |
+| `src-tauri/src/update.rs` | the update channel |
+| `src-tauri/src/window.rs` | the menu, the theme, the port file |
 | `desktop/web/shim.js` | the page's half: the file-picker shim, and the tool bodies |
