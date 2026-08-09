@@ -155,8 +155,27 @@ nowhere else:
 
 | Secret | What it is |
 |---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | the contents of the generated key file |
+| `TAURI_SIGNING_PRIVATE_KEY` | the **whole** generated key file |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the password you gave it |
+
+```sh
+gh secret set TAURI_SIGNING_PRIVATE_KEY < massing.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+The key file is two lines and **both** are part of it — the first is an
+`untrusted comment:` line that minisign requires. Pasting only the base64
+produces this, five minutes into a build:
+
+```
+failed to decode secret key: incorrect updater private key password:
+Missing comment in secret key
+```
+
+That message names the password and means the key. An empty secret gives the
+same error for the same reason: no comment line to find. There is no length or
+character restriction on the password — it travels as an environment variable
+and never touches a shell.
 
 **Until `pubkey` is filled in the app does not check for updates at all**, and
 says so on startup. That is deliberate: without a key, anything that can answer
