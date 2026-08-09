@@ -138,8 +138,21 @@ async fn editor(State(state): State<AppState>, uri: Uri) -> Response {
 async fn events(
     State(state): State<AppState>,
 ) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
-    let stream = BroadcastStream::new(state.bridge.events.subscribe())
+    let live = BroadcastStream::new(state.bridge.events.subscribe())
         .filter_map(|line| line.ok().map(|data| Ok(Event::default().data(data))));
+    /*
+     * Anything said before this window existed, said again first.
+     *
+     * The update check runs before the page is built and finishes on network
+     * time, so its notice was reliably broadcast to nobody. Replayed here, in
+     * front of the live stream, so it arrives the moment there is somewhere to
+     * put it.
+     */
+    let held = state
+        .bridge
+        .take_held()
+        .map(|data| Ok(Event::default().data(data)));
+    let stream = tokio_stream::iter(held).chain(live);
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 

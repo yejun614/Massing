@@ -13,7 +13,6 @@
 
 use std::sync::Arc;
 
-use serde_json::json;
 use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -68,12 +67,9 @@ pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
                     // Announced, never applied under a running app: the version
                     // fetched today is the one started tomorrow, which is the
                     // right trade when somebody has a document open.
-                    Ok(()) => bridge.push(json!({
-                        "type": "notice",
-                        "message": format!(
-                            "Massing {version} is ready, and will be there next time you open it."
-                        ),
-                    })),
+                    Ok(()) => bridge.notice(format!(
+                        "Massing {version} is ready, and will be there next time you open it."
+                    )),
                     Err(err) => eprintln!("massing: the update would not install: {err}"),
                 }
             }
@@ -100,12 +96,10 @@ pub fn start(app: &AppHandle, bridge: Arc<Bridge>) -> Updates {
                     || text.to_lowercase().contains("minisign");
                 eprintln!("massing: could not check for updates: {text}");
                 if unverifiable {
-                    bridge.push(json!({
-                        "type": "notice",
-                        "message": "This copy cannot verify updates any more, so it will not \
-                            receive them. Reinstall from the releases page to start getting \
-                            them again.",
-                    }));
+                    bridge.notice(
+                        "This copy cannot verify updates any more, so it will not receive \
+                         them. Reinstall from the releases page to start getting them again.",
+                    );
                 }
             }
         }

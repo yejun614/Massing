@@ -39,6 +39,8 @@ pub struct Bridge {
     pub watching: Mutex<Option<crate::files::Watch>>,
     /// Where a CLI should point to reach the MCP server.
     pub mcp_url: Mutex<Option<String>>,
+    /// A notice that arrived before there was a window to show it in.
+    held: Mutex<Option<String>>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +71,7 @@ impl Bridge {
             next_id: Mutex::new(0),
             watching: Mutex::new(None),
             mcp_url: Mutex::new(None),
+            held: Mutex::new(None),
         })
     }
 
@@ -81,6 +84,28 @@ impl Bridge {
         // An error here only means nobody is listening, which is normal while
         // the window is starting and not worth reporting.
         let _ = self.events.send(event.to_string());
+    }
+
+    /// Something to tell the person, whenever there is somebody to tell.
+    ///
+    /// Notices are the one kind of message that must not be dropped. The
+    /// update check starts before the window exists and finishes on network
+    /// time, so "your update is ready" was routinely being broadcast to nobody
+    /// and thrown away — the app then looked, correctly, like it had never
+    /// checked. Everything else on this channel answers something the page
+    /// just asked for, and can be dropped safely; this cannot.
+    pub fn notice(&self, message: impl Into<String>) {
+        let event = json!({ "type": "notice", "message": message.into() });
+        if self.connected() {
+            self.push(event);
+        } else {
+            *self.held.lock().unwrap() = Some(event.to_string());
+        }
+    }
+
+    /// Whatever was said while nothing was listening, said again.
+    pub fn take_held(&self) -> Option<String> {
+        self.held.lock().unwrap().take()
     }
 
     /// Ask the window to do something, and wait for the answer.
