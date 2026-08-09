@@ -15,11 +15,45 @@
     // build is allowed to touch. Read the tree, write `dist/` and the two
     // generated files, read the environment for MASSING_VERCEL_FEATURES.
     "build": "deno run --allow-read --allow-write --allow-env build.js",
-    "test": "deno run --allow-read --allow-env test/run.mjs"
-    // No `dev` task yet, on purpose. Serving the unbundled app needs a static
-    // file server, and pulling one off JSR to get it would put a download in
-    // front of a project whose README says "nothing to install". The desktop
-    // shell has to write one anyway; `dev` will point at that.
+    "test": "deno run --allow-read --allow-env test/run.mjs",
+    // The desktop app, built. `deno desktop` compiles rather than runs, so
+    // this produces a bundle and the launcher inside it is what you start.
+    //
+    // The permissions are the app's forever: they are baked into the binary at
+    // build time and it can never ask for more. Read the tree it serves, write
+    // the files it is told to, listen on loopback, and run the one thing it
+    // shells out to -- the operating system's file dialog.
+    //
+    // The editor itself has to be listed. `deno desktop` embeds the module
+    // graph, and `index.html`, the stylesheets and `src/` are not imported by
+    // anything -- they are read at runtime and served, so nothing would pull
+    // them in. `desktop/web/` is in the same position: it is browser code the
+    // server hands out, not a module the runtime imports.
+    "desktop": "deno desktop --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
+    // The same program as a plain server, which is how it is developed: open
+    // the printed URL in a real browser and you get DevTools, which the
+    // webview backend does not have.
+    "desktop:dev": "deno run --allow-read --allow-write --allow-net --allow-run --allow-env desktop/main.ts",
+    "dev": "deno task desktop:dev"
+  },
+  "desktop": {
+    "app": {
+      "name": "Massing",
+      "identifier": "dev.massing.editor"
+    },
+    // The OS's own webview rather than a bundled Chromium. CEF would add
+    // ~150 MB for a rendering engine this app does not need: the shim in
+    // `desktop/web/shim.js` supplies the one web API the system webviews lack,
+    // and everything else here is ordinary DOM the editor already runs in
+    // Safari and Firefox.
+    "backend": "webview",
+    // Under `dist/`, which `.gitignore` already covers. Left to itself the
+    // build drops an 80 MB bundle in the repo root.
+    "output": {
+      "windows": "./dist/desktop/Massing",
+      "macos": "./dist/desktop/Massing.app",
+      "linux": "./dist/desktop/Massing.AppImage"
+    }
   },
   "fmt": {
     "useTabs": false,
@@ -29,9 +63,15 @@
     // The browser sources predate this config by a long way and are formatted
     // by hand to match a house style `deno fmt` does not share. Only the
     // desktop shell -- new code, written under Deno -- is formatted by it.
-    "include": ["desktop/"]
+    //
+    // `desktop/web/` is excluded from both because it is browser code that
+    // merely lives here: it runs in the window, not in the runtime, and Deno's
+    // linter reads its `window` references as mistakes.
+    "include": ["desktop/"],
+    "exclude": ["desktop/web/"]
   },
   "lint": {
-    "include": ["desktop/"]
+    "include": ["desktop/"],
+    "exclude": ["desktop/web/"]
   }
 }

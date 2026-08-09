@@ -92,8 +92,31 @@ export async function copyText(text) {
   return copied;
 }
 
-/** Trigger a browser download of a Blob. */
+/**
+ * Trigger a browser download of a Blob.
+ *
+ * Every image export and the save fallback come through here, which makes it
+ * the one place the desktop build has to reach to send a file somewhere the
+ * person chose rather than to the browser's download directory. The hook is a
+ * `window` property rather than an import because `src/` must not know that a
+ * desktop build exists: on the web the property is never set and this is the
+ * same function it always was.
+ *
+ * Failure falls through rather than reporting. A dismissed dialog and a write
+ * that did not happen both mean "not saved that way", and a download is a
+ * better answer to either than an error.
+ */
 export function downloadBlob(blob, name) {
+  if (typeof window.__massingSave === 'function') {
+    window.__massingSave(blob, name).then((saved) => {
+      if (!saved) browserDownload(blob, name);
+    }, () => browserDownload(blob, name));
+    return;
+  }
+  browserDownload(blob, name);
+}
+
+function browserDownload(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

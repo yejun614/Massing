@@ -157,13 +157,24 @@ export function createTabs({ store, initial = null, onSwitch } = {}) {
      * It does not frame the result. A file being opened wants the camera moved
      * and a file being re-read wants it left exactly where it is, and only the
      * caller knows which of the two this is.
+     *
+     * `keepActive` is the same distinction one step further in. Opening a file
+     * starts at its first drawing, which is right. Re-reading the file you are
+     * already in should leave you where you were — and that only became
+     * pressing when something other than a person started writing the file:
+     * being bounced to Tab 1 is a shrug when you pressed `R`, and lost work
+     * when a model wrote the file while you were drawing in Tab 3.
+     *
+     * It is clamped rather than trusted, because the drawing you were on may
+     * not exist in what arrived.
      */
-    load(doc, { label = 'Open', ...options } = {}) {
+    load(doc, { label = 'Open', keepActive = false, ...options } = {}) {
+      const was = active;
       tabs = splitTabs(doc).map((tab) => ({ ...tab, history: null }));
-      active = 0;
-      store.replaceDoc(tabs[0].doc, label, { markSaved: true, ...options });
+      active = keepActive ? Math.max(0, Math.min(was, tabs.length - 1)) : 0;
+      store.replaceDoc(tabs[active].doc, label, { markSaved: true, ...options });
       announce();
-      return tabs[0].doc;
+      return tabs[active].doc;
     },
 
     select(index) {

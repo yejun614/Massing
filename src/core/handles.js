@@ -53,7 +53,21 @@ function run(mode, work) {
           db.close();
           return resolve(null);
         }
-        const request = work(store);
+        /*
+         * `put` throws before it returns a request when what it was handed
+         * cannot be structured-cloned — a handle carrying methods rather than
+         * a real `FileSystemFileHandle`, which is what the desktop build
+         * substitutes. Uncaught, that broke the promise this module says it
+         * never breaks ("every operation resolves rather than rejects"), and
+         * surfaced as an error toast on every file opened.
+         */
+        let request;
+        try {
+          request = work(store);
+        } catch {
+          db.close();
+          return resolve(null);
+        }
         request.onsuccess = () => {
           resolve(request.result ?? null);
           db.close();

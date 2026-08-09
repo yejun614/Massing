@@ -366,7 +366,9 @@ export function createIO({ store, toaster, onOpened, onFile, tabs = null }) {
 
     const hadUnsaved = store.state.dirty;
     const bound = source;
-    showDoc(result.doc, 'Reload', { markSaved: true, keepSelection: true });
+    // A reload is the same file a moment later, so it keeps the drawing you
+    // were looking at as well as the camera and the selection.
+    showDoc(result.doc, 'Reload', { markSaved: true, keepSelection: true, keepActive: true });
     source = bound; // replaceDoc goes through the store, not through loadText
 
     toaster?.warnings(result.warnings);

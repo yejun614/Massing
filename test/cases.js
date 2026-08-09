@@ -583,6 +583,33 @@ function tabCases(check) {
     const whole = tabs.document();
     return whole.tabs.length === 2 && whole.tabs[0].nodes.some((n) => n.id === 'z');
   })());
+  /*
+   * Re-reading the file you are already in should leave you in it.
+   *
+   * Being bounced to the first drawing is a shrug when you pressed `R`. It is
+   * lost work when something else wrote the file while you were drawing in
+   * tab three — which is the ordinary case once a watcher, or a model, is
+   * doing the writing.
+   */
+  check('a reload keeps the drawing you were looking at', (() => {
+    const { store, tabs } = controller();
+    tabs.select(1);
+    tabs.load(twoTabs(), { label: 'Reload', keepActive: true });
+    return tabs.active === 1 && store.state.doc.nodes.length === 2;
+  })());
+  check('opening a file still starts at its first drawing', (() => {
+    const { tabs } = controller();
+    tabs.select(1);
+    tabs.load(twoTabs());
+    return tabs.active === 0;
+  })());
+  check('a reload into a shorter file lands on the last drawing, not off the end', (() => {
+    const { store, tabs } = controller();
+    tabs.select(1);
+    tabs.load(normalizeDoc({ nodes: [node('only')] }).doc, { keepActive: true });
+    return tabs.active === 0 && tabs.count === 1 && store.state.doc.nodes.length === 1;
+  })());
+
   check('adding a tab shows it, empty', (() => {
     const { store, tabs } = controller();
     tabs.add();
