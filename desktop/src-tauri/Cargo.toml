@@ -1,0 +1,55 @@
+[package]
+name = "massing"
+version = "0.1.0"
+description = "Isometric architecture diagram editor"
+authors = ["YeJun Jung"]
+edition = "2021"
+rust-version = "1.88"
+
+[lib]
+# Tauri wants the app as a library so the mobile targets can call into it. We
+# have no mobile target, but fighting the convention buys nothing.
+name = "massing_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# No asset protocol: the editor is served over loopback instead.
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+
+# The editor and the bridge are served over loopback rather than through
+# Tauri's asset protocol, which is what lets `desktop/web/` stay exactly as it
+# was: the shim has to be injected as a module script *before* the app's own,
+# and a served document is the only place that ordering can be arranged.
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tokio-util = "0.7"
+# Bridging the broadcast channel into an SSE response body.
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-core = "0.3"
+
+# MCP, natively. The TypeScript SDK would have meant shipping a JS runtime
+# beside a binary whose whole appeal is not needing one.
+rmcp = { version = "3", features = [
+  "server",
+  "macros",
+  "schemars",
+  "transport-streamable-http-server",
+] }
+schemars = "1"
+
+notify = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml_edit = "0.23"
+anyhow = "1"
+dirs = "6"
+
+[features]
+# Tauri's own convention: the release bundle turns this on to hide the console.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

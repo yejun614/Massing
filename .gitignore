@@ -5,3 +5,4 @@ package-lock.json
 # Local secrets for `node scripts/dev.mjs`. Never committed: the Gemini key and
 # the Blob token are the two things in this project worth keeping out of git.
 .env.local
+desktop/src-tauri/target/

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Massing",
+  "version": "0.1.0",
+  "identifier": "dev.massing.editor",
+  "build": {
+    "frontendDist": "../web"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "resources": {
+      "../../index.html": "editor/index.html",
+      "../../src": "editor/src",
+      "../../styles": "editor/styles",
+      "../../examples": "editor/examples",
+      "../web": "editor/desktop/web"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "endpoints": ["https://releases.massing.dev/{{target}}/{{arch}}/{{current_version}}"],
+      "pubkey": ""
+    }
+  }
+}
