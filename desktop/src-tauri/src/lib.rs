@@ -11,6 +11,7 @@ pub mod files;
 pub mod mcp;
 pub mod server;
 pub mod setup;
+pub mod update;
 pub mod window;
 
 use std::net::{Ipv4Addr, SocketAddr};
@@ -136,6 +137,11 @@ pub fn run() {
                         eprintln!("massing: the MCP server stopped: {err}");
                     }
                 });
+            }
+
+            match update::start(&handle, Arc::clone(&bridge)) {
+                update::Updates::Watching => eprintln!("massing: checking for updates"),
+                update::Updates::Off(why) => eprintln!("massing: updates off - {why}"),
             }
 
             let window = WebviewWindowBuilder::new(

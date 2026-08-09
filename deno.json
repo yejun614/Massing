@@ -1,112 +1,34 @@
 {
-  // The local toolchain runs on Deno; the deployment does not.
+  // The local toolchain runs on Deno; the deployment does not, and the desktop
+  // app no longer does either.
   //
-  // `vercel.json` still says `node build.js`, and `api/` is still built around
-  // Node's `(req, res)` handlers, because that is what Vercel runs. What moved
-  // here is everything that runs on a developer's machine -- and, from Phase 2
-  // on, the desktop app, which is a Deno program and the reason for the switch.
+  // `vercel.json` still says `node build.js` and `api/` is still built around
+  // Node's `(req, res)` handlers, because that is what Vercel runs. The desktop
+  // app moved to Tauri and is a Rust program; what is left here is the part
+  // that builds and tests the editor itself, which runs on either runtime.
   //
-  // `package.json` stays for the same reason: `"type": "module"` is what makes
-  // Vercel parse `api/*.js` as ESM, and `engines.node` picks the function
-  // runtime. Deleting it would break the deployment, not tidy it.
+  // `package.json` stays for the reason it always did: `"type": "module"` is
+  // what makes Vercel parse `api/*.js` as ESM, and `engines.node` picks the
+  // function runtime.
   "version": "0.1.0",
-  // The project's only dependencies, and they reach exactly as far as the
-  // desktop shell. `src/` imports nothing and the web bundle is unchanged --
-  // `grep npm: src/` stays empty, which is the property the README claims.
-  //
-  // v2 of the SDK rather than the older `@modelcontextprotocol/sdk`, for one
-  // concrete reason: `createMcpHandler` hands back a web-standard `{ fetch }`,
-  // which drops straight into `Deno.serve`. v1's HTTP transport is built around
-  // Node's request and response objects and would need an adapter to run here.
-  "imports": {
-    "@modelcontextprotocol/server": "npm:@modelcontextprotocol/server@^2.0.0",
-    "zod/v4": "npm:zod@^4.2.0/v4"
-  },
-  // From Deno's own cache, with no `node_modules/` in the tree. A
-  // `package.json` sits here for Vercel's sake and Deno reads it as an
-  // intention to keep dependencies locally, which is not what it is: nothing
-  // in `package.json` has ever had a dependency, and a `node_modules/`
-  // appearing next to it would be a second, contradictory answer to "what does
-  // this project install".
-  "nodeModulesDir": "none",
   "tasks": {
     // Permissions are named rather than `-A`, so the list itself says what the
     // build is allowed to touch. Read the tree, write `dist/` and the two
     // generated files, read the environment for MASSING_VERCEL_FEATURES.
     "build": "deno run --allow-read --allow-write --allow-env build.js",
     "test": "deno run --allow-read --allow-env test/run.mjs",
-    // The desktop app end to end: starts it, talks to it as a CLI would, stops
-    // it. Separate from `test` because it needs a process and two ports, and
-    // `test` is the suite that also runs in a browser.
-    "test:desktop": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run test/desktop.test.ts",
-    // The desktop app, built. `deno desktop` compiles rather than runs, so
-    // this produces a bundle and the launcher inside it is what you start.
-    //
-    // The permissions are the app's forever: they are baked into the binary at
-    // build time and it can never ask for more. Read the tree it serves, write
-    // the files it is told to, listen on loopback, and run the one thing it
-    // shells out to -- the operating system's file dialog.
-    //
-    // The editor itself has to be listed. `deno desktop` embeds the module
-    // graph, and `index.html`, the stylesheets and `src/` are not imported by
-    // anything -- they are read at runtime and served, so nothing would pull
-    // them in. `desktop/web/` is in the same position: it is browser code the
-    // server hands out, not a module the runtime imports.
-    "desktop": "deno desktop --allow-ffi --unstable-ffi --icon desktop/icon.ico --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
-    // The app itself, running, with the tree watched: `--hmr` builds into a
-    // cache and starts it, so a source edit does not cost a rebuild.
-    //
-    // On `webview` rather than the `cef` the release uses, because CEF and
-    // `--hmr` together start the runtime and then never open a window --
-    // measured, waiting two minutes. Developing against a window that is not
-    // there is worse than developing against one whose title bar says `M`, and
-    // the difference between the backends stops at the frame: the page is the
-    // same page. `dev:browser` is there when you want Chromium's DevTools.
-    //
-    // The same `--include` list as above, and it has to be: HMR still starts
-    // from a compiled bundle, so anything the server reads at runtime has to
-    // be in it.
-    "dev": "MASSING_FRAME=off deno desktop --hmr --backend webview --icon desktop/icon.ico --allow-read --allow-write --allow-net --allow-run --allow-env --include index.html --include src --include styles --include examples --include desktop/web desktop/main.ts",
-    // The same program as a plain server, with no window. Worth having when
-    // you would rather have the page in a browser you already have open.
-    "dev:browser": "deno run --allow-read --allow-write --allow-net --allow-run --allow-env desktop/main.ts"
-  },
-  "desktop": {
-    "app": {
-      // The backend truncates this to its first character when it names the
-      // window; `desktop/win32.ts` finds the window by that character and puts
-      // the real title back. Changing this name means changing `APP_NAME` in
-      // `desktop/main.ts` with it.
-      "name": "Massing",
-      "identifier": "dev.massing.editor",
-      // Generated from the same isometric mark as the favicon by
-      // `node scripts/icon.mjs`, and committed — a normal build needs nothing.
-      "icons": {
-        "windows": "./desktop/icon.ico",
-        "macos": "./desktop/icon.png",
-        "linux": "./desktop/icon.png"
-      }
-    },
-    // Chromium, bundled, rather than the OS's own webview.
-    //
-    // It costs about 400 MB an install -- 478 against 80 -- and it is the only
-    // way to get a window that says what it is. The `webview` backend titles
-    // the window `M`, because it reads a UTF-16 string as a C string, and
-    // refuses to be corrected: `SetWindowTextW` on the real handle returns
-    // success and is discarded. It also drops the application icon, from both
-    // `--icon` and the block above. CEF honours both.
-    //
-    // Two things come with it that are worth having anyway: DevTools, which
-    // the system webviews have none of, and one rendering engine everywhere
-    // instead of WebKit on macOS, WebKit again on Linux and Chromium here.
-    "backend": "cef",
-    // Under `dist/`, which `.gitignore` already covers. Left to itself the
-    // build drops a half-gigabyte bundle in the repo root.
-    "output": {
-      "windows": "./dist/desktop/Massing",
-      "macos": "./dist/desktop/Massing.app",
-      "linux": "./dist/desktop/Massing.AppImage"
-    }
+
+    // The desktop app builds with cargo. These are here so `deno task` lists
+    // everything the repo can do rather than half of it.
+    "dev": "cargo tauri dev",
+    "desktop": "cargo tauri build",
+    // Rust's own tests: the config-file writing, which is the part that edits
+    // files people keep their own settings in.
+    "test:rust": "cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib",
+    // The app end to end: starts the built binary, talks to it the way a CLI
+    // would, stops it. A Node script rather than a Deno one, because it drives
+    // a Rust binary and nothing about it needs a second runtime.
+    "test:desktop": "node test/desktop.e2e.mjs"
   },
   "fmt": {
     "useTabs": false,
@@ -114,17 +36,13 @@
     "indentWidth": 2,
     "singleQuote": true,
     // The browser sources predate this config by a long way and are formatted
-    // by hand to match a house style `deno fmt` does not share. Only the
-    // desktop shell -- new code, written under Deno -- is formatted by it.
-    //
-    // `desktop/web/` is excluded from both because it is browser code that
-    // merely lives here: it runs in the window, not in the runtime, and Deno's
-    // linter reads its `window` references as mistakes.
-    "include": ["desktop/"],
-    "exclude": ["desktop/web/"]
+    // by hand to match a house style `deno fmt` does not share. `desktop/web/`
+    // is browser code too -- it merely lives beside the shell. Nothing is left
+    // for `deno fmt` to own, so it is pointed at nothing rather than at the
+    // hand-formatted sources it would reflow.
+    "include": []
   },
   "lint": {
-    "include": ["desktop/"],
-    "exclude": ["desktop/web/"]
+    "include": []
   }
 }

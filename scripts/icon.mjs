@@ -2,7 +2,7 @@
 /**
  * The application icon, drawn rather than converted.
  *
- * `deno desktop --icon` wants a `.ico` on Windows and a `.png` on macOS, and
+ * Tauri's bundler wants a `.ico` on Windows and PNGs elsewhere, and
  * what this project has is an inline SVG favicon in `index.html`. The usual
  * route from one to the other is a rasteriser — a headless browser, or
  * ImageMagick, or `sharp`. All three are a dependency, and a build step that
@@ -13,7 +13,7 @@
  * forming an isometric cube. Filling three convex polygons is a scanline and
  * some arithmetic, which is the same reasoning that produced `core/gif.js`.
  *
- *   node scripts/icon.mjs      -> desktop/icon.ico, desktop/icon.png
+ *   node scripts/icon.mjs      -> desktop/src-tauri/icons/
  *
  * Run it when the mark changes, which is approximately never; the output is
  * committed so a normal build needs nothing.
@@ -190,12 +190,17 @@ function ico(images) {
 const SIZES = [16, 24, 32, 48, 64, 128, 256];
 const images = SIZES.map((size) => ({ size, data: png(size, render(size)) }));
 
-mkdirSync(resolve(ROOT, 'desktop'), { recursive: true });
-const icoPath = resolve(ROOT, 'desktop/icon.ico');
-const pngPath = resolve(ROOT, 'desktop/icon.png');
+const ICONS = resolve(ROOT, 'desktop/src-tauri/icons');
+mkdirSync(ICONS, { recursive: true });
+const icoPath = resolve(ICONS, 'icon.ico');
+const pngPath = resolve(ICONS, 'icon.png');
 writeFileSync(icoPath, ico(images));
 // macOS and Linux take a PNG; 256 is the size both want most.
 writeFileSync(pngPath, images.at(-1).data);
 
-console.log(`wrote desktop/icon.ico (${SIZES.join(', ')} px, ${(ico(images).length / 1024).toFixed(1)} kB)`);
-console.log(`wrote desktop/icon.png (256 px, ${(images.at(-1).data.length / 1024).toFixed(1)} kB)`);
+// Tauri's bundler also wants these two by name, for Linux desktop entries.
+for (const size of [32, 128]) {
+  const found = images.find((i) => i.size === size);
+  writeFileSync(resolve(ICONS, `${size}x${size}.png`), found.data);
+}
+console.log(`wrote desktop/src-tauri/icons/ (ico ${SIZES.join(', ')} px, plus 32/128/256 png)`);

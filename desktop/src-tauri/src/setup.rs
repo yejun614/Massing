@@ -30,8 +30,16 @@ pub struct Target {
     pub problem: Option<String>,
 }
 
+/// The home directory, overridable so the tests can point at a temporary one.
+///
+/// Reading a variable rather than threading a parameter through every path
+/// function: the override exists for the tests and for nothing else, and a
+/// parameter would put it in the signature of code that never wants it.
 fn home() -> PathBuf {
-    dirs::home_dir().unwrap_or_default()
+    std::env::var_os("MASSING_HOME")
+        .map(PathBuf::from)
+        .or_else(dirs::home_dir)
+        .unwrap_or_default()
 }
 
 fn claude_path() -> PathBuf {
@@ -86,12 +94,27 @@ fn codex_entry(url: &str) -> anyhow::Result<String> {
         .unwrap_or_default()
         .parse::<toml_edit::DocumentMut>()
         .unwrap_or_default();
-    document["mcp_servers"][SERVER_NAME]["url"] = toml_edit::value(url);
-    // Without this the new table is written inline on one line, which is legal
-    // TOML and not what anybody else's entries look like.
-    if let Some(table) = document["mcp_servers"].as_table_mut() {
+
+    let servers = document["mcp_servers"].or_insert(toml_edit::Item::Table(Default::default()));
+    if let Some(table) = servers.as_table_mut() {
+        // Implicit: `[mcp_servers]` is never written as a header of its own,
+        // only as the prefix of the entries under it -- which is how every
+        // example, and everybody's existing file, is laid out.
         table.set_implicit(true);
     }
+
+    /*
+     * Written as a table rather than by assigning to a path.
+     *
+     * `document["mcp_servers"][name]["url"] = value` produces
+     * `massing = { url = "..." }`, which is correct TOML and looks nothing like
+     * the `[mcp_servers.other]` sitting above it. A config file somebody opens
+     * afterwards should not show which entry a program wrote.
+     */
+    let mut entry = toml_edit::Table::new();
+    entry["url"] = toml_edit::value(url);
+    servers[SERVER_NAME] = toml_edit::Item::Table(entry);
+
     Ok(document.to_string())
 }
 
@@ -167,4 +190,89 @@ pub fn register(ids: &[String], url: &str) -> Vec<Target> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A temporary home, and the settings somebody would already have in it.
+    ///
+    /// The whole point of these is the *keeping*: this code edits files people
+    /// have their own work in, and the failure worth testing for is not "did we
+    /// write our entry" but "did everything else survive".
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("massing-setup-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".codex")).unwrap();
+        std::env::set_var("MASSING_HOME", &dir);
+        std::fs::write(
+            dir.join(".codex").join("config.toml"),
+            "# my notes\nmodel = \"gpt-5\"\n\n[mcp_servers.other]\nurl = \"http://example.com/mcp\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(".claude.json"),
+            r#"{"numStartups":42,"mcpServers":{"other":{"type":"http","url":"http://x/"}}}"#,
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn keeps_what_was_already_there() {
+        let dir = scratch("keeps");
+        let url = "http://127.0.0.1:7337/mcp";
+        let done = register(
+            &["claude".into(), "codex".into(), "antigravity".into()],
+            url,
+        );
+        assert!(done.iter().all(|t| t.registered), "{:?}", done.iter().map(|t| &t.problem).collect::<Vec<_>>());
+
+        let codex = std::fs::read_to_string(dir.join(".codex").join("config.toml")).unwrap();
+        assert!(codex.contains("# my notes"), "comment lost:\n{codex}");
+        assert!(codex.contains("model = \"gpt-5\""), "setting lost:\n{codex}");
+        assert!(codex.contains("[mcp_servers.other]"), "other server lost:\n{codex}");
+        assert!(codex.contains("[mcp_servers.massing]"), "ours missing:\n{codex}");
+        assert!(codex.contains(url), "url missing:\n{codex}");
+
+        let claude: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude.json")).unwrap()).unwrap();
+        assert_eq!(claude["numStartups"], 42, "unrelated state lost");
+        assert!(claude["mcpServers"]["other"].is_object(), "other server lost");
+        assert_eq!(claude["mcpServers"]["massing"]["type"], "http");
+        assert_eq!(claude["mcpServers"]["massing"]["url"], url);
+
+        let anti: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join(".gemini").join("config").join("mcp_config.json")).unwrap(),
+        )
+        .unwrap();
+        // Antigravity reads `serverUrl` and documents `url` as ignored.
+        assert_eq!(anti["mcpServers"]["massing"]["serverUrl"], url);
+        assert!(anti["mcpServers"]["massing"]["url"].is_null());
+
+        let backup =
+            std::fs::read_to_string(dir.join(".codex").join("config.toml.massing-backup")).unwrap();
+        assert!(backup.contains("# my notes"), "no backup of the original");
+    }
+
+    #[test]
+    fn a_second_run_replaces_rather_than_duplicates() {
+        // The normal case: the port changes between runs and the button is
+        // pressed again.
+        let dir = scratch("again");
+        register(&["codex".into(), "claude".into()], "http://127.0.0.1:7337/mcp");
+        register(&["codex".into(), "claude".into()], "http://127.0.0.1:9999/mcp");
+
+        let codex = std::fs::read_to_string(dir.join(".codex").join("config.toml")).unwrap();
+        assert_eq!(codex.matches("[mcp_servers.massing]").count(), 1, "duplicated:\n{codex}");
+        assert!(codex.contains("9999"), "not updated:\n{codex}");
+        assert!(codex.contains("[mcp_servers.other]"), "other server lost:\n{codex}");
+
+        let claude: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude.json")).unwrap()).unwrap();
+        assert!(claude["mcpServers"]["massing"]["url"].as_str().unwrap().contains("9999"));
+
+        assert_eq!(survey().iter().filter(|t| t.registered).count(), 2);
+    }
 }
