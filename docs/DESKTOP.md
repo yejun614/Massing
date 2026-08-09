@@ -263,16 +263,33 @@ which names neither the permission nor the setting.
 is how to exercise the bundling before committing to a tag. Pull requests get
 `check` and nothing heavier.
 
-To cut a release: bump `version` in `tauri.conf.json`, tag, push the tag.
+To cut a release:
 
 ```sh
-git push origin main          # the tag is what builds; this just publishes the commit
+npm run release 0.1.2 --push
+```
+
+That sets the version in all three places it lives — `tauri.conf.json` for the
+app and the updater, `Cargo.toml` for the version the MCP server reports, and
+`package.json` — then commits, tags and pushes. It refuses on a dirty tree, on
+a tag that exists, and off `main`, because a release is public the moment it
+happens.
+
+Without `--push` it stops after the tag and prints the two commands.
+
+CI checks the same thing from the other side: a tagged build fails immediately
+if the tag and `tauri.conf.json` disagree. They come from different places —
+the app's version is compiled in, the manifest's comes from the tag — and an
+app comparing the wrong two numbers either never updates or updates to
+itself.
+
+By hand, if you would rather:
+
+```sh
+git push origin main          # starts nothing; the tag is what builds
 git tag v0.2.0
 git push origin v0.2.0
 ```
-
-Pushing `main` starts nothing, so the order does not matter and the two no
-longer race each other for runners.
 
 The release is created as a **draft**, so nothing reaches anybody until it is
 published by hand — and `latest.json` is only served once it is. Pushes that

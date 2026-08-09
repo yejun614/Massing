@@ -124,6 +124,20 @@ jobs:
             echo "just the base64. See docs/DESKTOP.md."
             exit 1
           fi
+      # The app's version comes from `tauri.conf.json` and the manifest's from
+      # the tag. If they disagree, an installed app compares the wrong numbers
+      # and either never updates or updates to itself.
+      - name: The tag has to match the version
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        run: |
+          config=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$config" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json ($config)."
+            echo "Use 'npm run release <version>', which sets all three and tags to match."
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
