@@ -131,10 +131,23 @@ export async function writeBytes(path: string, bytes: Uint8Array): Promise<void>
  * else changing it.
  */
 export function watchFile(path: string, onChange: () => void) {
-  const separator = path.includes('\\') ? '\\' : '/';
-  const at = path.lastIndexOf(separator);
+  /*
+   * Split on whichever separator comes last, not on "the Windows one".
+   *
+   * Paths arrive from more than one place — a native dialog gives
+   * `C:\a\b.json`, and anything assembled in the page or a test gives
+   * `C:\a/b.json`. Picking a single separator up front reads the second as one
+   * long filename in the wrong directory, and the watcher then follows a
+   * directory nothing is happening in and reports nothing, for ever.
+   *
+   * The events are then matched on the filename alone, because the separator
+   * in the path we were *given* says nothing about the one the OS reports
+   * with: Windows hands back `C:\a\b.json` however the path was spelled here.
+   */
+  const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   const directory = at > 0 ? path.slice(0, at) : '.';
   const name = path.slice(at + 1);
+  const named = (p: string) => p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) === name;
 
   let watcher: Deno.FsWatcher | null = null;
   // `ReturnType`, not `number`: Deno types `setTimeout` as Node's, which hands
@@ -153,7 +166,7 @@ export function watchFile(path: string, onChange: () => void) {
     for await (const event of watcher) {
       if (stopped) break;
       if (event.kind === 'access') continue;
-      if (!event.paths.some((p) => p.endsWith(separator + name))) continue;
+      if (!event.paths.some(named)) continue;
       clearTimeout(timer);
       timer = setTimeout(() => {
         if (stopped || Date.now() < ignoreUntil) return;

@@ -21,6 +21,15 @@ import { pickPath, readFile, watchFile, writeBytes, writeFile } from './files.ts
 
 type Watcher = ReturnType<typeof watchFile>;
 
+/**
+ * How long a tool waits on the window.
+ *
+ * Long enough for a large document to be parsed, laid out and rendered;
+ * short enough that a CLI blocked on a window that has stopped answering
+ * finds out inside one turn rather than one coffee.
+ */
+const CALL_TIMEOUT_MS = 15_000;
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -45,6 +54,20 @@ export function createBridge() {
 
   let watcher: Watcher | null = null;
   let watching: string | null = null;
+
+  /**
+   * Calls the runtime has made into the page and is waiting on.
+   *
+   * The MCP tools act on the document in the window, which means the runtime
+   * has to ask the page a question and get an answer back. The push channel is
+   * one-way, so a call goes out over it with an id and the answer comes back as
+   * an ordinary POST carrying the same id. This map is the middle.
+   */
+  const waiting = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (err: Error) => void; timer: number }
+  >();
+  let nextId = 0;
 
   function push(event: unknown) {
     const chunk = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
@@ -83,12 +106,44 @@ export function createBridge() {
     }
   }
 
+  /**
+   * Ask the window to do something, and wait for the answer.
+   *
+   * Rejecting when no window is listening is the important case, not an edge
+   * one: it is what a CLI sees when the app is not running, or is still
+   * starting, and "the window is not listening" is an answer a model can act
+   * on where a request that hangs for ever is not.
+   */
+  function ask(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    if (listeners.size === 0) {
+      return Promise.reject(new Error('The Massing window is not listening. Is the app open?'));
+    }
+    const id = `c${++nextId}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        waiting.delete(id);
+        reject(new Error(`The window did not answer ${name} within ${CALL_TIMEOUT_MS}ms.`));
+      }, CALL_TIMEOUT_MS);
+      waiting.set(id, { resolve, reject, timer: timer as unknown as number });
+      push({ type: 'call', id, name, args });
+    });
+  }
+
   return {
     get watching() {
       return watching;
     },
+    get connected() {
+      return listeners.size > 0;
+    },
+    ask,
     push,
     stop() {
+      for (const [, pending] of waiting) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error('The app is shutting down.'));
+      }
+      waiting.clear();
       watcher?.stop();
       for (const listener of [...listeners]) {
         try {
@@ -185,6 +240,23 @@ export function createBridge() {
         } catch (err) {
           return json({ error: String((err as Error).message ?? err) }, 500);
         }
+      }
+
+      /*
+       * The other half of `ask`. The page has finished a call and is handing
+       * back what it got — or what went wrong, which travels as a value rather
+       * than as an HTTP error, because the failure belongs to the tool that
+       * asked and not to this request.
+       */
+      if (route === 'result') {
+        const payload = await req.json().catch(() => ({}));
+        const pending = waiting.get(payload?.id);
+        if (!pending) return json({ ok: false, error: 'no call is waiting on that id' }, 409);
+        waiting.delete(payload.id);
+        clearTimeout(pending.timer);
+        if (payload.ok) pending.resolve(payload.value);
+        else pending.reject(new Error(payload.error ?? 'the window did not say what went wrong'));
+        return json({ ok: true });
       }
 
       if (route === 'watch') {

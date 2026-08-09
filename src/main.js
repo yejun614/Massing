@@ -506,5 +506,14 @@ async function copyPrompt() {
   }
 }
 
-// Exposed for the console and for automated checks.
-window.massing = { store, scene, commands, io, exporter, pointer, prompt: LLM_PROMPT };
+/*
+ * Exposed for the console and for automated checks.
+ *
+ * `tabs` joined the list when the desktop build needed to add a drawing to the
+ * open file from outside the window. It belongs here anyway: this is the
+ * handle on "the whole file" as opposed to the drawing on screen, and every
+ * other member of this object had already been reached for from a console at
+ * some point while the one that answers "what is actually in this file" was
+ * the one you could not get at.
+ */
+window.massing = { store, scene, commands, io, exporter, pointer, tabs, prompt: LLM_PROMPT };

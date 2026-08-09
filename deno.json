@@ -10,12 +10,35 @@
   // Vercel parse `api/*.js` as ESM, and `engines.node` picks the function
   // runtime. Deleting it would break the deployment, not tidy it.
   "version": "0.1.0",
+  // The project's only dependencies, and they reach exactly as far as the
+  // desktop shell. `src/` imports nothing and the web bundle is unchanged --
+  // `grep npm: src/` stays empty, which is the property the README claims.
+  //
+  // v2 of the SDK rather than the older `@modelcontextprotocol/sdk`, for one
+  // concrete reason: `createMcpHandler` hands back a web-standard `{ fetch }`,
+  // which drops straight into `Deno.serve`. v1's HTTP transport is built around
+  // Node's request and response objects and would need an adapter to run here.
+  "imports": {
+    "@modelcontextprotocol/server": "npm:@modelcontextprotocol/server@^2.0.0",
+    "zod/v4": "npm:zod@^4.2.0/v4"
+  },
+  // From Deno's own cache, with no `node_modules/` in the tree. A
+  // `package.json` sits here for Vercel's sake and Deno reads it as an
+  // intention to keep dependencies locally, which is not what it is: nothing
+  // in `package.json` has ever had a dependency, and a `node_modules/`
+  // appearing next to it would be a second, contradictory answer to "what does
+  // this project install".
+  "nodeModulesDir": "none",
   "tasks": {
     // Permissions are named rather than `-A`, so the list itself says what the
     // build is allowed to touch. Read the tree, write `dist/` and the two
     // generated files, read the environment for MASSING_VERCEL_FEATURES.
     "build": "deno run --allow-read --allow-write --allow-env build.js",
     "test": "deno run --allow-read --allow-env test/run.mjs",
+    // The desktop app end to end: starts it, talks to it as a CLI would, stops
+    // it. Separate from `test` because it needs a process and two ports, and
+    // `test` is the suite that also runs in a browser.
+    "test:desktop": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run test/desktop.test.ts",
     // The desktop app, built. `deno desktop` compiles rather than runs, so
     // this produces a bundle and the launcher inside it is what you start.
     //
