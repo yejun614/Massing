@@ -101,7 +101,15 @@ impl Bridge {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, tx);
 
-        self.push(serde_json::to_value(Call { kind: "call", id, name, args }).unwrap());
+        self.push(
+            serde_json::to_value(Call {
+                kind: "call",
+                id,
+                name,
+                args,
+            })
+            .unwrap(),
+        );
 
         match tokio::time::timeout(CALL_TIMEOUT, rx).await {
             Ok(Ok(answer)) => answer,

@@ -46,13 +46,19 @@ pub struct AddTabArgs {
 #[derive(Clone)]
 pub struct Massing {
     bridge: Arc<Bridge>,
+    /// Built by `#[tool_router]` and read by `#[tool_handler]`, both of which
+    /// expand after the lint runs — so it looks unread and is not.
+    #[allow(dead_code)]
     tool_router: ToolRouter<Massing>,
 }
 
 #[tool_router]
 impl Massing {
     pub fn new(bridge: Arc<Bridge>) -> Self {
-        Self { bridge, tool_router: Self::tool_router() }
+        Self {
+            bridge,
+            tool_router: Self::tool_router(),
+        }
     }
 
     /// Every tool is the same shape: ask the window, hand back what it said.
@@ -87,7 +93,8 @@ impl Massing {
         &self,
         Parameters(ReplaceArgs { document }): Parameters<ReplaceArgs>,
     ) -> Result<CallToolResult, McpError> {
-        self.ask("replace_diagram", json!({ "document": document })).await
+        self.ask("replace_diagram", json!({ "document": document }))
+            .await
     }
 
     #[tool(
@@ -101,7 +108,8 @@ impl Massing {
         &self,
         Parameters(AddTabArgs { name, document }): Parameters<AddTabArgs>,
     ) -> Result<CallToolResult, McpError> {
-        self.ask("add_tab", json!({ "name": name, "document": document })).await
+        self.ask("add_tab", json!({ "name": name, "document": document }))
+            .await
     }
 
     #[tool(
@@ -126,8 +134,7 @@ impl ServerHandler for Massing {
         let mut who = Implementation::from_build_env();
         who.name = "massing".into();
         who.version = env!("CARGO_PKG_VERSION").into();
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(who)
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(who)
     }
 }
 

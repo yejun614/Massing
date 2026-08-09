@@ -6,7 +6,7 @@
 //! desktop app has, and running the tree means an edit is one reload away.
 
 use std::convert::Infallible;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -59,12 +59,15 @@ fn content_type(path: &str) -> &'static str {
 /// anything installing one has to have finished before `main.js` starts. Module
 /// scripts run in document order, and that is the entire mechanism.
 fn desktopify(html: &str) -> String {
-    html.replace("</head>", "<meta name=\"massing-desktop\" content=\"1\">\n</head>")
-        .replace(
-            "<script type=\"module\" src=\"src/main.js\"></script>",
-            "<script type=\"module\" src=\"/__massing/shim.js\"></script>\n\
+    html.replace(
+        "</head>",
+        "<meta name=\"massing-desktop\" content=\"1\">\n</head>",
+    )
+    .replace(
+        "<script type=\"module\" src=\"src/main.js\"></script>",
+        "<script type=\"module\" src=\"/__massing/shim.js\"></script>\n\
              <script type=\"module\" src=\"src/main.js\"></script>",
-        )
+    )
 }
 
 fn no_store(kind: &str, body: Vec<u8>) -> Response {
@@ -86,8 +89,8 @@ fn not_found() -> Response {
 }
 
 /// Read a file under the assets root, refusing anything that climbs out of it.
-async fn send(root: &PathBuf, relative: &str) -> Response {
-    let mut full = root.clone();
+async fn send(root: &Path, relative: &str) -> Response {
+    let mut full = root.to_path_buf();
     for part in relative.split('/') {
         // `..` never reaches the filesystem; there is no legitimate request
         // here that needs it, so it is refused rather than resolved.
@@ -132,7 +135,9 @@ async fn editor(State(state): State<AppState>, uri: Uri) -> Response {
 // The bridge
 // ---------------------------------------------------------------------------
 
-async fn events(State(state): State<AppState>) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
+async fn events(
+    State(state): State<AppState>,
+) -> Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>> {
     let stream = BroadcastStream::new(state.bridge.events.subscribe())
         .filter_map(|line| line.ok().map(|data| Ok(Event::default().data(data))));
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
@@ -140,7 +145,10 @@ async fn events(State(state): State<AppState>) -> Sse<impl futures_core::Stream<
 
 async fn dialog(State(state): State<AppState>, uri: Uri, Json(body): Json<Value>) -> Json<Value> {
     let save = uri.path().ends_with("save");
-    let suggested = body.get("suggested").and_then(Value::as_str).map(str::to_owned);
+    let suggested = body
+        .get("suggested")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     match files::pick(&state.app, save, suggested).await {
         // A dismissed dialog and one that could not be shown are the same
         // answer; the page falls back to what a browser would do.
@@ -158,17 +166,29 @@ pub fn base_name(path: &str) -> String {
 
 async fn read(Json(body): Json<Value>) -> Response {
     let Some(path) = body.get("path").and_then(Value::as_str) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "read needs a path" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "read needs a path" })),
+        )
+            .into_response();
     };
     match tokio::fs::read_to_string(path).await {
         Ok(text) => Json(json!({ "text": text, "name": base_name(path) })).into_response(),
-        Err(err) => (StatusCode::NOT_FOUND, Json(json!({ "error": err.to_string() }))).into_response(),
+        Err(err) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": err.to_string() })),
+        )
+            .into_response(),
     }
 }
 
 async fn write(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let Some(path) = body.get("path").and_then(Value::as_str) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "write needs a path" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "write needs a path" })),
+        )
+            .into_response();
     };
     let text = body.get("text").and_then(Value::as_str).unwrap_or("");
     // Announced before the write, not after: the events can arrive while the
@@ -177,7 +197,11 @@ async fn write(State(state): State<AppState>, Json(body): Json<Value>) -> Respon
     state.bridge.ours();
     match tokio::fs::write(path, text).await {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": err.to_string() }))).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": err.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -195,14 +219,25 @@ async fn export(State(state): State<AppState>, Json(body): Json<Value>) -> Respo
     match crate::base64_decode(encoded) {
         Some(bytes) => match tokio::fs::write(&path, bytes).await {
             Ok(()) => Json(json!({ "path": path, "name": base_name(&path) })).into_response(),
-            Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": err.to_string() }))).into_response(),
+            Err(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": err.to_string() })),
+            )
+                .into_response(),
         },
-        None => (StatusCode::BAD_REQUEST, Json(json!({ "error": "not base64" }))).into_response(),
+        None => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "not base64" })),
+        )
+            .into_response(),
     }
 }
 
 async fn watch(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
-    let path = body.get("path").and_then(Value::as_str).filter(|p| !p.is_empty());
+    let path = body
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty());
     state.bridge.watch(path.map(str::to_owned));
     Json(json!({ "watching": path }))
 }
@@ -214,7 +249,11 @@ async fn result(State(state): State<AppState>, Json(body): Json<Value>) -> Respo
     if settled {
         Json(json!({ "ok": true })).into_response()
     } else {
-        (StatusCode::CONFLICT, Json(json!({ "error": "no call is waiting on that id" }))).into_response()
+        (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "no call is waiting on that id" })),
+        )
+            .into_response()
     }
 }
 
@@ -231,21 +270,38 @@ async fn theme(State(state): State<AppState>, Json(body): Json<Value>) -> Json<V
 
 async fn mcp_targets(State(state): State<AppState>) -> Json<Value> {
     let url = state.bridge.mcp_url.lock().unwrap().clone();
-    let targets = if url.is_some() { setup::survey() } else { vec![] };
+    let targets = if url.is_some() {
+        setup::survey()
+    } else {
+        vec![]
+    };
     Json(json!({ "url": url, "targets": targets }))
 }
 
 async fn mcp_register(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let Some(url) = state.bridge.mcp_url.lock().unwrap().clone() else {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "the MCP server is switched off" }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "the MCP server is switched off" })),
+        )
+            .into_response();
     };
     let ids: Vec<String> = body
         .get("ids")
         .and_then(Value::as_array)
-        .map(|list| list.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default();
     if ids.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "nothing chosen" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "nothing chosen" })),
+        )
+            .into_response();
     }
     Json(json!({ "url": url, "targets": setup::register(&ids, &url) })).into_response()
 }

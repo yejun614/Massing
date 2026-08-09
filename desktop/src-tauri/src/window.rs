@@ -29,8 +29,10 @@ pub fn install_menu(window: &WebviewWindow) -> tauri::Result<()> {
     for (id, label, accelerator) in ITEMS {
         file_items.push(MenuItem::with_id(app, id, label, true, Some(accelerator))?);
     }
-    let file_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
-        file_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<Wry>).collect();
+    let file_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = file_items
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<Wry>)
+        .collect();
     let file = Submenu::with_items(app, "File", true, &file_refs)?;
 
     // Undo, cut, copy and paste are the operating system's own; the editor

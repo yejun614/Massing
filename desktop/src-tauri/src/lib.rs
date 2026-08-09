@@ -30,7 +30,9 @@ use bridge::Bridge;
 fn assets(app: &tauri::AppHandle) -> PathBuf {
     if cfg!(debug_assertions) {
         // `src-tauri/` → repo root.
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
     } else {
         app.path()
             .resource_dir()
@@ -115,11 +117,14 @@ pub fn run() {
                     .ok()
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(mcp::DEFAULT_PORT);
-                let listener = std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, wanted)))
-                    .or_else(|_| {
-                        eprintln!("massing: {wanted} is taken, taking whatever is free instead");
-                        std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-                    })?;
+                let listener =
+                    std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, wanted)))
+                        .or_else(|_| {
+                            eprintln!(
+                                "massing: {wanted} is taken, taking whatever is free instead"
+                            );
+                            std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                        })?;
                 let actual = listener.local_addr()?.port();
                 listener.set_nonblocking(true)?;
 

@@ -22,7 +22,10 @@ const SETTLE: Duration = Duration::from_millis(120);
 const OURS_FOR: Duration = Duration::from_millis(600);
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 /// Ask the operating system where a file should go.
@@ -73,7 +76,8 @@ pub struct Watch {
 
 impl Watch {
     pub fn ours(&self) {
-        self.ours_until.store(now_ms() + OURS_FOR.as_millis() as u64, Ordering::Relaxed);
+        self.ours_until
+            .store(now_ms() + OURS_FOR.as_millis() as u64, Ordering::Relaxed);
     }
 }
 
@@ -104,10 +108,11 @@ where
         if matches!(event.kind, EventKind::Access(_)) {
             return;
         }
-        let hit = event
-            .paths
-            .iter()
-            .any(|p| p.file_name().map(|n| Some(n.to_os_string()) == name).unwrap_or(false));
+        let hit = event.paths.iter().any(|p| {
+            p.file_name()
+                .map(|n| Some(n.to_os_string()) == name)
+                .unwrap_or(false)
+        });
         if hit {
             let _ = events_tx.send(());
         }
@@ -134,5 +139,10 @@ where
         }
     });
 
-    Ok(Watch { path, ours_until, _watcher: watcher, _stop: stop_tx })
+    Ok(Watch {
+        path,
+        ours_until,
+        _watcher: watcher,
+        _stop: stop_tx,
+    })
 }

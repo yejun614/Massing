@@ -28,8 +28,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - run: npm test
-      - run: cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
-      - run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml -- -D warnings
+      # Through the npm script rather than spelled out again here. Two copies
+      # of a lint command drift, and the copy that matters is the one somebody
+      # can run before pushing — this failed CI once already because the local
+      # side of it did not exist.
+      - run: npm run lint:rust
       - run: npm run test:rust
       # `build.js` writes the JSON Schema and the Claude skill from the
       # component registry. A commit that edited the registry and not those is

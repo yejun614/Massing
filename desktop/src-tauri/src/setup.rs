@@ -49,7 +49,10 @@ fn codex_path() -> PathBuf {
     home().join(".codex").join("config.toml")
 }
 fn antigravity_path() -> PathBuf {
-    home().join(".gemini").join("config").join("mcp_config.json")
+    home()
+        .join(".gemini")
+        .join("config")
+        .join("mcp_config.json")
 }
 
 fn read(path: &PathBuf) -> Option<String> {
@@ -135,9 +138,24 @@ struct Known {
 }
 
 const KNOWN: [Known; 3] = [
-    Known { id: "claude", label: "Claude Code", path: claude_path, build: claude_entry },
-    Known { id: "codex", label: "Codex", path: codex_path, build: codex_entry },
-    Known { id: "antigravity", label: "Antigravity", path: antigravity_path, build: antigravity_entry },
+    Known {
+        id: "claude",
+        label: "Claude Code",
+        path: claude_path,
+        build: claude_entry,
+    },
+    Known {
+        id: "codex",
+        label: "Codex",
+        path: codex_path,
+        build: codex_entry,
+    },
+    Known {
+        id: "antigravity",
+        label: "Antigravity",
+        path: antigravity_path,
+        build: antigravity_entry,
+    },
 ];
 
 /// What is on this machine, and what state it is in. Reads only.
@@ -231,24 +249,42 @@ mod tests {
             &["claude".into(), "codex".into(), "antigravity".into()],
             url,
         );
-        assert!(done.iter().all(|t| t.registered), "{:?}", done.iter().map(|t| &t.problem).collect::<Vec<_>>());
+        assert!(
+            done.iter().all(|t| t.registered),
+            "{:?}",
+            done.iter().map(|t| &t.problem).collect::<Vec<_>>()
+        );
 
         let codex = std::fs::read_to_string(dir.join(".codex").join("config.toml")).unwrap();
         assert!(codex.contains("# my notes"), "comment lost:\n{codex}");
-        assert!(codex.contains("model = \"gpt-5\""), "setting lost:\n{codex}");
-        assert!(codex.contains("[mcp_servers.other]"), "other server lost:\n{codex}");
-        assert!(codex.contains("[mcp_servers.massing]"), "ours missing:\n{codex}");
+        assert!(
+            codex.contains("model = \"gpt-5\""),
+            "setting lost:\n{codex}"
+        );
+        assert!(
+            codex.contains("[mcp_servers.other]"),
+            "other server lost:\n{codex}"
+        );
+        assert!(
+            codex.contains("[mcp_servers.massing]"),
+            "ours missing:\n{codex}"
+        );
         assert!(codex.contains(url), "url missing:\n{codex}");
 
         let claude: Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude.json")).unwrap())
+                .unwrap();
         assert_eq!(claude["numStartups"], 42, "unrelated state lost");
-        assert!(claude["mcpServers"]["other"].is_object(), "other server lost");
+        assert!(
+            claude["mcpServers"]["other"].is_object(),
+            "other server lost"
+        );
         assert_eq!(claude["mcpServers"]["massing"]["type"], "http");
         assert_eq!(claude["mcpServers"]["massing"]["url"], url);
 
         let anti: Value = serde_json::from_str(
-            &std::fs::read_to_string(dir.join(".gemini").join("config").join("mcp_config.json")).unwrap(),
+            &std::fs::read_to_string(dir.join(".gemini").join("config").join("mcp_config.json"))
+                .unwrap(),
         )
         .unwrap();
         // Antigravity reads `serverUrl` and documents `url` as ignored.
@@ -265,17 +301,34 @@ mod tests {
         // The normal case: the port changes between runs and the button is
         // pressed again.
         let dir = scratch("again");
-        register(&["codex".into(), "claude".into()], "http://127.0.0.1:7337/mcp");
-        register(&["codex".into(), "claude".into()], "http://127.0.0.1:9999/mcp");
+        register(
+            &["codex".into(), "claude".into()],
+            "http://127.0.0.1:7337/mcp",
+        );
+        register(
+            &["codex".into(), "claude".into()],
+            "http://127.0.0.1:9999/mcp",
+        );
 
         let codex = std::fs::read_to_string(dir.join(".codex").join("config.toml")).unwrap();
-        assert_eq!(codex.matches("[mcp_servers.massing]").count(), 1, "duplicated:\n{codex}");
+        assert_eq!(
+            codex.matches("[mcp_servers.massing]").count(),
+            1,
+            "duplicated:\n{codex}"
+        );
         assert!(codex.contains("9999"), "not updated:\n{codex}");
-        assert!(codex.contains("[mcp_servers.other]"), "other server lost:\n{codex}");
+        assert!(
+            codex.contains("[mcp_servers.other]"),
+            "other server lost:\n{codex}"
+        );
 
         let claude: Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude.json")).unwrap()).unwrap();
-        assert!(claude["mcpServers"]["massing"]["url"].as_str().unwrap().contains("9999"));
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude.json")).unwrap())
+                .unwrap();
+        assert!(claude["mcpServers"]["massing"]["url"]
+            .as_str()
+            .unwrap()
+            .contains("9999"));
 
         assert_eq!(survey().iter().filter(|t| t.registered).count(), 2);
     }
