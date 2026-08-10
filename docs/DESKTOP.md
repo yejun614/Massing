@@ -392,6 +392,25 @@ at launch stays quiet when there is nothing to report, because an app that says
 working channel and a broken one look identical, and this is how you tell them
 apart. It is also the one route that ignores a skipped version.
 
+## Closing with unsaved work
+
+The X button does not close the window. Tauri's `CloseRequested` is prevented,
+the page is told, and the only thing that actually closes the window afterwards
+is `POST /__massing/close` — so a diagram with unsaved changes cannot be closed
+over by anything but an answer.
+
+Whether there is unsaved work is the page's to know, and so is what saving it
+means, since Save may have to open a file dialog first. Hence the dialog lives
+in `desktop/web/close-ui.js` and has three answers: **Close without saving**,
+**Cancel**, and **Save** — which closes only once the save actually happened,
+so dismissing the file dialog leaves the app open rather than reading as
+"throw it away". A clean document skips the question entirely.
+
+The one exception is a page that has stopped listening — a crashed webview, a
+reload caught mid-flight. There is nobody to ask then, and a window that cannot
+be closed at all is a worse failure than the one this prevents, so the close
+goes through.
+
 **About Massing** shows the version the running binary actually reports, plus
 the platform, the Tauri version and the MCP endpoint. Everything in it is read
 from the app at runtime rather than written into the page, because a version
@@ -434,3 +453,4 @@ number somebody forgot to bump is worse than none.
 | `src-tauri/src/window.rs` | the menu, the theme, the port file |
 | `desktop/web/shim.js` | the page's half: the file-picker shim, and the tool bodies |
 | `desktop/web/update-ui.js` | the offer dialog: update, skip this version, or later |
+| `desktop/web/close-ui.js` | the X button, when the document has unsaved changes |

@@ -172,6 +172,9 @@ pub fn run() {
             .min_inner_size(640.0, 480.0)
             .build()?;
             window::install_menu(&window, Arc::clone(&bridge))?;
+            // After the menu, though the two are independent: this one only
+            // has to be in place before somebody can reach the X button.
+            window::guard_close(&window, Arc::clone(&bridge));
 
             Ok(())
         })

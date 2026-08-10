@@ -279,6 +279,39 @@ await withUpdater(async ({ seen }) => {
 });
 channel.close();
 
+// --- closing over unsaved work ----------------------------------------------
+/*
+ * The X button cannot be pressed from here, so what is checked is the half
+ * that decides: the window closes when the page says so and at no other time.
+ * `close-ui.js`, which is what turns a refused close into an answer, is checked
+ * in a browser instead.
+ */
+{
+  const child = spawn(BIN, [], { env: { ...process.env, MASSING_MCP: 'off', MASSING_STATE: stateDir } });
+  const at = await new Promise((resolve) => {
+    let text = '';
+    child.stderr.on('data', (chunk) => {
+      text += chunk;
+      const m = text.match(/serving the editor on 127\.0\.0\.1:(\d+)/);
+      if (m) resolve(`http://127.0.0.1:${m[1]}`);
+    });
+    setTimeout(() => resolve(null), 30000);
+  });
+  const gone = new Promise((r) => child.on('exit', () => r(true)));
+  // A listener, so the app is in the state where it would refuse to close.
+  const stream = await fetch(`${at}/__massing/events`);
+  stream.body.getReader().read().catch(() => {});
+  await new Promise((r) => setTimeout(r, 800));
+  check('the app is up before being asked to close', (await fetch(`${at}/`)).status === 200);
+  await fetch(`${at}/__massing/close`, { method: 'POST' }).catch(() => {});
+  // Generous: this is a real window and two servers being torn down, and the
+  // machine may be busy with a compile. A tight bound here fails on the load
+  // rather than on the behaviour.
+  const closed = await Promise.race([gone, new Promise((r) => setTimeout(() => r(false), 20000))]);
+  check('the page can close the window', closed === true);
+  child.kill();
+}
+
 for (const l of ok) console.log(`  ok   ${l}`);
 for (const l of bad) console.log(`  FAIL ${l}`);
 console.log(`${ok.length} passed, ${bad.length} failed`);

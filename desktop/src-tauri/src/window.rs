@@ -94,6 +94,43 @@ pub fn install_menu(window: &WebviewWindow, bridge: Arc<Bridge>) -> tauri::Resul
     Ok(())
 }
 
+/// Refuse to close, and ask the page whether that was meant.
+///
+/// Whether there is unsaved work is the page's to know — the shell has never
+/// seen the document — and so is what saving it would mean, since Save may have
+/// to open a file dialog first. So the close is prevented, the page is told,
+/// and the only thing that actually closes the window afterwards is
+/// `POST /__massing/close`. The dialog and its three answers live in
+/// `desktop/web/close-ui.js`.
+///
+/// **Unless there is nobody to ask.** A page that has stopped listening — a
+/// crashed webview, a reload caught mid-flight — would otherwise leave a window
+/// that cannot be closed at all, which is a worse failure than the one this
+/// prevents. No listener, no question.
+pub fn guard_close(window: &WebviewWindow, bridge: Arc<Bridge>) {
+    window.on_window_event(move |event| {
+        let tauri::WindowEvent::CloseRequested { api, .. } = event else {
+            return;
+        };
+        if !bridge.connected() {
+            return;
+        }
+        api.prevent_close();
+        bridge.push(serde_json::json!({ "type": "close-requested" }));
+    });
+}
+
+/// Close it, because the page said so.
+///
+/// `destroy` rather than `close`: `close` raises `CloseRequested` again, which
+/// is the guard above, which asks the page again — a window that answers its
+/// own question for ever and never shuts.
+pub fn close_now(app: &AppHandle) {
+    if let Some(window) = app.webview_windows().values().next() {
+        let _ = window.destroy();
+    }
+}
+
 /// Make the window frame match the editor inside it.
 ///
 /// Reported by the page rather than read from the system, because the two

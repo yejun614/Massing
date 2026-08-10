@@ -303,6 +303,15 @@ async fn check_updates(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "ok": true }))
 }
 
+/// The page has decided the window may go.
+///
+/// The only way out: `window.rs` prevents every close it can and waits for
+/// this, so unsaved work cannot be closed over by anything but an answer.
+async fn close_window(State(state): State<AppState>) -> Json<Value> {
+    crate::window::close_now(&state.app);
+    Json(json!({ "ok": true }))
+}
+
 /// Yes to the offer.
 ///
 /// Answers immediately and installs behind it, because on Windows installing
@@ -373,6 +382,7 @@ pub fn router(state: AppState) -> Router {
         .route("/__massing/result", post(result))
         .route("/__massing/theme", post(theme))
         .route("/__massing/about", post(about))
+        .route("/__massing/close", post(close_window))
         .route("/__massing/check-updates", post(check_updates))
         .route("/__massing/update/install", post(update_install))
         .route("/__massing/update/skip", post(update_skip))

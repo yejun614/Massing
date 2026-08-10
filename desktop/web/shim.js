@@ -33,6 +33,7 @@ import { misplaced, overConnected, underDrawn } from '/src/core/assistant.js';
 import { installMcpButton } from './mcp-ui.js';
 import { showAbout } from './about.js';
 import { showUpdate } from './update-ui.js';
+import { confirmClose } from './close-ui.js';
 
 const API = '/__massing';
 
@@ -154,6 +155,9 @@ function install() {
     // Found, not installed. What happens next is the person's to decide, and
     // on Windows it ends this process -- so it is asked rather than announced.
     if (message.type === 'update') showUpdate(message);
+    // The window has refused to close and is waiting to be told. Nothing else
+    // closes it, so every path out of that dialog has to end in an answer.
+    if (message.type === 'close-requested') confirmClose();
   };
 }
 
