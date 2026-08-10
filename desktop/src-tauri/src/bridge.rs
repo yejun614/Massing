@@ -39,9 +39,15 @@ pub struct Bridge {
     pub watching: Mutex<Option<crate::files::Watch>>,
     /// Where a CLI should point to reach the MCP server.
     pub mcp_url: Mutex<Option<String>>,
-    /// A notice that arrived before there was a window to show it in.
-    held: Mutex<Option<String>>,
+    /// What arrived before there was a window to show it in.
+    held: Mutex<Vec<String>>,
 }
+
+/// How much can queue up before a window opens.
+///
+/// Small on purpose. Two things hold messages — a notice and an update offer —
+/// and anything past that is a loop nobody wants replayed into a fresh window.
+const MAX_HELD: usize = 8;
 
 #[derive(Deserialize)]
 pub struct CallResult {
@@ -71,7 +77,7 @@ impl Bridge {
             next_id: Mutex::new(0),
             watching: Mutex::new(None),
             mcp_url: Mutex::new(None),
-            held: Mutex::new(None),
+            held: Mutex::new(Vec::new()),
         })
     }
 
@@ -86,26 +92,32 @@ impl Bridge {
         let _ = self.events.send(event.to_string());
     }
 
-    /// Something to tell the person, whenever there is somebody to tell.
+    /// Something that must not be dropped, whenever there is somebody to tell.
     ///
-    /// Notices are the one kind of message that must not be dropped. The
-    /// update check starts before the window exists and finishes on network
-    /// time, so "your update is ready" was routinely being broadcast to nobody
-    /// and thrown away — the app then looked, correctly, like it had never
-    /// checked. Everything else on this channel answers something the page
-    /// just asked for, and can be dropped safely; this cannot.
-    pub fn notice(&self, message: impl Into<String>) {
-        let event = json!({ "type": "notice", "message": message.into() });
+    /// The update check starts before the window exists and finishes on network
+    /// time, so what it had to say was routinely being broadcast to nobody and
+    /// thrown away — the app then looked, correctly, like it had never checked.
+    /// Everything else on this channel answers something the page just asked
+    /// for, and can be dropped safely; these cannot.
+    pub fn hold(&self, event: Value) {
         if self.connected() {
             self.push(event);
-        } else {
-            *self.held.lock().unwrap() = Some(event.to_string());
+            return;
+        }
+        let mut held = self.held.lock().unwrap();
+        if held.len() < MAX_HELD {
+            held.push(event.to_string());
         }
     }
 
+    /// Something to tell the person, in the editor's own toasts.
+    pub fn notice(&self, message: impl Into<String>) {
+        self.hold(json!({ "type": "notice", "message": message.into() }));
+    }
+
     /// Whatever was said while nothing was listening, said again.
-    pub fn take_held(&self) -> Option<String> {
-        self.held.lock().unwrap().take()
+    pub fn take_held(&self) -> Vec<String> {
+        std::mem::take(&mut *self.held.lock().unwrap())
     }
 
     /// Ask the window to do something, and wait for the answer.

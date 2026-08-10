@@ -82,7 +82,7 @@ const es = await fetch(`${APP}/__massing/events`);
 await new Promise((r) => setTimeout(r, 400));
 
 // --- files and the watcher --------------------------------------------------
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const scratch = mkdtempSync(join(tmpdir(), 'massing-'));
@@ -153,6 +153,131 @@ const targets = await post('mcp/targets');
 check('the app knows where its MCP server is', typeof targets.url === 'string' && targets.url.includes('7399'), JSON.stringify(targets).slice(0, 120));
 check('it can see the agents on this machine', Array.isArray(targets.targets) && targets.targets.length === 3);
 check('register refuses an empty choice', Boolean((await post('mcp/register', { ids: [] })).error));
+
+// --- updates ----------------------------------------------------------------
+/*
+ * A channel of our own.
+ *
+ * Pointing this at the real one would install a real release halfway through a
+ * test run, which is precisely the behaviour this section exists to prove is
+ * gone: a check offers, and nothing is downloaded or installed until somebody
+ * answers. The signature is deliberate nonsense — the manifest is only parsed
+ * here, and the one place it is verified is the install, which should fail
+ * loudly rather than do anything.
+ */
+import { createServer } from 'node:http';
+
+const TARGETS = ['windows-x86_64', 'windows-aarch64', 'darwin-x86_64', 'darwin-aarch64', 'linux-x86_64', 'linux-aarch64'];
+const channel = createServer((req, res) => {
+  if (req.url.startsWith('/latest.json')) {
+    const platforms = {};
+    for (const key of TARGETS) {
+      platforms[key] = { signature: 'dW50cnVzdGVkIGNvbW1lbnQ6IG5vdCBhIHNpZ25hdHVyZQo=', url: `http://127.0.0.1:${CHANNEL_PORT}/massing-99.0.0.exe` };
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ version: '99.0.0', pub_date: '2030-01-01T00:00:00Z', notes: 'a version that does not exist', platforms }));
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'application/octet-stream' });
+  res.end(Buffer.from('not really an installer'));
+});
+const CHANNEL_PORT = 7398;
+await new Promise((r) => channel.listen(CHANNEL_PORT, r));
+
+const stateDir = mkdtempSync(join(tmpdir(), 'massing-state-'));
+
+/** Start a second app against that channel, and watch what it says. */
+async function withUpdater(fn) {
+  const child = spawn(BIN, [], {
+    env: {
+      ...process.env,
+      MASSING_MCP: 'off',
+      MASSING_STATE: stateDir,
+      MASSING_RELEASES: `http://127.0.0.1:${CHANNEL_PORT}/latest.json`,
+    },
+  });
+  const seen = [];
+  const at = await new Promise((resolve) => {
+    let text = '';
+    child.stderr.on('data', (chunk) => {
+      text += chunk;
+      const m = text.match(/serving the editor on 127\.0\.0\.1:(\d+)/);
+      if (m) resolve(`http://127.0.0.1:${m[1]}`);
+    });
+    setTimeout(() => resolve(null), 30000);
+  });
+  if (!at) { child.kill(); throw new Error('the second app never said which port it took'); }
+  const stream = await fetch(`${at}/__massing/events`);
+  (async () => {
+    const reader = stream.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value);
+      const frames = buf.split('\n\n');
+      buf = frames.pop() ?? '';
+      for (const frame of frames) {
+        const line = frame.split('\n').find((l) => l.startsWith('data: '));
+        if (line) seen.push(JSON.parse(line.slice(6)));
+      }
+    }
+  })().catch(() => {});
+  try {
+    return await fn({ at, seen });
+  } finally {
+    child.kill();
+  }
+}
+
+const send = (at, route, body) =>
+  fetch(`${at}/__massing/${route}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}),
+  }).then((r) => r.json());
+const settle = (ms = 1500) => new Promise((r) => setTimeout(r, ms));
+const offers = (seen) => seen.filter((m) => m.type === 'update');
+const notices = (seen) => seen.filter((m) => m.type === 'notice').map((m) => m.message);
+
+await withUpdater(async ({ at, seen }) => {
+  await settle();
+  const [offer] = offers(seen);
+  // Held until the window connects: the check finishes long before the page
+  // has an EventSource, and an offer broadcast to nobody is no offer at all.
+  check('a new version is offered, not installed', offer?.version === '99.0.0', JSON.stringify(seen).slice(0, 200));
+  check('the offer says which version is being replaced', /^\d+\.\d+\.\d+$/.test(offer?.current ?? ''), offer?.current);
+  check('the offer says whether installing closes the app',
+    offer?.restarts === (process.platform === 'win32'), String(offer?.restarts));
+  check('nothing was downloaded or installed', notices(seen).length === 0, notices(seen).join(' | '));
+  check('the app is still running', (await fetch(`${at}/`)).status === 200);
+
+  // Skip: written down, and the Help menu still offers it afterwards.
+  check('skip refuses an empty version', (await send(at, 'update/skip', {})).ok === false);
+  check('skipping is accepted', (await send(at, 'update/skip', { version: '99.0.0' })).ok === true);
+  check('the refusal is written down',
+    JSON.parse(readFileSync(join(stateDir, 'updates.json'), 'utf8')).skipped === '99.0.0');
+
+  await send(at, 'check-updates');
+  await settle();
+  check('asking from the Help menu offers it anyway', offers(seen).length === 2, `${offers(seen).length} offers`);
+
+  // Yes: it really does try, and says so when it cannot -- the signature above
+  // is nonsense, so this is the failure path rather than a real install.
+  await send(at, 'update/install');
+  await settle(4000);
+  const said = notices(seen).join(' | ');
+  check('pressing Update starts a download', said.includes('Downloading Massing 99.0.0'), said);
+  check('an update that will not verify is reported', said.includes('would not install'), said);
+  check('and the app is still there afterwards', (await fetch(`${at}/`)).status === 200);
+});
+
+// A second run, against the same state directory: the skipped version is not
+// raised again at launch.
+await withUpdater(async ({ seen }) => {
+  await settle(2500);
+  check('a skipped version is not raised again at launch', offers(seen).length === 0, JSON.stringify(seen).slice(0, 200));
+});
+channel.close();
 
 for (const l of ok) console.log(`  ok   ${l}`);
 for (const l of bad) console.log(`  FAIL ${l}`);

@@ -112,7 +112,7 @@ pub fn set_theme(app: &AppHandle, dark: bool) {
 /// something else. "Which URL do I give Claude Code" should always have an
 /// answer true of the copy actually running.
 pub fn record_port(url: &str) {
-    let Some(dir) = dirs::data_local_dir().map(|d| d.join("massing")) else {
+    let Some(dir) = crate::state_dir() else {
         return;
     };
     if std::fs::create_dir_all(&dir).is_err() {

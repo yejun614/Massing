@@ -151,7 +151,9 @@ async fn events(
     let held = state
         .bridge
         .take_held()
-        .map(|data| Ok(Event::default().data(data)));
+        .into_iter()
+        .map(|data| Ok(Event::default().data(data)))
+        .collect::<Vec<_>>();
     let stream = tokio_stream::iter(held).chain(live);
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
@@ -301,6 +303,26 @@ async fn check_updates(State(state): State<AppState>) -> Json<Value> {
     Json(json!({ "ok": true }))
 }
 
+/// Yes to the offer.
+///
+/// Answers immediately and installs behind it, because on Windows installing
+/// ends this process — a handler that waited for it would be killed with its
+/// own reply still unsent, and the page would see the update as having failed.
+async fn update_install(State(state): State<AppState>) -> Json<Value> {
+    crate::update::install(&state.app, Arc::clone(&state.bridge));
+    Json(json!({ "ok": true }))
+}
+
+/// No, and stop asking about this one.
+async fn update_skip(Json(body): Json<Value>) -> Json<Value> {
+    let version = body.get("version").and_then(Value::as_str).unwrap_or("");
+    if version.is_empty() {
+        return Json(json!({ "ok": false, "error": "no version to skip" }));
+    }
+    crate::update::skip(version);
+    Json(json!({ "ok": true }))
+}
+
 async fn mcp_targets(State(state): State<AppState>) -> Json<Value> {
     let url = state.bridge.mcp_url.lock().unwrap().clone();
     let targets = if url.is_some() {
@@ -352,6 +374,8 @@ pub fn router(state: AppState) -> Router {
         .route("/__massing/theme", post(theme))
         .route("/__massing/about", post(about))
         .route("/__massing/check-updates", post(check_updates))
+        .route("/__massing/update/install", post(update_install))
+        .route("/__massing/update/skip", post(update_skip))
         .route("/__massing/mcp/targets", post(mcp_targets))
         .route("/__massing/mcp/register", post(mcp_register))
         .fallback(editor)

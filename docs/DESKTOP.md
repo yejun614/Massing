@@ -44,8 +44,9 @@ the path you chose, watching its directory — is ordinary Rust.
 |---|---|---|
 | `MASSING_MCP` | on | `off` disables the MCP server entirely |
 | `MASSING_MCP_PORT` | `7337` | where MCP listens; if taken, any free port is used |
-| `MASSING_RELEASES` | unset | the update channel; unset means no updating |
+| `MASSING_RELEASES` | from `tauri.conf.json` | overrides the update channel, for testing against a staging one |
 | `MASSING_RELEASE_KEY` | unset | the Ed25519 public key releases are signed with |
+| `MASSING_STATE` | the OS data directory | where `updates.json` and `mcp.json` are kept; a throwaway one makes a skipped version forgettable |
 
 ## Connecting a CLI
 
@@ -70,9 +71,9 @@ The app serves MCP over Streamable HTTP at `http://127.0.0.1:7337/`. If that
 port was taken it took another one and wrote it down — the running app's real
 URL is always in:
 
-- **Windows** `%APPDATA%\massing\mcp.json`
-- **macOS / Linux** `$XDG_STATE_HOME/massing/mcp.json`, or
-  `~/.local/state/massing/mcp.json`
+- **Windows** `%LOCALAPPDATA%\massing\mcp.json`
+- **macOS** `~/Library/Application Support/massing/mcp.json`
+- **Linux** `$XDG_DATA_HOME/massing/mcp.json`, or `~/.local/share/massing/mcp.json`
 
 **Claude Code**
 
@@ -137,6 +138,30 @@ listener at all, `MASSING_MCP=off`.
 
 Three separate things, and they are worth keeping apart because only the first
 one is required and only the first one is free.
+
+### 0. Nothing installs until somebody says so
+
+A check **offers**; it never installs. Finding a new version raises a dialog
+with three answers, and each of them is a different decision:
+
+| | Does |
+|---|---|
+| **Update** | downloads and installs it now |
+| **Skip this version** | writes that version into `updates.json` in the app's state directory, and the launch check stops raising it. The Help menu still offers it — somebody who went looking is not being interrupted |
+| **Remind me later** | decides nothing; the next launch asks again |
+
+This used to be one step: the launch check installed whatever it found. On
+Windows that is not a background task at all — `download_and_install` hands the
+bundle to `ShellExecute` and calls `exit(0)`, so the app someone had just
+opened vanished and an installer they had not asked for appeared in its place.
+Everything after that point belongs to the installer, which also means nothing
+after that point can be reported by Massing when it goes wrong: the process
+that would have shown the error is already gone.
+
+The dialog says which of the two things installing means on this platform,
+because they are not the same — Windows closes and reopens the app around the
+installer, everywhere else the bundle is swapped underneath and the new version
+is what starts next time.
 
 ### 1. The updater signature — required
 
@@ -348,11 +373,12 @@ not consult the OS.
 
 ## The Help menu
 
-**Check for updates** answers either way — "0.1.2 is the latest version", or
-what went wrong reaching the channel. The automatic check at launch stays quiet
-when there is nothing to report, because an app that says "no update" every
-morning is a nuisance; the cost of that silence is that a working channel and a
-broken one look identical, and this is how you tell them apart.
+**Check for updates** answers either way — the offer dialog, "0.1.2 is the
+latest version", or what went wrong reaching the channel. The automatic check
+at launch stays quiet when there is nothing to report, because an app that says
+"no update" every morning is a nuisance; the cost of that silence is that a
+working channel and a broken one look identical, and this is how you tell them
+apart. It is also the one route that ignores a skipped version.
 
 **About Massing** shows the version the running binary actually reports, plus
 the platform, the Tauri version and the MCP endpoint. Everything in it is read
@@ -392,6 +418,7 @@ number somebody forgot to bump is worse than none.
 | `src-tauri/src/files.rs` | native dialogs, and the watcher |
 | `src-tauri/src/mcp.rs` | the MCP server and its four tools |
 | `src-tauri/src/setup.rs` | registering with the CLIs, and the tests for it |
-| `src-tauri/src/update.rs` | the update channel |
+| `src-tauri/src/update.rs` | the update channel, and the skipped version |
 | `src-tauri/src/window.rs` | the menu, the theme, the port file |
 | `desktop/web/shim.js` | the page's half: the file-picker shim, and the tool bodies |
+| `desktop/web/update-ui.js` | the offer dialog: update, skip this version, or later |

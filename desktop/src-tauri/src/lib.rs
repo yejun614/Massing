@@ -41,6 +41,19 @@ fn assets(app: &tauri::AppHandle) -> PathBuf {
     }
 }
 
+/// Where the shell keeps what it has been told.
+///
+/// Two things live here: the MCP port, so "which URL do I give Claude Code"
+/// has an answer true of the copy actually running, and the version somebody
+/// asked not to be offered again. `MASSING_STATE` overrides it, which is what
+/// the tests use and what makes a throwaway state directory possible by hand.
+pub fn state_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("MASSING_STATE") {
+        return Some(PathBuf::from(dir));
+    }
+    dirs::data_local_dir().map(|d| d.join("massing"))
+}
+
 /// Base64, by hand.
 ///
 /// One route needs it — an exported image arriving as text — and a crate for

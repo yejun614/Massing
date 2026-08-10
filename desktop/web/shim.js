@@ -32,6 +32,7 @@ import { formatReport, validateDocument } from '/src/core/validate.js';
 import { misplaced, overConnected, underDrawn } from '/src/core/assistant.js';
 import { installMcpButton } from './mcp-ui.js';
 import { showAbout } from './about.js';
+import { showUpdate } from './update-ui.js';
 
 const API = '/__massing';
 
@@ -150,6 +151,9 @@ function install() {
     // the editor's own toasts, because a desktop app that talks to you in a
     // console is a desktop app that never talks to you.
     if (message.type === 'notice') window.massing?.toaster?.info(message.message);
+    // Found, not installed. What happens next is the person's to decide, and
+    // on Windows it ends this process -- so it is asked rather than announced.
+    if (message.type === 'update') showUpdate(message);
   };
 }
 
