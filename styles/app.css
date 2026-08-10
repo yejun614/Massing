@@ -2254,3 +2254,78 @@ kbd {
 .library-action { flex: none; }
 .library-forget { width: 28px; padding: 0; justify-content: center; color: var(--ink-muted); }
 .library-forget:hover { color: var(--danger); }
+
+/* --- the download sheet ---------------------------------------------------
+ *
+ * Three systems and their files, on the web build only.
+ *
+ * The rows are a list rather than a grid of buttons: what distinguishes two
+ * downloads here is a sentence — which processor, which package manager — and
+ * a wall of pills would have hidden exactly the part that decides which one to
+ * press.
+ */
+
+.download-os { margin: 16px 0 12px; }
+
+/* One line, and it holds the room whether it says "finding", "newest release"
+   or why there is nothing below it — so the sheet does not jump as the answer
+   from GitHub arrives. */
+.download-status {
+  margin: 0 0 8px;
+  min-height: 17px;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.download-files { display: grid; gap: 4px; }
+
+.download-row {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+.download-row:hover { border-color: var(--accent); background: var(--surface-2); }
+.download-row:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.download-label { font-weight: 550; }
+.download-note { color: var(--ink-muted); font-size: 12px; }
+.download-go { color: var(--accent); font-size: 12px; font-weight: 600; }
+
+/* A file the newest release does not have. Shown rather than dropped: a list
+   that silently omits arm64 reads as "there is no arm64 build", which is a
+   different and wrong thing to say. */
+.download-row.is-missing { border-style: dashed; opacity: 0.7; }
+.download-row.is-missing:hover { border-color: var(--border); background: none; }
+.download-row.is-missing .download-go { color: var(--ink-muted); font-weight: 400; }
+
+/* --- what the assistant is not -------------------------------------------
+ *
+ * Set apart from the turns without being louder than them. It is the last
+ * thing in the transcript when it is there at all, and the conversation it
+ * follows is what somebody is actually reading.
+ */
+.chat-notice {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.chat-notice-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+.chat-notice-actions { display: flex; gap: 6px; margin-top: 9px; }
+.chat-notice-get { border-color: var(--accent); color: var(--accent); }
+.chat-notice-drop { color: var(--ink-muted); }

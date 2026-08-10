@@ -65,6 +65,7 @@ import {
   MAX_ENTRIES,
 } from '../src/core/library.js';
 import { createEmptyDoc as emptyDoc } from '../src/core/schema.js';
+import { PLATFORMS, detectPlatform, platformFiles } from '../src/data/downloads.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -2852,4 +2853,82 @@ function textMetricCases(check) {
 
   check('empty and missing text parse to nothing', (() =>
     parseMarkdown('').length === 0 && parseMarkdown(null).length === 0)());
+
+  // --- the desktop download ------------------------------------------------
+
+  /*
+   * The asset names a real release actually had.
+   *
+   * The point of the table in `data/downloads.js` is that it matches what the
+   * bundler produces, and the only way that stays true is by checking it
+   * against the real thing: a Tauri upgrade that renames `_x64-setup.exe` would
+   * otherwise turn every Windows row into "not in this release", on a page
+   * nobody tests by hand.
+   */
+  const RELEASE_ASSETS = [
+    'latest.json',
+    'Massing-0.1.3-1.aarch64.rpm',
+    'Massing-0.1.3-1.aarch64.rpm.sig',
+    'Massing-0.1.3-1.x86_64.rpm',
+    'Massing-0.1.3-1.x86_64.rpm.sig',
+    'Massing_0.1.3_aarch64.AppImage',
+    'Massing_0.1.3_aarch64.AppImage.sig',
+    'Massing_0.1.3_aarch64.dmg',
+    'Massing_0.1.3_amd64.AppImage',
+    'Massing_0.1.3_amd64.AppImage.sig',
+    'Massing_0.1.3_amd64.deb',
+    'Massing_0.1.3_amd64.deb.sig',
+    'Massing_0.1.3_arm64-setup.exe',
+    'Massing_0.1.3_arm64-setup.exe.sig',
+    'Massing_0.1.3_arm64.deb',
+    'Massing_0.1.3_arm64.deb.sig',
+    'Massing_0.1.3_x64-setup.exe',
+    'Massing_0.1.3_x64-setup.exe.sig',
+    'Massing_0.1.3_x64.dmg',
+    'Massing_aarch64.app.tar.gz',
+    'Massing_aarch64.app.tar.gz.sig',
+    'Massing_x64.app.tar.gz',
+    'Massing_x64.app.tar.gz.sig',
+  ].map((name) => ({ name, browser_download_url: `https://example.test/${name}` }));
+
+  for (const platform of PLATFORMS) {
+    const files = platformFiles(platform, RELEASE_ASSETS);
+    check(
+      `every ${platform.label} download is on a real release`,
+      files.length > 0 && files.every((f) => f.url),
+      files.filter((f) => !f.url).map((f) => `${f.label} (${f.note})`).join(', ')
+    );
+    check(
+      `no ${platform.label} download is a signature file`,
+      files.every((f) => !f.url?.endsWith('.sig'))
+    );
+  }
+
+  check('a release missing a file offers no link for it', (() => {
+    const windows = PLATFORMS.find((p) => p.id === 'windows');
+    const only64 = RELEASE_ASSETS.filter((a) => !a.name.includes('arm64-setup'));
+    const files = platformFiles(windows, only64);
+    return files.filter((f) => f.url).length === 1 && files.some((f) => f.url === null);
+  })());
+
+  check('the system is read from what a browser reports', (() =>
+    detectPlatform('Windows') === 'windows' &&
+    detectPlatform('macOS') === 'macos' &&
+    detectPlatform('Linux') === 'linux' &&
+    detectPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)') === 'macos' &&
+    detectPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)') === 'windows' &&
+    detectPlatform('Mozilla/5.0 (X11; Linux x86_64)') === 'linux')());
+
+  /*
+   * A phone reports itself as Linux, and would otherwise be handed an arm64
+   * AppImage it can download and never run.
+   */
+  check('a phone is not offered a desktop build', (() =>
+    detectPlatform('Android') === null &&
+    detectPlatform('Mozilla/5.0 (Linux; Android 14; Pixel 8)') === null &&
+    detectPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)') === null &&
+    detectPlatform('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)') === null)());
+
+  check('an unrecognised system preselects nothing', (() =>
+    detectPlatform('') === null && detectPlatform('SomeFutureOS') === null)());
 }

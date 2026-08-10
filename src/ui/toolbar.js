@@ -7,7 +7,7 @@ import { h, clear, setClass, setAttrs } from '../util/dom.js';
 import { UI_ICONS } from './icons-ui.js';
 import { REPO_URL } from '../data/links.js';
 
-export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, onLibrary, theme, panels }) {
+export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, onLibrary, onDownload, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
   /** The bar itself: a row across the top, or a rail down the side. */
   const bar = root.querySelector('.toolbar');
@@ -177,6 +177,19 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   ));
   const helpBtn = btn('help', 'Keyboard shortcuts', () => onHelp?.());
   const repoLink = link('github', 'Source on GitHub (opens in a new tab)', REPO_URL);
+  /*
+   * Only where there is something to get.
+   *
+   * `main.js` passes nothing in the desktop app, and no button is built — an
+   * app offering to install itself is the kind of dead control the hosted
+   * buttons above are also careful not to be. Beside the help and the source
+   * link rather than in the file group: it is about the program, not about the
+   * document.
+   */
+  const downloadBtn = onDownload
+    ? btn('download', 'Get the desktop app — MCP for your own model, real files, native dialogs',
+        () => onDownload())
+    : null;
 
   /**
    * Fold the rest of the rail away, and bring it back.
@@ -222,7 +235,11 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     selectBtn, panBtn, zoneBtn, connectBtn,
     rotLeft, rotRight,
     zoomOut, zoomIn, fitBtn,
-    modeBtn, themeBtn, helpBtn, repoLink,
+    modeBtn, themeBtn,
+    // Spread rather than passed straight in: `append` is the DOM's, and it
+    // writes a missing child into the toolbar as the text "null".
+    ...(downloadBtn ? [downloadBtn] : []),
+    helpBtn, repoLink,
     moreBtn
   );
 

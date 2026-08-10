@@ -38,7 +38,8 @@ import { createExportDialog } from './ui/export-dialog.js';
 import { createFeedbackPrompt } from './ui/feedback.js';
 import { createPublishDialog } from './ui/publish.js';
 import { createAssistantPanel } from './ui/assistant.js';
-import { createFeatures } from './core/features.js';
+import { createDownloadDialog } from './ui/download.js';
+import { createFeatures, desktopBuild } from './core/features.js';
 import { createCloud, publishedKeyFrom } from './core/cloud.js';
 import { createAssistant } from './core/assistant.js';
 import { createLibrary } from './core/library.js';
@@ -179,11 +180,22 @@ const libraryDialog = createLibraryDialog(document.body, {
   onDelete: (entry) => library.forget(entry.id),
   onOpen: (entry) => openFromLibrary(entry),
 });
+/*
+ * The one thing the desktop app does not get.
+ *
+ * Both offers below — the toolbar button and the assistant's note about MCP —
+ * are for a program the desktop build already is, so there it is built at all.
+ * Deciding here rather than in each of them keeps the question in one place:
+ * neither the toolbar nor the panel has to know that a desktop build exists,
+ * they are simply given something to do or not given it.
+ */
+const downloadDialog = desktopBuild() ? null : createDownloadDialog(document.body);
 const assistantPanel = createAssistantPanel(document.body, {
   assistant,
   store,
   toaster,
   onToggle: (open) => toolbar.setAssistantOpen(open),
+  onGetDesktop: downloadDialog ? () => downloadDialog.open() : null,
 });
 // The theme decides the canvas colour for any document that has not named one,
 // so what it resolves to has to reach the store the render reads.
@@ -205,6 +217,7 @@ const toolbar = createToolbar({
   onPublish: () => publishDialog.open(),
   onAssistant: () => assistantPanel.toggle(),
   onLibrary: () => libraryDialog.open(),
+  onDownload: downloadDialog ? () => downloadDialog.open() : null,
   theme,
   panels,
 });

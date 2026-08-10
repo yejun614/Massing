@@ -300,6 +300,14 @@ The release is created as a **draft**, so nothing reaches anybody until it is
 published by hand — and `latest.json` is only served once it is. Pushes that
 are not tags upload the bundles as build artifacts and create no release.
 
+Publishing is also what puts the build in front of anyone using the web app:
+its toolbar has a download button, and the sheet behind it reads the newest
+**published** release from the GitHub API and offers the file for the system
+you are on. The filenames are matched by pattern in `src/data/downloads.js`, so
+a bundler upgrade that renames `_x64-setup.exe` would leave that sheet saying
+"not in this release" — the suite checks the patterns against a real release's
+asset list to catch exactly that.
+
 `MASSING_RELEASES` overrides the endpoint at runtime for testing against a
 staging channel. The key is never overridable, which is the point of it.
 

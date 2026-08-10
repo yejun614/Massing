@@ -47,6 +47,35 @@ const INPUT_MAX_HEIGHT = 160;
 const MIN_OPACITY = 30;
 
 /**
+ * How many answers before the panel mentions the better way to do this.
+ *
+ * Not on the first, which would be an advertisement in front of the thing
+ * somebody came to try; and not never, because the honest limit of this panel
+ * is a small hosted model and by the third answer whoever is reading has formed
+ * an opinion about that. Three is where the note stops being a pitch and starts
+ * being the answer to "is this as good as it gets?".
+ */
+const NOTICE_AFTER = 3;
+const NOTICE_KEY = 'massing:assistant-desktop-notice:v1';
+
+/** Dismissed once is dismissed for good; the same bargain as the feedback prompt. */
+function noticeSeen() {
+  try {
+    return localStorage.getItem(NOTICE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markNoticeSeen() {
+  try {
+    localStorage.setItem(NOTICE_KEY, '1');
+  } catch {
+    // Storage disabled. The note simply does not outlive the session.
+  }
+}
+
+/**
  * A question, and what was selected when it was asked.
  *
  * The two travel as one string so a conversation reopened tomorrow still says
@@ -104,8 +133,9 @@ function messageBody(role, said) {
   return h('div', { class: 'chat-text chat-md' }, [renderMarkdown(said)]);
 }
 
-export function createAssistantPanel(root, { assistant, store, toaster, onToggle }) {
+export function createAssistantPanel(root, { assistant, store, toaster, onToggle, onGetDesktop }) {
   let open = false;
+  let noticeDismissed = noticeSeen();
 
   const log = h('div', { class: 'chat-log' });
   const input = h('textarea', {
@@ -342,6 +372,49 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
     'aria-label': 'Which model answers',
   }, [h('span', { class: 'chat-model-label', text: 'Model' }), ...modelButtons]);
 
+  /*
+   * What this panel is, once there has been enough of it to wonder.
+   *
+   * It sits at the foot of the transcript rather than in a corner of the
+   * header, because it is about the answers above it and it should be read in
+   * the place where the last one was disappointing. It is not a turn: nobody
+   * said it, so it carries no author and is not in the conversation the model
+   * sees.
+   *
+   * Built only when there is somewhere to send people. In the desktop app
+   * `main.js` passes nothing, and telling somebody to install what they are
+   * already running would be worse than saying nothing at all.
+   */
+  const notice = onGetDesktop
+    ? h('div', { class: 'chat-notice' }, [
+        h('p', { class: 'chat-notice-text', text:
+          'This assistant is in beta, and answers from a small hosted model. For better ' +
+          'answers, run Massing on the desktop and point Claude Code, Codex or ' +
+          'Antigravity at it over MCP — your own model, reading and changing the diagram ' +
+          'on screen.' }),
+        h('div', { class: 'chat-notice-actions' }, [
+          h('button', {
+            class: 'btn chat-notice-get',
+            type: 'button',
+            text: 'Get the desktop app',
+            onClick: () => onGetDesktop(),
+          }),
+          h('button', {
+            class: 'btn chat-notice-drop',
+            type: 'button',
+            title: 'Do not show this again',
+            'aria-label': 'Dismiss this note',
+            text: 'Dismiss',
+            onClick: () => {
+              noticeDismissed = true;
+              markNoticeSeen();
+              notice.remove();
+            },
+          }),
+        ]),
+      ])
+    : null;
+
   const panel = h('section', { class: 'chat is-hidden', 'aria-label': 'Diagram assistant' }, [
     h('header', { class: 'chat-head' }, [
       h('span', {
@@ -483,6 +556,14 @@ export function createAssistantPanel(root, { assistant, store, toaster, onToggle
       if (assistant.busy && !waiting) {
         log.append(h('div', { class: 'chat-turn is-working', text: 'Working…' }));
       }
+      /*
+       * Counted per conversation and from the answers, not the questions: three
+       * things asked while the model was still working on the first is not
+       * three answers to judge it by, and starting a new conversation is a fair
+       * moment to be told again by somebody who has not dismissed it.
+       */
+      const answers = messages.filter((m) => m.role === 'assistant').length;
+      if (notice && !noticeDismissed && answers >= NOTICE_AFTER) log.append(notice);
       log.scrollTop = log.scrollHeight;
     }
 

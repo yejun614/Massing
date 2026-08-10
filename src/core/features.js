@@ -14,11 +14,28 @@
  */
 
 const MARKER = 'massing-vercel';
+const DESKTOP_MARKER = 'massing-desktop';
 const OFF = { analytics: false, storage: false, assistant: false };
 
 /** Whether this build carries the hosted code at all. */
 export function hostedBuild(doc = document) {
   return doc.querySelector(`meta[name="${MARKER}"]`)?.getAttribute('content') === '1';
+}
+
+/**
+ * Whether this page is the desktop app's own window.
+ *
+ * The marker is written by the desktop server as it serves the page, which is
+ * the same shape of gate as the one above and the reason this lives beside it.
+ * Two things ask: the toolbar's download button and the assistant's note about
+ * MCP, both of which are offers of something this page would already have.
+ *
+ * A `meta` tag rather than a global, because the alternative — asking whether
+ * some `window` property the shim installed exists — makes every caller depend
+ * on a detail of how the desktop build wires itself up.
+ */
+export function desktopBuild(doc = document) {
+  return doc.querySelector(`meta[name="${DESKTOP_MARKER}"]`)?.getAttribute('content') === '1';
 }
 
 export function createFeatures({ doc = document, fetchImpl = fetch } = {}) {
