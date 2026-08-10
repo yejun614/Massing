@@ -284,6 +284,18 @@ default workflow token is read-only. Without it every job builds for minutes
 and then fails on its last step with `Resource not accessible by integration`,
 which names neither the permission nor the setting.
 
+The URLs inside `latest.json` are **built from the tag**, not read from the
+API. This job runs against a release that is still a draft, and a draft has no
+tag — GitHub answers `browser_download_url` with
+`/releases/download/untagged-<hash>/…`, which is a real URL until somebody
+presses Publish and every one of them turns into a 404. That made the manifest
+a race with a human: v0.1.4 happened to be published a minute before this job
+finished and was fine, v0.1.5 was published eight minutes after and shipped six
+dead links, so every installed copy found the update and downloaded nothing.
+The published form is knowable without asking, so it is written rather than
+copied, and the script refuses to save a manifest whose URLs do not name the
+tag.
+
 `workflow_dispatch` runs the same six builds without creating a release, which
 is how to exercise the bundling before committing to a tag. Pull requests get
 `check` and nothing heavier.

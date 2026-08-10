@@ -49,6 +49,25 @@ function assetsFor(tag) {
   return { release, assets: release.assets };
 }
 
+/**
+ * Where the asset will be, rather than where the API says it is.
+ *
+ * This runs against a release that is still a **draft**, and a draft has no
+ * tag — so GitHub answers `browser_download_url` with
+ * `/releases/download/untagged-0dd4c9954a706321dd63/…`, which is a real URL
+ * right up until somebody presses Publish and every one of them becomes a 404.
+ * Copying that field is a race with a human: v0.1.4 was published a minute
+ * before this job finished and got real URLs, v0.1.5 was published eight
+ * minutes after and shipped six dead ones. Every installed copy then found the
+ * update, downloaded nothing, and said `404 Not Found`.
+ *
+ * The published form is knowable without asking: it is the tag and the asset's
+ * name, which is also exactly what `/releases/latest/download/…` resolves to.
+ * So it is built rather than read, and the publish order stops mattering.
+ */
+const downloadUrl = (tag, name) =>
+  `https://github.com/${REPO}/releases/download/${tag}/${encodeURIComponent(name)}`;
+
 /** A signature is the whole `.sig` file, as text. */
 function signature(assets, name) {
   const sig = assets.find((a) => a.name === `${name}.sig`);
@@ -82,7 +101,7 @@ for (const { key, match } of PLATFORMS) {
     missing.push(`${key}: ${bundle.name} has no .sig beside it`);
     continue;
   }
-  platforms[key] = { signature: sig, url: bundle.browser_download_url };
+  platforms[key] = { signature: sig, url: downloadUrl(tag, bundle.name) };
 }
 
 /*
@@ -96,6 +115,23 @@ for (const { key, match } of PLATFORMS) {
 if (missing.length) {
   console.error(`refusing to write a partial manifest for ${tag}:`);
   for (const line of missing) console.error(`  - ${line}`);
+  process.exit(1);
+}
+
+/*
+ * And none of them may be a draft URL.
+ *
+ * Unreachable while the URLs are built from the tag above, which is the point:
+ * this is the assertion that keeps them built that way. The manifest is the one
+ * file here whose damage is invisible — it is written by a green job, uploaded
+ * to a release that looks complete, and only fails on somebody else's machine.
+ */
+const draftUrls = Object.entries(platforms).filter(
+  ([, p]) => !p.url.includes(`/releases/download/${tag}/`)
+);
+if (draftUrls.length) {
+  console.error(`refusing to write a manifest that does not point at ${tag}:`);
+  for (const [key, p] of draftUrls) console.error(`  - ${key}: ${p.url}`);
   process.exit(1);
 }
 
