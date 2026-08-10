@@ -3,6 +3,7 @@
  * Bump every version this project has, and tag it.
  *
  *   node scripts/release.mjs 0.1.2 [--push]
+ *   npm run release -- 0.1.2 [--push]
  *
  * There are three, which is two too many and not something this script can
  * fix: `tauri.conf.json` is what Tauri bakes into the app and what the updater
@@ -24,7 +25,23 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
 
 const version = process.argv[2];
-const push = process.argv.includes('--push');
+
+/*
+ * `--push` has to survive npm.
+ *
+ * `npm run release 0.1.2 --push` does not pass the flag on. npm keeps any
+ * `--`-prefixed argument that is not behind a `--` separator for itself, so
+ * this script is called with the version and nothing else, and the flag
+ * arrives as `npm_config_push` in the environment instead. It then bumped,
+ * committed and tagged, said it had not pushed, and was believed to have
+ * pushed -- a release that stops one step short is the one failure this script
+ * exists to prevent.
+ *
+ * So both are read. `npm run release -- 0.1.2 --push` and `node
+ * scripts/release.mjs 0.1.2 --push` come through the arguments; the form
+ * without the separator comes through the environment.
+ */
+const push = process.argv.includes('--push') || process.env.npm_config_push === 'true';
 
 if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) {
   console.error('usage: release.mjs <major.minor.patch> [--push]');

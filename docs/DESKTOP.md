@@ -266,7 +266,7 @@ is how to exercise the bundling before committing to a tag. Pull requests get
 To cut a release:
 
 ```sh
-npm run release 0.1.2 --push
+npm run release -- 0.1.2 --push
 ```
 
 That sets the version in all three places it lives — `tauri.conf.json` for the
@@ -276,6 +276,11 @@ a tag that exists, and off `main`, because a release is public the moment it
 happens.
 
 Without `--push` it stops after the tag and prints the two commands.
+
+The `--` is npm's, not the script's: without it npm keeps `--push` for itself
+and the script is called with the version alone. The script reads npm's
+environment as well, so `npm run release 0.1.2 --push` also pushes — but the
+separator is the form that works whatever is running it.
 
 CI checks the same thing from the other side: a tagged build fails immediately
 if the tag and `tauri.conf.json` disagree. They come from different places —
