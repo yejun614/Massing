@@ -154,6 +154,36 @@ html, body {
 .toolbar-spacer { flex: 1; }
 
 /*
+ * The two ends of a bar that has more in it than fits.
+ *
+ * A chevron apiece, shown only while there is something in that direction, and
+ * a shadow along the pinned group's inner edge for the row sliding under it.
+ * They sit inside the pinned groups rather than over them: a control that
+ * appears when the contents overflow must not cover the buttons it appeared
+ * next to, and being part of the row's width is harmless here because it can
+ * only ever be shown by a row that is already too wide.
+ */
+.toolbar-nudge {
+  display: none;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.toolbar-nudge:hover { background: var(--border); color: var(--ink); }
+.toolbar-nudge svg { display: block; width: 12px; height: 12px; }
+.toolbar.can-scroll-start .toolbar-nudge-start,
+.toolbar.can-scroll-end .toolbar-nudge-end { display: grid; }
+.toolbar.can-scroll-start .toolbar-panels { box-shadow: 8px 0 10px -8px rgb(15 23 42 / 0.3); }
+.toolbar.can-scroll-end .toolbar-doc { box-shadow: -8px 0 10px -8px rgb(15 23 42 / 0.3); }
+
+/*
  * Reclaim toolbar width before the row has to scroll for it. The wordmark goes
  * first, since the mark beside it still says which app this is; then the title
  * field gives up width, though the unsaved dot next to it stays — knowing there
@@ -1089,6 +1119,14 @@ kbd {
   }
   .toolbar-spacer { display: none; }
   .toolbar-doc { position: static; }
+
+  /* Neither group is pinned to an end of the rail any more — one is off in the
+     corner, the other is somewhere in the column — so a chevron in them would
+     point at nothing. The rail is scrolled by dragging it or with a wheel. */
+  .toolbar.can-scroll-start .toolbar-nudge-start,
+  .toolbar.can-scroll-end .toolbar-nudge-end { display: none; }
+  .toolbar.can-scroll-start .toolbar-panels,
+  .toolbar.can-scroll-end .toolbar-doc { box-shadow: none; }
 
   /*
    * The two panel toggles go to the top right corner.

@@ -9,6 +9,8 @@ import { REPO_URL } from '../data/links.js';
 
 export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, onLibrary, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
+  /** The bar itself: a row across the top, or a rail down the side. */
+  const bar = root.querySelector('.toolbar');
 
   const btn = (icon, title, onClick, extra = {}) =>
     h('button', {
@@ -185,7 +187,6 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
    * once would hide the way back.
    */
   const moreBtn = core(btn('more', 'More tools', () => {
-    const bar = region('panels').closest('.toolbar');
     const open = bar.classList.toggle('is-expanded');
     setClass(moreBtn, 'is-active', open);
     // The name changes with the state, and both copies of it have to: a
@@ -255,6 +256,101 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   });
   clear(region('doc')).append(dirtyDot, title);
 
+  // --- reaching a bar that has outgrown the window --------------------------
+
+  /**
+   * The bar scrolls when it does not fit, and now it says so.
+   *
+   * Twenty-nine buttons need about 1150px, so any window narrower than that
+   * cuts the row off — and the scrollbar is hidden, because a bar one line tall
+   * would spend that line on the scrollbar rather than on the icons it is there
+   * to reveal. That left the missing buttons with nothing pointing at them and,
+   * with a mouse, no way to reach them at all: a plain wheel does nothing to a
+   * horizontal scroller. Hence a wheel that does, and a chevron at each end for
+   * the people who will never think to try one.
+   *
+   * The rail is the same problem stood on its end — unfolded it is far taller
+   * than a phone — so both axes are handled by the same code.
+   */
+
+  /** The rail scrolls down the screen; the toolbar scrolls across it. */
+  const vertical = () =>
+    bar.scrollHeight - bar.clientHeight > bar.scrollWidth - bar.clientWidth;
+  const scrollMax = () =>
+    vertical() ? bar.scrollHeight - bar.clientHeight : bar.scrollWidth - bar.clientWidth;
+  const scrollPos = () => (vertical() ? bar.scrollTop : bar.scrollLeft);
+
+  function scrollBar(direction) {
+    const down = vertical();
+    const step = direction * (down ? bar.clientHeight : bar.clientWidth) * 0.7;
+    bar.scrollBy({ [down ? 'top' : 'left']: step, behavior: 'smooth' });
+  }
+
+  /**
+   * A wheel over the bar scrolls it — but only while there is somewhere to
+   * scroll to.
+   *
+   * On `window` and in the capture phase, not on the bar itself: as a rail the
+   * bar takes no pointer events, so that a finger between two icons still pans
+   * the diagram underneath, and a listener on it would never hear anything.
+   * Which means the bar is found by its rectangle instead. When it fits, the
+   * event is left alone and reaches the canvas as a zoom, which is what a wheel
+   * means everywhere else on the page.
+   */
+  window.addEventListener('wheel', (e) => {
+    if (scrollMax() < 1) return;
+    const box = bar.getBoundingClientRect();
+    const inside =
+      e.clientX >= box.left && e.clientX <= box.right &&
+      e.clientY >= box.top && e.clientY <= box.bottom;
+    if (!inside) return;
+    /*
+     * Anything laid *over* the bar keeps the wheel: a sheet on a short window
+     * reaches the top of the screen, and scrolling the toolbar behind it would
+     * be the wrong list moving. The only things the bar is ever above are the
+     * canvas and, as a rail, the drawers it floats across.
+     */
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    if (!under || !(bar.contains(under) || under.closest('.canvas, .panel'))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Both deltas count, so a trackpad swipe works as well as a wheel.
+    const step = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (vertical()) bar.scrollTop += step;
+    else bar.scrollLeft += step;
+  }, { capture: true, passive: false });
+
+  /**
+   * The two chevrons ride in the pinned groups at either end.
+   *
+   * Those are the only parts of the row that stay put while the middle scrolls
+   * under them, so a button placed there is where the content it reveals comes
+   * from and cannot itself scroll out of reach.
+   */
+  const nudge = (icon, label, direction) =>
+    h('button', {
+      class: `toolbar-nudge toolbar-nudge-${direction < 0 ? 'start' : 'end'}`,
+      type: 'button',
+      title: label,
+      'aria-label': label,
+      html: UI_ICONS[icon],
+      onClick: () => scrollBar(direction),
+    });
+  region('panels').append(nudge('chevronLeft', 'Show the tools to the left', -1));
+  region('doc').prepend(nudge('chevronRight', 'Show the tools to the right', 1));
+
+  /** Say which way there is more, so the ends can show a chevron and a shadow. */
+  function paintOverflow() {
+    const max = scrollMax();
+    setClass(bar, 'can-scroll-start', max > 1 && scrollPos() > 1);
+    setClass(bar, 'can-scroll-end', max > 1 && scrollPos() < max - 1);
+  }
+  bar.addEventListener('scroll', paintOverflow);
+  // The bar's own box changes with every window resize, in either orientation,
+  // so this covers the resize as well as a panel or a font settling in.
+  new ResizeObserver(paintOverflow).observe(bar);
+  paintOverflow();
+
   function render(state) {
     undoBtn.disabled = !store.canUndo();
     redoBtn.disabled = !store.canRedo();
@@ -291,6 +387,9 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     setHostedFeatures(flags) {
       publishBtn.hidden = !flags?.storage;
       assistantBtn.hidden = !flags?.assistant;
+      // Two more buttons can be what tips the row over the edge of the window,
+      // and the bar's own box has not changed, so nothing else would notice.
+      paintOverflow();
     },
 
     /** Whatever opened or closed the assistant, this is how the button learns. */
