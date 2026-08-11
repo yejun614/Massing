@@ -235,6 +235,14 @@ button {
   text-decoration: none;
 }
 
+/*
+ * `display` above beats the browser's own rule for `hidden`, so without this the
+ * attribute does nothing to a button — which is how the two hosted controls,
+ * built hidden and revealed only once the deployment says the feature is on,
+ * were on screen in every offline build instead.
+ */
+.btn[hidden] { display: none; }
+
 .btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border); }
 .btn:active:not(:disabled) { background: var(--accent-soft); }
 .btn:disabled { opacity: 0.38; cursor: default; }
