@@ -65,7 +65,7 @@ npm run test:rust                 # the config-writing tests
 |---|---|
 | Place a block | Click a component in the left panel, then click the canvas (Shift keeps it armed) |
 | Move | Drag. Dragging a zone moves everything inside it |
-| Resize | Select one thing, then drag a grip. A block gets an extra grip above it for its height |
+| Resize | Select one thing, then drag a grip. A block gets an extra grip above it for its height, which drags in whole storeys — tenths are typed in the inspector |
 | Connect | `C`, then drag from one block or zone to another |
 | Re-route a connection | Select it and drag the grip on the run it turns on |
 | Draw a zone | `G`, then drag a rectangle |

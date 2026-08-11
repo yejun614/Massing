@@ -43,6 +43,7 @@ import {
   normaliseSpin,
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
+import { heightFromDrag } from '../src/input/pointer.js';
 import { edgeRoute } from '../src/render/edge.js';
 import { encodeGif } from '../src/core/gif.js';
 import { splitTitle } from '../src/ui/tooltip.js';
@@ -2016,6 +2017,35 @@ function handleCases(check) {
     }
     return true;
   })());
+
+  // --- the height a drag produces ------------------------------------------
+  //
+  // The mouse moves a block by whole storeys and by nothing else. Tenths are a
+  // thing to type, and the inspector's field is where they are typed.
+
+  check('a drag too small to mean a storey means nothing',
+    heightFromDrag(1, 0, 1) === 1 &&
+    heightFromDrag(1, CELL / 3, 1) === 1 &&
+    heightFromDrag(1, -CELL / 3, 1) === 1);
+
+  check('half a cell of travel is one storey',
+    heightFromDrag(1, CELL * 0.6, 1) === 2 && heightFromDrag(3, -CELL * 0.6, 1) === 2);
+
+  check('a drag never writes a fraction',
+    [0.2, 0.49, 0.5, 0.8, 1.1, 1.49, 2.7, 5.3].every((cells) =>
+      Number.isInteger(heightFromDrag(1, CELL * cells, 1))
+    ));
+
+  check('a fraction that was typed survives being dragged',
+    heightFromDrag(1.5, CELL * 2, 1) === 3.5 && heightFromDrag(0.4, -CELL, 1) === 0);
+
+  check('the same pixels are fewer storeys the further in the camera is',
+    heightFromDrag(1, CELL * 3, 1) === 4 &&
+    heightFromDrag(1, CELL * 3, 2) === 3 &&
+    heightFromDrag(1, CELL * 3, 0.5) === 7);
+
+  check('a height drag stays inside the bounds',
+    heightFromDrag(2, -CELL * 9, 1) === 0 && heightFromDrag(1, CELL * 99, 1) === 40);
 }
 
 /**

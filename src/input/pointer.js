@@ -321,13 +321,12 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       case 'resize-height': {
         const node = nodeById(store.state.doc, drag.id);
         if (!node) break;
-        // +z projects to exactly CELL pixels straight up the screen, so the
-        // conversion from a vertical drag to whole storeys is that and nothing
-        // more.
-        const risen = (drag.origin.y - pt.y) / (CELL * store.state.camera.zoom);
-        // Whole cells added to whatever it started at, so a block set to 1.5
-        // by hand drags to 2.5 rather than being rounded off by the gesture.
-        const height = clampTenth(drag.startHeight + risen, 0, MAX_HEIGHT, node.height);
+        const height = heightFromDrag(
+          drag.startHeight,
+          drag.origin.y - pt.y,
+          store.state.camera.zoom,
+          node.height
+        );
         if (height === node.height) break;
         openGesture(drag, 'Resize');
         store.commit('Resize', (doc) => {
@@ -854,6 +853,28 @@ function zoneRect(drag) {
     w: Math.abs(b.x - a.x) + 1,
     h: Math.abs(b.y - a.y) + 1,
   };
+}
+
+/**
+ * What a block's height becomes when its grip is dragged `dy` pixels upward.
+ *
+ * Whole storeys, and only whole ones. A drag is a coarse gesture — the wrist is
+ * no steadier than about half a cell — so letting it write tenths meant a block
+ * came out 1.7 tall from a movement nobody could have aimed, and the number
+ * then had to be repaired in the inspector. A tenth is a thing to type, and the
+ * inspector's field, which steps by 0.1, is where it is typed.
+ *
+ * What is added is whole; what it is added to is left alone. A block someone
+ * deliberately set to 1.5 drags to 2.5 rather than being rounded off to 2 by a
+ * gesture that was never about the fraction — so the mouse can never *introduce*
+ * a fraction, and never destroys one either.
+ *
+ * `+z` projects to exactly `CELL` pixels straight up the screen, so converting
+ * the drag to storeys is that and the zoom, and nothing more.
+ */
+export function heightFromDrag(startHeight, dy, zoom, fallback = startHeight) {
+  const risen = Math.round(dy / (CELL * zoom));
+  return clampTenth(startHeight + risen, 0, MAX_HEIGHT, fallback);
 }
 
 export function isTextTarget(el) {
