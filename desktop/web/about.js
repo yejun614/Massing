@@ -47,9 +47,6 @@ export async function showAbout() {
   if (!dialog) {
     document.head.append(h('style', { text: STYLE }));
     dialog = h('dialog', { class: 'sheet sheet-narrow' });
-    dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) dialog.close();
-    });
     document.body.append(dialog);
   }
 

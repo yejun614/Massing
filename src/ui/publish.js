@@ -107,9 +107,6 @@ export function createPublishDialog(root, { cloud, store, toaster, onPublished }
     ])
   );
 
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
   root.append(dialog);
 
   return {

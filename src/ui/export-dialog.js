@@ -105,9 +105,6 @@ export function createExportDialog(root, { store, exporter, onExported }) {
     ])
   );
 
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
   // A blob URL outlives the element that pointed at it, so let it go.
   dialog.addEventListener('close', () => {
     token++;

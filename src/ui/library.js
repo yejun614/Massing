@@ -113,9 +113,6 @@ export function createLibraryDialog(root, { library, onOpen, onDelete, toaster }
     ])
   );
 
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
   root.append(dialog);
 
   return {

@@ -491,11 +491,19 @@ development. What replaces them:
 | Undo | Whole-document snapshots |
 | Panels | Built once per selection *shape*, then values synced in place — otherwise typing rebuilds the panel and steals focus |
 | Templating | `h()` and `svg()` in `util/dom.js`, about forty lines |
+| Sheets | Native `<dialog>` + `showModal`, closed by their own button or `Esc` — never by a click on the surround |
 | Tooltips | One popover moved between controls; `title` harvested on hover, so the toolbar keeps writing plain titles |
 | Touch | A second finger switches the pointer machine to `pinch`; grips resize themselves off `(pointer: coarse)` |
 
 The inspector's rebuild rule is the one that bites if forgotten: rebuild on
 selection change, sync otherwise, and never write to a focused input.
+
+Sheets earn their own row because the rule is easy to undo by habit. A click on
+the surround lands on the `<dialog>` element itself, so closing on it is three
+lines every dialog used to carry — and those three lines meant a press that
+missed by a few pixels threw away a name half-typed into Publish, a size being
+compared in Export, or the settings behind a snippet that had not been copied
+yet. Dismissing is deliberate: the button, or `Esc`. Every sheet has both.
 
 ---
 

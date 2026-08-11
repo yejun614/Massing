@@ -103,11 +103,6 @@ function addButton() {
 
   const dialog = h('dialog', { class: 'sheet sheet-narrow' });
   document.body.append(dialog);
-  // The backdrop is the dialog element itself; a click on the card lands on a
-  // child, so this closes only on the surround.
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
 
   const button = h('button', {
     class: 'btn btn-icon',

@@ -124,9 +124,6 @@ function showManualCopy(text) {
     h('button', { class: 'btn sheet-close', text: 'Close', onClick: () => dialog.close() }),
   ]);
 
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
   dialog.addEventListener('close', () => dialog.remove());
 
   document.body.append(dialog);

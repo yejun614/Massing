@@ -23,11 +23,6 @@ export function createShortcutsDialog(root) {
     })
   );
 
-  // Clicking the backdrop lands on the dialog element itself, not its content.
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
-
   root.append(dialog);
   return { open: () => dialog.showModal() };
 }
