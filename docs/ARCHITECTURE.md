@@ -513,6 +513,7 @@ development. What replaces them:
 | Panels | Built once per selection *shape*, then values synced in place — otherwise typing rebuilds the panel and steals focus |
 | Templating | `h()` and `svg()` in `util/dom.js`, about forty lines |
 | Sheets | Native `<dialog>` + `showModal`, closed by their own button or `Esc` — never by a click on the surround |
+| Hiding | `el.hidden`, and one `[hidden] { display: none !important }` to make it mean that: every `display` in the stylesheet outranks the browser's own rule for the attribute |
 | Tooltips | One popover moved between controls; `title` harvested on hover, so the toolbar keeps writing plain titles |
 | Touch | A second finger switches the pointer machine to `pinch`; grips resize themselves off `(pointer: coarse)` |
 

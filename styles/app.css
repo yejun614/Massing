@@ -79,6 +79,24 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * `hidden`, made to mean it.
+ *
+ * The browser's own rule for the attribute is `display: none`, and it is the
+ * weakest rule there is: every `display` in this stylesheet outranks it, so
+ * `el.hidden = true` on anything laid out as a flex row, a grid or an inline
+ * block does exactly nothing. That is not a hypothetical — it is how the two
+ * hosted toolbar buttons, built hidden and revealed only when the deployment
+ * says the feature is on, were on screen in every offline build, and it caught
+ * two more controls in the presenting bar before this rule existed.
+ *
+ * So it is stated once, here, with the only weapon that beats a class selector
+ * regardless of where it appears in the file. An element carrying `hidden` is
+ * an element the script has said is not there, and nothing about how it would
+ * have been laid out is a reason to argue.
+ */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -234,14 +252,6 @@ button {
   color: inherit;
   text-decoration: none;
 }
-
-/*
- * `display` above beats the browser's own rule for `hidden`, so without this the
- * attribute does nothing to a button — which is how the two hosted controls,
- * built hidden and revealed only once the deployment says the feature is on,
- * were on screen in every offline build instead.
- */
-.btn[hidden] { display: none; }
 
 .btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border); }
 .btn:active:not(:disabled) { background: var(--accent-soft); }
@@ -1380,13 +1390,8 @@ kbd {
 .present-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
 .present-btn:disabled { opacity: 0.3; cursor: default; }
 .present-btn svg { display: block; width: 15px; height: 15px; }
-/* The bar keeps every button it might need and hides the ones this mode does
-   not use — and `display` on the class above beats the browser's own rule for
-   `hidden`, so the attribute has to be honoured here or it does nothing. */
-.present-btn[hidden] { display: none; }
 
 .present-nav { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.present-nav[hidden] { display: none; }
 
 .present-where {
   display: flex;
@@ -1517,7 +1522,6 @@ kbd {
 .embed-source.is-hidden { display: none; }
 
 .embed-note { margin: 10px 0 0; }
-.embed-note[hidden] { display: none; }
 
 /* Directly under the sentence that explains why it is there. */
 .embed-publish { margin-top: 8px; border-color: var(--border); }
@@ -1617,7 +1621,6 @@ kbd {
   color: var(--ink-muted);
   line-height: 1.45;
 }
-.tooltip-key[hidden], .tooltip-body[hidden] { display: none; }
 
 /* Two triangles: the outer one is the border, the inner one covers it. */
 .tooltip::before,
