@@ -18,7 +18,13 @@ import {
   sharePayloadFrom,
 } from '../src/core/share.js';
 
-import { build, vercelFeaturesWanted, checkModule } from '../build.js';
+import {
+  build,
+  vercelFeaturesWanted,
+  checkModule,
+  blankTemplates,
+  topLevelNames,
+} from '../build.js';
 import { readConsent, writeConsent, analyticsSources } from '../src/ui/consent.js';
 
 let passed = 0;
@@ -109,6 +115,107 @@ check('the bundle has no imported name that nobody declares', (() => {
     return `build() threw: ${err.message}`;
   }
 })() === true);
+
+/*
+ * What the checks above are allowed to read.
+ *
+ * Every one of them is a line-oriented pattern over a copy of the source with
+ * template literals blanked out, so the blanking decides what they can see. It
+ * used to mistake a backtick inside a regular expression for the start of a
+ * template and blank the genuine code behind it — which cost `util/markdown.js`
+ * most of its declarations, silently, since a check that cannot see a file
+ * simply reports nothing about it.
+ */
+const NL = String.fromCharCode(10);
+
+check('blanking preserves length exactly, so offsets stay usable', (() => {
+  const src = ['const a = `one', 'two`;', "const b = 'x';", ''].join(NL);
+  return blankTemplates(src).length === src.length;
+})());
+
+check('a template literal still has its contents blanked', (() => {
+  const src = 'const t = `const stowaway = 1;`;' + NL;
+  return !blankTemplates(src).includes('stowaway');
+})());
+
+check('newlines survive blanking, so line numbers hold', (() => {
+  const src = ['const t = `a', 'b', 'c`;', ''].join(NL);
+  const blanked = blankTemplates(src);
+  return blanked.split(NL).length === src.split(NL).length;
+})());
+
+check('a backtick inside a regex does not blank the code after it', (() => {
+  // `util/markdown.js` in miniature: the fence pattern, then a declaration.
+  const src = [
+    'const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;',
+    'export function renderMarkdown(text) { return text; }',
+    '',
+  ].join(NL);
+  return topLevelNames(blankTemplates(src)).has('renderMarkdown');
+})());
+
+check('the real markdown module is fully visible to the checks', (() => {
+  const src = readFileSync(new URL('../src/util/markdown.js', import.meta.url), 'utf8');
+  const names = topLevelNames(blankTemplates(src));
+  return names.has('renderMarkdown') && names.has('parseMarkdown');
+})());
+
+check('a division is not mistaken for a regex', (() => {
+  /*
+   * The expensive direction. Read as a regex, everything up to the next `/`
+   * stops being scanned as code — so a declaration between two divisions would
+   * vanish, which is exactly the failure being fixed, in reverse.
+   */
+  const src = [
+    'const half = width / 2;',
+    'const mid = (a + b) / 2;',
+    'const cell = box[0] / CELL;',
+    'export function afterDivisions() { return 1; }',
+    '',
+  ].join(NL);
+  const names = topLevelNames(blankTemplates(src));
+  return names.has('half') && names.has('mid') && names.has('cell') &&
+    names.has('afterDivisions');
+})());
+
+check('a regex after a keyword is read as a regex', (() => {
+  const src = ['function f(s) { return /`/.test(s); }', 'const after = 1;', ''].join(NL);
+  return topLevelNames(blankTemplates(src)).has('after');
+})());
+
+check('a slash inside a regex character class does not close it', (() => {
+  const src = ['const re = /[/`]/;', 'const after = 1;', ''].join(NL);
+  return topLevelNames(blankTemplates(src)).has('after');
+})());
+
+check('a quote inside a regex does not open a string', (() => {
+  const src = ["const re = /['\"]/;", 'const after = 1;', ''].join(NL);
+  return topLevelNames(blankTemplates(src)).has('after');
+})());
+
+check('a misjudged slash costs one line, never the rest of the file', (() => {
+  /*
+   * `}` is the genuinely ambiguous case: end of a block, after which a `/`
+   * opens a regex, or end of an object literal, after which it divides. It is
+   * answered as "regex", so this line is misread — and the bound that makes
+   * that affordable is that a regex cannot span a newline.
+   */
+  const src = ['const odd = {} / 2;', 'const after = 1;', ''].join(NL);
+  return topLevelNames(blankTemplates(src)).has('after');
+})());
+
+check('a comment marker inside a regex does not open a comment', (() => {
+  const src = ['const re = /\\/\\*/;', 'const after = 1;', ''].join(NL);
+  return topLevelNames(blankTemplates(src)).has('after');
+})());
+
+check('the prompt module is still blanked, stowaways and all', (() => {
+  // The reason blanking exists: prompt.js quotes a whole JavaScript file, which
+  // read literally imports node:fs and redeclares names the bundle owns.
+  const src = readFileSync(new URL('../src/data/prompt.js', import.meta.url), 'utf8');
+  const blanked = blankTemplates(src);
+  return blanked.length === src.length && !/^import .*node:fs/m.test(blanked);
+})());
 
 /*
  * A CSS declaration outranks an SVG presentation attribute, so a `font-size`

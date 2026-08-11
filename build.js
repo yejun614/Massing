@@ -12,8 +12,15 @@
  *
  * This works because the project's own rules make it safe. Every module uses
  * plain named imports and exports, there are no cycles, and no module has
- * side effects at import time beyond defining things. `checkModule` below
- * enforces those assumptions rather than trusting them.
+ * side effects at import time beyond defining things.
+ *
+ * `checkModule` enforces those assumptions rather than trusting them, and the
+ * list of what it enforces is written in blood: `import { A as B }` shipped to
+ * production as "B is not defined", because deleting the import statement also
+ * deletes the renaming, and a rename is invisible until the bundle is the thing
+ * running. `assertImportsResolve` is the net under it — every name a module
+ * imports has to be declared by some module, or the build fails instead of
+ * emitting a file that throws in a browser.
  *
  *   node build.js                    -> dist/index.html
  *   node build.js --doc example.json -> the same, with a diagram baked in
@@ -48,6 +55,44 @@ const EXPORT_KEYWORD_RE = /^(\s*)export\s+(?=(?:async\s+)?(?:function|class|cons
 const EXPORT_LIST_RE = /^\s*export\s*\{[^}]*\};?\s*$/gm;
 
 /**
+ * Keywords after which a `/` opens a regular expression rather than divides.
+ *
+ * The rest of the decision is positional -- see `dividesAfter` -- but these read
+ * as identifiers and would otherwise be mistaken for values.
+ */
+const EXPRESSION_KEYWORDS = new Set([
+  'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void',
+  'do', 'else', 'case', 'yield', 'await', 'throw',
+]);
+
+/**
+ * Whether a `/` following `tail` is a division rather than the start of a regex.
+ *
+ * The one genuinely ambiguous character in JavaScript, resolved the way every
+ * scanner resolves it: by what came before. A `/` after something that *is* a
+ * value -- an identifier, a number, a closing bracket -- divides it; a `/` after
+ * anything else opens a literal.
+ *
+ * The bias matters more than the completeness. Reading a real division as a
+ * regex is the expensive mistake, because everything up to the next `/` then
+ * stops being scanned as code; reading a real regex as division only costs the
+ * tracking this exists to provide. So the cases that are actually ambiguous in
+ * the abstract -- a `}` that might end an object literal rather than a block --
+ * are answered as "regex", which is what they are in every line of this project,
+ * and a regex is in any case abandoned at the first newline.
+ */
+function dividesAfter(tail) {
+  const last = tail[tail.length - 1];
+  if (!last) return false; // start of file: nothing to divide
+  if (last === ')' || last === ']') return true;
+  if (/[A-Za-z0-9_$]/.test(last)) {
+    const word = /[A-Za-z_$][\w$]*$/.exec(tail)?.[0] ?? '';
+    return !EXPRESSION_KEYWORDS.has(word);
+  }
+  return false;
+}
+
+/**
  * The source with every template literal's contents replaced by spaces.
  *
  * Everything below reads modules with line-oriented patterns, which cannot
@@ -60,13 +105,33 @@ const EXPORT_LIST_RE = /^\s*export\s*\{[^}]*\};?\s*$/gm;
  * here can be spliced out of the real source at the same offsets. Ordinary
  * quoted strings are tracked but left alone, because `from './doc.js'` is a
  * string this file very much needs to read.
+ *
+ * Regular expressions are tracked for the same reason as strings, and it took
+ * an outage to notice they were not. `util/markdown.js` matches a fenced code
+ * block with ``/^ {0,3}(`{3,}|~{3,})(.*)$/`` -- a backtick inside a regex --
+ * which opened a template frame that was never really open and blanked the
+ * genuine code behind it, `export function renderMarkdown` included. Nothing
+ * failed: the blanked copy is only ever *read* by the checks, so what it cost
+ * was those checks, silently, on that file.
  */
-function blankTemplates(source) {
+export function blankTemplates(source) {
   const out = [];
   // Each `${` inside a template opens a fresh code frame, which its matching
   // `}` closes -- so the nesting has to be a stack rather than a flag.
   const stack = [{ mode: 'code', depth: 0 }];
   let i = 0;
+  /*
+   * The last few significant characters of code, for `dividesAfter`.
+   *
+   * Bounded, because all it is ever asked is what the last character was and
+   * what word it might be the end of. A closed string, template or regex pushes
+   * a digit: whatever it contained, what precedes the next `/` is a value.
+   */
+  let tail = '';
+  const remember = (text) => {
+    const kept = (tail + text).replace(/\s+/g, '');
+    tail = kept.slice(-16);
+  };
 
   const take = (n) => { out.push(source.slice(i, i + n)); i += n; };
   const hide = (n) => {
@@ -82,7 +147,7 @@ function blankTemplates(source) {
     switch (frame.mode) {
       case 'template':
         if (c === '\\') hide(2);
-        else if (c === '`') { stack.pop(); take(1); }
+        else if (c === '`') { stack.pop(); remember('0'); take(1); }
         else if (pair === '${') { stack.push({ mode: 'code', depth: 0 }); take(2); }
         else hide(1);
         break;
@@ -95,16 +160,35 @@ function blankTemplates(source) {
         break;
       case 'quote':
         if (c === '\\') take(2);
-        else { if (c === frame.quote) stack.pop(); take(1); }
+        else { if (c === frame.quote) { stack.pop(); remember('0'); } take(1); }
+        break;
+      /*
+       * Taken through unchanged, never blanked: the point of following a regex
+       * is only that a backtick, quote or slash-star inside one is not read as
+       * opening something. A literal cannot span lines, so an unterminated one
+       * is abandoned at the newline rather than swallowing the rest of the file
+       * -- the bound that keeps a misjudged `/` cheap.
+       */
+      case 'regex':
+        if (c === '\\') take(2);
+        else if (c === '\n') { stack.pop(); take(1); }
+        else if (frame.inClass) { if (c === ']') frame.inClass = false; take(1); }
+        else if (c === '[') { frame.inClass = true; take(1); }
+        else if (c === '/') { stack.pop(); remember('0'); take(1); }
+        else take(1);
         break;
       default:
         if (pair === '//') { stack.push({ mode: 'line' }); take(2); }
         else if (pair === '/*') { stack.push({ mode: 'block' }); take(2); }
+        else if (c === '/' && !dividesAfter(tail)) {
+          stack.push({ mode: 'regex', inClass: false });
+          take(1);
+        }
         else if (c === "'" || c === '"') { stack.push({ mode: 'quote', quote: c }); take(1); }
         else if (c === '`') { stack.push({ mode: 'template' }); take(1); }
-        else if (c === '{') { frame.depth++; take(1); }
+        else if (c === '{') { frame.depth++; remember(c); take(1); }
         else if (c === '}' && frame.depth === 0 && stack.length > 1) { stack.pop(); take(1); }
-        else { if (c === '}') frame.depth--; take(1); }
+        else { if (c === '}') frame.depth--; remember(c); take(1); }
     }
   }
   return out.join('');
@@ -233,20 +317,17 @@ export function checkModule(path, source) {
  * would have turned "TOP_LIGHT is not defined" from a production incident into
  * a failed build.
  *
- * Declarations are read from the raw `source` rather than from the blanked
- * `code`, and the difference is deliberate. `blankTemplates` does not track
- * regular expression literals, so a backtick inside one -- `util/markdown.js`
- * has three -- opens a template frame that is never really open and blanks a
- * stretch of genuine code behind it, declarations included. Reading `source`
- * means the worst this can do is count a declaration that was only ever quoted
- * inside a template literal, and so fail to report something. A check that
- * gates the build has to lean that way: a false negative costs a bug getting
- * through, a false positive costs everyone the build.
+ * Declarations are read from the blanked `code`, so a name that only ever
+ * appears quoted inside a template literal does not count as declared --
+ * `data/prompt.js` holds a whole JavaScript file inside one. That reading is
+ * only safe because `blankTemplates` now follows regular expressions: for as
+ * long as it did not, this check reported `util/markdown.js`'s `renderMarkdown`
+ * as undeclared, and a check that gates the build cannot cry wolf.
  */
 function assertImportsResolve(modules) {
   const declared = new Set();
-  for (const { source } of modules) {
-    for (const name of topLevelNames(source)) declared.add(name);
+  for (const { code } of modules) {
+    for (const name of topLevelNames(code)) declared.add(name);
   }
   const missing = [];
   for (const { path, code } of modules) {
@@ -291,7 +372,7 @@ function stripModuleSyntax(source, code) {
 }
 
 /** Names declared at a module's top level, to catch collisions after merging. */
-function topLevelNames(source) {
+export function topLevelNames(source) {
   const names = new Set();
   const re = /^(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/gm;
   for (const match of source.matchAll(re)) names.add(match[1]);
