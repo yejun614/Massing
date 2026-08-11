@@ -59,7 +59,7 @@ import {
   normaliseSpin,
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
-import { heightFromDrag, axisStep } from '../src/input/pointer.js';
+import { heightFromDrag, axisStep, entitiesInRect } from '../src/input/pointer.js';
 import { SHAPE_KINDS, shapeContains, shapeKindFor, outlinePath } from '../src/data/shapes.js';
 import { edgeRoute } from '../src/render/edge.js';
 import { encodeGif } from '../src/core/gif.js';
@@ -104,6 +104,7 @@ export function runCases(check) {
   assistantPromptCases(check);
   heightCases(check);
   axisDragCases(check);
+  marqueeCases(check);
   tabCases(check);
   linkCases(check);
   libraryCases(check);
@@ -523,6 +524,83 @@ function axisDragCases(check) {
       }
     }
     return ok;
+  })());
+}
+
+/**
+ * What a marquee sweeps.
+ *
+ * The rectangle is a patch of *ground*, so the camera has no vote in this at
+ * all — which is most of the point. The screen-space version it replaced gave
+ * different answers for the same drag over the same blocks at different
+ * rotations, and put the region that selected a tall block a couple of cells up
+ * the screen from the region that looked like it should.
+ */
+function marqueeCases(check) {
+  const doc = normalizeDoc({
+    groups: [
+      { id: 'small', kind: 'vpc', rect: [0, 0, 6, 6] },
+      { id: 'huge', kind: 'vpc', rect: [-40, -40, 200, 200] },
+    ],
+    nodes: [
+      { id: 'near', type: 'ec2', pos: [1, 1], size: [2, 2], height: 3 },
+      { id: 'far', type: 'ec2', pos: [40, 40], size: [2, 2] },
+    ],
+    shapes: [{ id: 'step', kind: 'process', pos: [1, 10], size: [4, 2] }],
+    cells: [{ id: 'array', pos: [1, 20], cols: 3, rows: 1 }],
+    texts: [{ id: 'note', text: 'hi', pos: [2, 30] }],
+    images: [{ id: 'pic', src: 'https://example.com/a.png', pos: [2, 40], size: [6, 4] }],
+  }).doc;
+  const swept = (x0, y0, x1, y1) => entitiesInRect(doc, { x0, y0, x1, y1 });
+
+  check('a sweep over a footprint catches what stands on it',
+    swept(0, 0, 4, 4).includes('near'));
+  check('a sweep beside it catches nothing of it',
+    !swept(20, 20, 24, 24).includes('near'));
+  check('touching is enough for a block', swept(2.5, 2.5, 9, 9).includes('near'));
+
+  check('a zone is caught only when the sweep holds all of it', (() => {
+    const clipped = swept(0, 0, 3, 3);
+    const whole = swept(-1, -1, 7, 7);
+    return !clipped.includes('small') && whole.includes('small');
+  })());
+  check('a sweep inside a huge zone does not drag the whole diagram in',
+    !swept(0, 0, 4, 4).includes('huge'));
+
+  /*
+   * Both of these were unreachable by a marquee: the screen-space version had
+   * no loop for them at all, so a flowchart or an array could only ever be
+   * selected one click at a time.
+   */
+  check('a flowchart step is caught', swept(0, 9, 6, 13).includes('step'));
+  check('a data structure is caught', swept(0, 19, 8, 23).includes('array'));
+
+  check('a note is caught by the point it hangs from', (() => {
+    return swept(0, 29, 4, 31).includes('note') && !swept(0, 32, 4, 34).includes('note');
+  })());
+  check('so is a picture, which may be standing on a wall', (() => {
+    // Its anchor, not its extent: a picture on a wall covers a rectangle in
+    // that plane and has no footprint on the ground to test.
+    return swept(0, 39, 4, 41).includes('pic') && !swept(0, 42, 8, 44).includes('pic');
+  })());
+
+  check('a sweep dragged the other way is the same sweep', (() => {
+    const forward = swept(0, 0, 4, 4).join();
+    const back = swept(4, 4, 0, 0).join();
+    return forward === back && forward.includes('near');
+  })());
+
+  check('a sweep of nothing selects nothing', swept(30, 5, 34, 9).length === 0);
+
+  check('a block is caught by its footprint, not by how tall it stands', (() => {
+    /*
+     * `near` is three cells tall, so its drawn cube reaches well up the screen
+     * from the ground it stands on. The patch it belongs to is the patch its
+     * base covers, which is what the parallelogram on screen is showing.
+     */
+    const onItsGround = swept(0.5, 0.5, 3.5, 3.5);
+    const whereItsTopLooks = swept(-3, -3, -0.5, -0.5);
+    return onItsGround.includes('near') && !whereItsTopLooks.includes('near');
   })());
 }
 

@@ -45,7 +45,10 @@ import {
   canConnect,
   nodeBox,
   groupBox,
+  shapeBox,
+  cellsBox,
   boxContains,
+  boxesOverlap,
   containingGroup,
   makeNode,
   makeGroup,
@@ -324,7 +327,15 @@ export function attachPointer({
 
     if (!id) {
       if (!e.shiftKey) store.clearSelection();
-      drag = { mode: 'pending-marquee', origin: pt, additive: e.shiftKey };
+      drag = {
+        mode: 'pending-marquee',
+        origin: pt,
+        // Where the press landed on the ground. Kept in grid coordinates rather
+        // than as the pixel above, so a wheel-zoom part-way through the sweep
+        // leaves the corner on the cell it was put on.
+        originGrid: screenToGrid(store.state.camera, pt.x, pt.y, 0),
+        additive: e.shiftKey,
+      };
       return;
     }
 
@@ -413,9 +424,12 @@ export function attachPointer({
       }
 
       case 'marquee': {
-        const rect = { x0: drag.origin.x, y0: drag.origin.y, x1: pt.x, y1: pt.y };
-        overlay.marquee(store.state.camera, rect);
-        const inside = entitiesInRect(store.state, rect);
+        // Both corners on the ground plane, so the sweep is a region of the
+        // diagram rather than a region of the window.
+        const g = screenToGrid(store.state.camera, pt.x, pt.y, 0);
+        const rect = { x0: drag.originGrid.x, y0: drag.originGrid.y, x1: g.x, y1: g.y };
+        overlay.marquee(store.state.camera, projectionOf(store.state.camera), rect);
+        const inside = entitiesInRect(store.state.doc, rect);
         store.select(drag.additive ? unique([...drag.base, ...inside]) : inside);
         break;
       }
@@ -994,56 +1008,64 @@ function collectSubtree(doc, group, groupIds, nodeIds, planarIds) {
 // ---------------------------------------------------------------------------
 
 /**
- * Blocks are caught by touching the marquee; zones only by being fully
- * enclosed. Zones are large, so an intersection rule would sweep a VPC into
- * the selection every time the marquee clipped its edge -- and dragging that
+ * What a marquee has swept, given the two corners it has pinned.
+ *
+ * The whole thing happens on the ground, in document coordinates: the rectangle
+ * is a patch of floor, and what it catches is whatever stands on that patch.
+ * That is what makes it match the parallelogram drawn under it — the overlay and
+ * this function are two readings of one rectangle rather than a picture and a
+ * separate rule that has to be kept in step with it.
+ *
+ * It used to compare *screen* boxes, which had two consequences worth naming.
+ * The camera got a vote, so the same drag over the same blocks selected
+ * different things at different rotations. And a block's screen box included the
+ * top of the cube, so in 3D the region that selected it sat a couple of cells up
+ * the screen from the region that looked like it should — the very thing that
+ * makes precise sweeping in an isometric view hopeless.
+ *
+ * Blocks, steps and structures are caught by *touching* the patch; zones only
+ * by being wholly inside it. Zones are large, so an intersection rule would
+ * sweep a VPC in every time the marquee clipped its edge — and dragging that
  * selection would then move the entire diagram.
+ *
+ * @param {object} doc
+ * @param {{x0,y0,x1,y1}} rect  in document grid coordinates, either way round
+ * @returns {string[]}
  */
-function entitiesInRect(state, rect) {
-  const { doc, camera } = state;
+export function entitiesInRect(doc, rect) {
   const box = {
-    x0: Math.min(rect.x0, rect.x1),
-    y0: Math.min(rect.y0, rect.y1),
-    x1: Math.max(rect.x0, rect.x1),
-    y1: Math.max(rect.y0, rect.y1),
+    x: Math.min(rect.x0, rect.x1),
+    y: Math.min(rect.y0, rect.y1),
+    w: Math.abs(rect.x1 - rect.x0),
+    h: Math.abs(rect.y1 - rect.y0),
   };
   const hits = [];
-  for (const node of doc.nodes) {
-    if (intersects(box, screenAABB(camera, nodeBox(node)))) hits.push(node.id);
-  }
-  for (const group of doc.groups) {
-    if (encloses(box, screenAABB(camera, groupBox(group)))) hits.push(group.id);
-  }
+  for (const node of doc.nodes) if (boxesOverlap(box, nodeBox(node))) hits.push(node.id);
+  for (const group of doc.groups) if (boxContains(box, groupBox(group))) hits.push(group.id);
+  // Both were unreachable by a marquee until now: the old screen-space version
+  // simply had no loop for them, so a flowchart or an array could be selected
+  // only one click at a time.
+  for (const shape of doc.shapes) if (boxesOverlap(box, shapeBox(shape))) hits.push(shape.id);
+  for (const cells of doc.cells) if (boxesOverlap(box, cellsBox(cells))) hits.push(cells.id);
+  /*
+   * A note or a picture is caught by its anchor rather than by its extent.
+   *
+   * Both may be standing on a wall, where what they cover is a rectangle in that
+   * plane and not a footprint on the ground at all. The one thing they always
+   * have on the ground is the point they hang from, so that is what is asked
+   * about — which is also the rule the screen-space version used.
+   */
   for (const el of [...doc.texts, ...doc.images]) {
-    const p = gridToScreen(camera, el.pos[0], el.pos[1], el.z ?? 0);
-    if (p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1) hits.push(el.id);
+    if (pointInBox(box, el.pos)) hits.push(el.id);
   }
   return hits;
 }
 
-/** Screen-space bounding box of a grid box, including its vertical extent. */
-function screenAABB(cam, b) {
-  const pts = [];
-  for (const [dx, dy] of [[0, 0], [b.w, 0], [b.w, b.h], [0, b.h]]) {
-    pts.push(gridToScreen(cam, b.x + dx, b.y + dy, 0));
-    if (b.ht) pts.push(gridToScreen(cam, b.x + dx, b.y + dy, b.ht));
-  }
-  return {
-    x0: Math.min(...pts.map((p) => p.x)),
-    x1: Math.max(...pts.map((p) => p.x)),
-    y0: Math.min(...pts.map((p) => p.y)),
-    y1: Math.max(...pts.map((p) => p.y)),
-  };
-}
-
-function intersects(a, b) {
-  return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
-}
-
-function encloses(outer, inner) {
+/** Inclusive, so a note exactly on the edge of a sweep is caught by it. */
+function pointInBox(box, pos) {
   return (
-    inner.x0 >= outer.x0 && inner.x1 <= outer.x1 &&
-    inner.y0 >= outer.y0 && inner.y1 <= outer.y1
+    pos[0] >= box.x && pos[0] <= box.x + box.w &&
+    pos[1] >= box.y && pos[1] <= box.y + box.h
   );
 }
 

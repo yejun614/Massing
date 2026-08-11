@@ -11,7 +11,22 @@ import { projectRing, ringPath, liftRing, bodyPath } from './solid.js';
 import { round2 } from '../util/num.js';
 
 export function createOverlay(layer) {
-  const marquee = svg('rect', { class: 'marquee', visibility: 'hidden' });
+  /*
+   * A patch of ground, not a rectangle on the screen.
+   *
+   * In the 3D view the grid's axes run diagonally, so a screen-aligned
+   * rectangle cuts across every row and column of a diagram at 30 degrees:
+   * sweeping "this column of blocks" is impossible, because no screen rectangle
+   * describes a column. Lying it on the ground makes it a parallelogram whose
+   * edges run along the grid lines already drawn underneath it, and the region
+   * it covers is then the region it selects — see `entitiesInRect`.
+   *
+   * A path rather than a `<rect>` for that reason: the shape has four corners
+   * but no right angles once it is projected. In the 2D view the projection is
+   * the identity on the ground plane, so it comes out as exactly the
+   * screen-aligned rectangle it always was.
+   */
+  const marquee = svg('path', { class: 'marquee', visibility: 'hidden' });
   /*
    * The ghost is a solid, not a footprint.
    *
@@ -26,15 +41,22 @@ export function createOverlay(layer) {
   layer.append(marquee, ghostBody, ghost, link);
 
   return {
-    /** @param {{x0,y0,x1,y1}|null} rect in viewport pixels */
-    marquee(cam, rect) {
+    /**
+     * @param {{x0,y0,x1,y1}|null} rect  the two corners the drag has pinned, in
+     *   document grid coordinates. Not normalised, and it does not need to be:
+     *   a ring wound the other way fills and strokes the same.
+     */
+    marquee(cam, proj, rect) {
       if (!rect) return hide(marquee);
-      const a = screenToScene(cam, Math.min(rect.x0, rect.x1), Math.min(rect.y0, rect.y1));
-      const b = screenToScene(cam, Math.max(rect.x0, rect.x1), Math.max(rect.y0, rect.y1));
-      setAttr(marquee, 'x', round2(a.x));
-      setAttr(marquee, 'y', round2(a.y));
-      setAttr(marquee, 'width', round2(b.x - a.x));
-      setAttr(marquee, 'height', round2(b.y - a.y));
+      const w = (rect.x1 - rect.x0) * CELL;
+      const h = (rect.y1 - rect.y0) * CELL;
+      const ring = projectRing(
+        [[0, 0], [w, 0], [w, h], [0, h]],
+        [rect.x0, rect.y0],
+        proj,
+        cam.rot
+      );
+      setAttr(marquee, 'd', ringPath(ring));
       show(marquee);
     },
 

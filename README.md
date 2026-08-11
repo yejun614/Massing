@@ -73,6 +73,7 @@ npm run test:rust                 # the config-writing tests
 | Draw an algorithm | The **Flowchart** section of the left panel — start/end, process, decision, I/O, subroutine, connector. They lie in the scene like everything else and connect with the same arrows |
 | Add a note | Double-click bare canvas, or `T` then click |
 | Rename anything | Double-click it — the caret lands in its caption, whether that is a block, a zone, a connection or a note |
+| Select several | Drag on bare canvas. The box is a patch of *ground*, so in 3D it lies along the isometric axes rather than square to the screen — which is what makes sweeping one column of a diagram possible. `Shift` adds to the selection |
 | Edit many at once | Select several and the inspector offers what they have in common — caption size and plane, footprint, height, line style, note styling, placement |
 | Add a picture | The picture button, or drag an image file onto the canvas, or paste a screenshot |
 | Several drawings in one file | The `+` on the tab strip in the bottom-left corner. Drag a tab to reorder, or click the tab you are on to rename, duplicate or delete it |
