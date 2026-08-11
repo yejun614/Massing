@@ -375,9 +375,13 @@ One strip stays, along the bottom: which drawing this is, arrows to the ones
 either side, fit, and the way out. `←` and `→` step through the drawings, as do
 `Page Up` / `Page Down` and the space bar, so a remote clicker works. `Home` and
 `End` jump to the first and last. The strip fades back after a few seconds of
-nothing happening and returns the moment the pointer moves — with a single
-drawing in the file there is nothing to step through, so the navigator half of
-it is not drawn at all.
+nothing happening and returns the moment the pointer moves.
+
+The drawing's name is there whether the file holds one or five — it is what the
+thing on screen is called, and presenting without it means saying so out loud
+instead. What a single drawing does drop is the apparatus for moving between
+them: two arrows that cannot be pressed and a `1 / 1` that counts to one
+describe a choice nobody has.
 
 The page goes fullscreen if the browser allows it, and leaving fullscreen leaves
 the mode: `Esc` inside fullscreen belongs to the browser before it reaches us,

@@ -131,9 +131,12 @@ export function createPresenter({ store, tabs, commands, toaster, onExit } = {})
   /**
    * Which drawing this is, and whether there is another.
    *
-   * With one drawing in the file the whole navigator goes rather than sitting
-   * there with two dead arrows and "1 / 1" — there is nothing to step through,
-   * and saying so twice is worse than not saying it.
+   * The name is always shown, one drawing or five: it is what the thing on
+   * screen is called, and a diagram presented without it is one the room has to
+   * be told the name of out loud. What goes away with a single drawing is the
+   * apparatus for moving between them — two arrows that cannot be pressed and a
+   * "1 / 1" that counts to one — because those describe a choice that does not
+   * exist rather than the drawing that does.
    */
   function render() {
     // An embed cannot leave, so it is offered the two things it can do instead.
@@ -142,13 +145,12 @@ export function createPresenter({ store, tabs, commands, toaster, onExit } = {})
     openLink.hidden = !locked;
     paintFullscreen();
 
-    const many = tabs.count > 1;
-    nav.hidden = !many;
-    if (!many) return;
     const list = tabs.list;
     const at = tabs.active;
+    const many = list.length > 1;
     label.textContent = list[at]?.name ?? '';
     count.textContent = `${at + 1} / ${list.length}`;
+    for (const el of [prevBtn, nextBtn, count]) el.hidden = !many;
     prevBtn.disabled = at <= 0;
     nextBtn.disabled = at >= list.length - 1;
   }
