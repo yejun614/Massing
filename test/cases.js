@@ -59,7 +59,7 @@ import {
   normaliseSpin,
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
-import { heightFromDrag } from '../src/input/pointer.js';
+import { heightFromDrag, axisStep } from '../src/input/pointer.js';
 import { SHAPE_KINDS, shapeContains, shapeKindFor, outlinePath } from '../src/data/shapes.js';
 import { edgeRoute } from '../src/render/edge.js';
 import { encodeGif } from '../src/core/gif.js';
@@ -103,6 +103,7 @@ export function runCases(check) {
   validateCases(check);
   assistantPromptCases(check);
   heightCases(check);
+  axisDragCases(check);
   tabCases(check);
   linkCases(check);
   libraryCases(check);
@@ -451,6 +452,80 @@ function libraryCases(check) {
  * cell reads as a deliberate difference; a footprint of 2.3 does not, so
  * everything else stays integral.
  */
+/**
+ * Dragging a block along one grid axis, which is what Alt asks for.
+ *
+ * The hysteresis is the half worth testing. Without it the axis is re-decided
+ * every frame, and along the diagonal — where the two components are within a
+ * hair of each other — a wobble of one pixel swaps it, teleporting the block
+ * between two quite different places several times a second.
+ */
+function axisDragCases(check) {
+  const step = (gx, gy, axis = null, locked = true) => axisStep(gx, gy, axis, locked);
+
+  check('a free drag keeps both axes, rounded to cells', (() => {
+    const s = step(3.4, -2.6, null, false);
+    return s.dx === 3 && s.dy === -3 && s.axis === null;
+  })());
+
+  check('a locked drag takes the axis it is mostly along', (() => {
+    const along = step(4.2, 0.9);
+    const across = step(0.8, -5.1);
+    return along.dx === 4 && along.dy === 0 && along.axis === 'x'
+      && across.dx === 0 && across.dy === -5 && across.axis === 'y';
+  })());
+
+  check('a drag straight down the screen picks the nearer axis', (() => {
+    // Screen-vertical is (+x, +y) in equal parts, so it is an exact tie; the
+    // answer only has to be the same one every time.
+    const a = step(3, 3);
+    const b = step(3.0001, 3);
+    return a.axis === 'x' && b.axis === 'x' && a.dy === 0;
+  })());
+
+  check('nothing is committed before half a cell is asked for', (() => {
+    const s = step(0.3, -0.4);
+    return s.dx === 0 && s.dy === 0 && s.axis === null;
+  })());
+
+  check('an axis already chosen survives a wobble past the diagonal', (() => {
+    // Committed to x, then the pointer strays a little the other way.
+    const s = step(4, 4.4, 'x');
+    return s.axis === 'x' && s.dx === 4 && s.dy === 0;
+  })());
+
+  check('and hands over when the other axis clearly wins', (() => {
+    const s = step(4, 7, 'x');
+    return s.axis === 'y' && s.dx === 0 && s.dy === 7;
+  })());
+
+  check('the hand-over is symmetric', (() => {
+    const held = step(4.4, 4, 'y');
+    const given = step(7, 4, 'y');
+    return held.axis === 'y' && given.axis === 'x';
+  })());
+
+  check('letting go of the lock forgets the axis', (() => {
+    // So taking Alt again later in the same drag chooses from where the pointer
+    // now is, rather than resuming an axis picked before it was released.
+    const s = step(4, 7, 'x', false);
+    return s.axis === null && s.dx === 4 && s.dy === 7;
+  })());
+
+  check('a locked drag never moves along both axes at once', (() => {
+    let ok = true;
+    for (let gx = -6; gx <= 6; gx += 0.5) {
+      for (let gy = -6; gy <= 6; gy += 0.5) {
+        for (const axis of [null, 'x', 'y']) {
+          const s = step(gx, gy, axis);
+          if (s.dx !== 0 && s.dy !== 0) ok = false;
+        }
+      }
+    }
+    return ok;
+  })());
+}
+
 function heightCases(check) {
   const heightOf = (raw) => normalizeDoc({
     nodes: [{ id: 'n', type: 'ec2', pos: [0, 0], height: raw }],

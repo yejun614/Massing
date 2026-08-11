@@ -35,6 +35,7 @@ export const SHORTCUTS = [
   ['0', 'Zoom to fit'],
   ['P', 'Present — the diagram alone, with editing off. Arrows change drawing, Esc leaves'],
   ['Space + drag', 'Pan'],
+  ['Alt + drag', 'Move along one grid axis only — useful in 3D, where the axes run diagonally'],
   ['The + on the tab strip', 'Add another drawing to this file — drag a tab to reorder, or click the tab you are on to rename, duplicate or delete it'],
   ['[ / ]', 'Show or hide the left / right panel'],
   ['Drag a panel edge', 'Resize the side panels (double-click to reset)'],

@@ -349,6 +349,9 @@ export function attachPointer({
       startGrid: screenToGrid(store.state.camera, pt.x, pt.y, 0),
       targets,
       moved: false,
+      // Which grid axis this drag has committed to, once it has committed to
+      // one. See `axisStep`.
+      axis: null,
     };
   });
 
@@ -419,14 +422,22 @@ export function attachPointer({
 
       case 'move': {
         const g = screenToGrid(store.state.camera, pt.x, pt.y, 0);
-        const dx = Math.round(g.x - drag.startGrid.x);
-        const dy = Math.round(g.y - drag.startGrid.y);
+        // Free, unless Alt asks for one grid axis at a time. Read every frame
+        // rather than captured at the press, so the lock can be taken and given
+        // back in the middle of a drag.
+        const step = axisStep(
+          g.x - drag.startGrid.x,
+          g.y - drag.startGrid.y,
+          drag.axis,
+          e.altKey
+        );
+        drag.axis = step.axis;
         if (!drag.moved) {
-          if (dx === 0 && dy === 0) break;
+          if (step.dx === 0 && step.dy === 0) break;
           store.beginGesture('Move');
           drag.moved = true;
         }
-        applyMove(drag.targets, dx, dy);
+        applyMove(drag.targets, step.dx, step.dy);
         break;
       }
 
@@ -1069,6 +1080,64 @@ function zoneRect(drag) {
  * `+z` projects to exactly `CELL` pixels straight up the screen, so converting
  * the drag to storeys is that and the zoom, and nothing more.
  */
+/**
+ * How much more the other axis has to have before a locked drag hands over.
+ *
+ * Without hysteresis the axis is re-decided every frame, and along the diagonal
+ * -- where the two components are within a hair of each other -- a wobble of one
+ * pixel swaps it. That does not nudge the block; it teleports it between two
+ * quite different places, several times a second. 1.6 is roughly ten degrees of
+ * dead band either side of the diagonal: enough that no hand crosses it by
+ * accident, small enough that changing your mind takes one deliberate movement.
+ */
+const AXIS_SWITCH = 1.6;
+
+/**
+ * A move drag, in whole cells, optionally along one grid axis only.
+ *
+ * Free is the default, because a free drag is the one that follows the pointer
+ * and that is what a drag should do. The lock is Alt, and it earns its key in
+ * the 3D view especially: there the grid's axes run diagonally across the
+ * screen, so a free drag almost never lands on one — putting a block in the row
+ * it belongs in means creeping the pointer until *both* components happen to be
+ * right, and a hand a few pixels out puts it a cell along the other axis
+ * instead. Held, "slide it over one row" is a single flick.
+ *
+ * It is offered in 2D too. There the grid axes *are* the screen axes, so the
+ * lock buys less — a horizontal drag is already pure +x — but "less" is not
+ * "nothing": a hand travelling 300 pixels drifts, and taking the other axis out
+ * of the gesture is the difference between landing on the row and landing near
+ * it. And a modifier that means one thing in one view and nothing in the other
+ * is a modifier nobody remembers.
+ *
+ * Nothing is committed until half a cell has been asked for. Choosing an axis
+ * from the first jittery pixel would decide the whole gesture before it began.
+ *
+ * @param {number} gx  drag so far along grid x, in fractional cells
+ * @param {number} gy  the same along grid y
+ * @param {'x'|'y'|null} axis  what this drag has committed to so far
+ * @param {boolean} locked  false leaves the drag free and forgets the axis
+ * @returns {{dx: number, dy: number, axis: 'x'|'y'|null}}
+ */
+export function axisStep(gx, gy, axis, locked) {
+  if (!locked) return { dx: Math.round(gx), dy: Math.round(gy), axis: null };
+  if (Math.max(Math.abs(gx), Math.abs(gy)) < 0.5) return { dx: 0, dy: 0, axis };
+  const next = dominantAxis(gx, gy, axis);
+  return next === 'x'
+    ? { dx: Math.round(gx), dy: 0, axis: next }
+    : { dx: 0, dy: Math.round(gy), axis: next };
+}
+
+/** Which axis a drag is along, reluctant to change its mind. */
+function dominantAxis(gx, gy, axis) {
+  const x = Math.abs(gx);
+  const y = Math.abs(gy);
+  // A tie goes to x, so the first choice is at least deterministic.
+  if (!axis) return x >= y ? 'x' : 'y';
+  if (axis === 'x') return y > x * AXIS_SWITCH ? 'y' : 'x';
+  return x > y * AXIS_SWITCH ? 'x' : 'y';
+}
+
 export function heightFromDrag(startHeight, dy, zoom, fallback = startHeight) {
   const risen = Math.round(dy / (CELL * zoom));
   return clampTenth(startHeight + risen, 0, MAX_HEIGHT, fallback);
