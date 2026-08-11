@@ -10,7 +10,8 @@
  * and a fragment written by that model can be pasted back onto the canvas.
  */
 
-import { normalizeDoc, serializeDoc, uniqueId, createEmptyDoc } from './schema.js';
+import { normalizeDoc, serializeDoc, uniqueId, createEmptyDoc, CONTENT_KEYS } from './schema.js';
+import { parseLink } from './link.js';
 import {
   allIds,
   nodeById,
@@ -22,20 +23,54 @@ import {
   groupBox,
   shapeBox,
   cellsBox,
+  entityBox,
+  endpointBox,
+  edgeById,
   boxContains,
   docBounds,
   removeEntities,
   reassignGroups,
 } from './doc.js';
-import { fitToBox, fitToSceneBox, rotate, zoomAt, createCamera } from '../render/camera.js';
+import {
+  fitToBox,
+  fitToSceneBox,
+  lerpCamera,
+  rotate,
+  zoomAt,
+  createCamera,
+} from '../render/camera.js';
 import { copyText } from '../util/dom.js';
 import { describeParseFailure } from '../util/errors.js';
 import { tidy, autoLayout, countOccluded } from './arrange.js';
 
 const PASTE_OFFSET = 2; // cells, so a paste is visibly not the original
 
+/**
+ * How long a flight to a linked element takes.
+ *
+ * Long enough that the eye can follow the drawing moving under it — which is
+ * the entire reason it is animated rather than a cut, since a cut leaves you
+ * somewhere else with no idea which way you came — and short enough that
+ * following three links in a row is not a wait.
+ */
+const GLIDE_MS = 620;
+
+/**
+ * How close a flight is allowed to get.
+ *
+ * A block alone in a wide window fits at 4x, which fills the screen with one
+ * flat colour and pushes the caption off the bottom edge. Landing needs to show
+ * the destination *and* enough of its neighbourhood to say where it is.
+ */
+const GLIDE_ZOOM = 1.6;
+
+/** Ease in and out, so a flight gathers and settles rather than snapping. */
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2);
+
 export function createCommands({ store, scene, toaster, io, library, tabs = null }) {
   let localClipboard = null; // fallback when the system clipboard is unavailable
+  /** The camera flight in progress, so anything else touching the camera can stop it. */
+  let glide = 0;
 
   // --- selection ---------------------------------------------------------
 
@@ -251,6 +286,17 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
         doc.cells.push({ ...c, id, pos: [c.pos[0] + offset, c.pos[1] + offset] });
         created.push(id);
       }
+      /*
+       * Links inside the fragment follow it.
+       *
+       * Pasting renames everything to avoid collisions, and a `#api` written on
+       * a copied block would otherwise still point at the *original* api — so
+       * duplicating a diagram would give you two drawings whose links both lead
+       * back into the first one. Only ids that were part of the fragment are
+       * rewritten: a link out to something already on the canvas is a link to
+       * that thing, and following the paste would be the wrong repair.
+       */
+      relinkPasted(doc, remap);
       reassignGroups(doc, doc.nodes.filter((n) => created.includes(n.id)));
     });
 
@@ -326,6 +372,7 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
   }
 
   function zoomBy(factor) {
+    stopGlide();
     const { width, height } = scene.viewport;
     const left = coveredLeft();
     // About the middle of what can actually be seen.
@@ -339,6 +386,7 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
    * and rotation being fitted, not the previous frame's.
    */
   function zoomFit() {
+    stopGlide();
     scene.render(store.state);
     const box = scene.contentBox(24);
     const { width, height } = scene.viewport;
@@ -351,16 +399,83 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
     store.setUI({ camera: { ...camera, tx: camera.tx + left } });
   }
 
+  /**
+   * Fly the camera to one element.
+   *
+   * The move is animated, and that is the feature rather than decoration: a
+   * link that cut straight to its target would leave the viewer somewhere else
+   * with no idea which direction they came from or how far — which in a diagram
+   * the size of a wall is the difference between navigation and teleporting.
+   *
+   * Honours `prefers-reduced-motion` by arriving at once. Someone who has asked
+   * their system for less movement has asked for exactly this less movement.
+   *
+   * @returns {boolean} false when there is no such element to fly to
+   */
+  function focusOn(id, { animate = true } = {}) {
+    const box = entityBox(store.state.doc, id) ?? connectionBox(store.state.doc, id);
+    if (!box) return false;
+
+    const { width, height } = scene.viewport;
+    const left = coveredLeft();
+    const usable = { width: Math.max(1, width - left), height };
+    // Roomier than a zoom-to-fit's margin: fitting a whole diagram wants the
+    // frame full, and landing on one block in it wants its surroundings in shot.
+    const padding = Math.min(150, usable.width * 0.22, usable.height * 0.22);
+    const target = fitToBox(
+      store.state.camera,
+      { x0: box.x, y0: box.y, x1: box.x + box.w, y1: box.y + box.h, zmax: box.z + box.ht },
+      usable,
+      padding,
+      GLIDE_ZOOM
+    );
+    glideTo({ ...target, tx: target.tx + left }, { animate });
+    return true;
+  }
+
+  function glideTo(to, { animate = true } = {}) {
+    stopGlide();
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!animate || still) {
+      store.setUI({ camera: to });
+      return;
+    }
+    const from = { ...store.state.camera };
+    const viewport = scene.viewport;
+    const started = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - started) / GLIDE_MS);
+      store.setUI({ camera: t >= 1 ? to : lerpCamera(from, to, ease(t), viewport) });
+      glide = t < 1 ? requestAnimationFrame(step) : 0;
+    };
+    glide = requestAnimationFrame(step);
+  }
+
+  /**
+   * Abandon a flight, keeping the camera wherever it had got to.
+   *
+   * Called by anything that moves the camera itself. Without it a drag or a
+   * wheel during a flight fights it for the same three numbers, and the flight
+   * wins the argument every frame until it finishes.
+   */
+  function stopGlide() {
+    if (!glide) return;
+    cancelAnimationFrame(glide);
+    glide = 0;
+  }
+
   function zoomReset() {
     store.setUI({ camera: { ...createCamera(), rot: store.state.camera.rot, mode: store.state.camera.mode } });
     zoomFit();
   }
 
   function rotateBy(turns) {
+    stopGlide();
     store.setUI({ camera: rotate(store.state.camera, turns) });
   }
 
   function toggleMode() {
+    stopGlide();
     const mode = store.state.camera.mode === 'iso' ? 'flat' : 'iso';
     store.setUI({ camera: { ...store.state.camera, mode } });
     zoomFit();
@@ -400,6 +515,8 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
     zoomOut: () => zoomBy(0.8),
     zoomFit,
     zoomReset,
+    focusOn,
+    stopGlide,
     rotateLeft: () => rotateBy(-1),
     rotateRight: () => rotateBy(1),
     toggleMode,
@@ -408,6 +525,50 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
     undo: () => store.undo(),
     redo: () => store.redo(),
   };
+}
+
+/**
+ * A connection's extent: both the things it joins, together.
+ *
+ * A connection has no footprint of its own — it is a route recomputed every
+ * frame — so a camera aimed at one has nothing to aim at. Framing what it joins
+ * is the right answer anyway: a line arrived at with neither of its ends in
+ * shot is a line with nothing to say.
+ */
+function connectionBox(doc, id) {
+  const edge = edgeById(doc, id);
+  const a = edge && endpointBox(doc, edge.from);
+  const b = edge && endpointBox(doc, edge.to);
+  if (!a || !b) return null;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    w: Math.max(a.x + a.w, b.x + b.w) - x,
+    h: Math.max(a.y + a.h, b.y + b.h) - y,
+    z: 0,
+    ht: Math.max(a.z + a.ht, b.z + b.ht),
+  };
+}
+
+/**
+ * Point the pasted copies' internal links at the pasted copies.
+ *
+ * Read off `remap` rather than off the list of created ids, because that list
+ * leaves out the connections — and a connection may carry a link too.
+ */
+function relinkPasted(doc, remap) {
+  const fresh = new Set(remap.values());
+  for (const key of CONTENT_KEYS) {
+    for (const entity of doc[key] ?? []) {
+      if (!entity.link || !fresh.has(entity.id)) continue;
+      const link = parseLink(entity.link);
+      if (link?.kind !== 'element') continue;
+      const renamed = remap.get(link.id);
+      if (renamed) entity.link = `#${renamed}`;
+    }
+  }
 }
 
 /** Same containment rule the pointer layer uses when dragging a zone. */

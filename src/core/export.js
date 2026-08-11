@@ -133,6 +133,15 @@ export function createExporter({ store, scene, toaster }) {
     // Frozen wherever the animation happened to be, it is a bright smear on one
     // line and nothing on the next -- a mark the picture cannot explain.
     for (const flow of clone.querySelectorAll('.edge-flow')) flow.remove();
+    /*
+     * Link badges stay; the ring that says "you just arrived here" does not.
+     *
+     * The badges are part of what the diagram says — these parts lead somewhere
+     * — and a picture of it is more honest for showing them. The ring is a
+     * report on the last click, which in a file nobody has clicked yet is a
+     * circle drawn around an arbitrary element.
+     */
+    clone.querySelector('.link-landing')?.remove();
     for (const marker of clone.querySelectorAll('.is-selected, .is-hovered')) {
       marker.classList.remove('is-selected', 'is-hovered');
     }

@@ -276,6 +276,18 @@ function gripOn(axis, m, points) {
 
 const same = (p, q) => Math.abs(p - q) < 1e-6;
 
+/**
+ * The middle of a routed connection, in grid coordinates.
+ *
+ * Exported for anything that has to hang something off a line rather than off a
+ * rectangle — the link badge is the one that needed it — so the mark lands on
+ * the line as drawn instead of at the average of its two endpoints, which for
+ * an elbow is a point the line never passes through.
+ */
+export function routeMidpoint(points) {
+  return midpoint(points);
+}
+
 /** How many obstacle footprints a polyline passes through. */
 function blocksCrossed(points, obstacles) {
   if (!obstacles?.length) return 0;

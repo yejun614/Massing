@@ -76,6 +76,9 @@ npm run test:rust                 # the config-writing tests
 | Edit many at once | Select several and the inspector offers what they have in common — caption size and plane, footprint, height, line style, note styling, placement |
 | Add a picture | The picture button, or drag an image file onto the canvas, or paste a screenshot |
 | Several drawings in one file | The `+` on the tab strip in the bottom-left corner. Drag a tab to reorder, or click the tab you are on to rename, duplicate or delete it |
+| See what something is called | Its id sits beside the heading of the inspector panel. Click it to copy — that is what `#element-id` links are written with |
+| Link something | The **Link** field in the inspector — another element, another drawing, or a website. See [Links](#links) |
+| Follow a link | Click it while presenting; `Ctrl`-click (`Cmd` on a Mac) while editing |
 | Present it | `P` — the diagram and nothing else, with editing off. `←` `→` step through the drawings, drag to look around, `Esc` leaves |
 | Embed it elsewhere | The embed button — a frame to paste into another page, previewed before you copy it |
 | Tidy | `A` — nudge blocks apart until nothing is hidden, keeping your layout |
@@ -390,6 +393,58 @@ the mode: `Esc` inside fullscreen belongs to the browser before it reaches us,
 so without that the tools would stay hidden with the one obvious key already
 spent. Nothing about your layout is touched — the panels come back exactly as
 wide, and as open, as you left them.
+
+### Links
+
+Anything on the canvas can lead somewhere. Select it, and the inspector's
+**Link** field takes one of three things:
+
+| What you write | What a click does |
+|---|---|
+| `#element-id` | The camera **flies** to that element — zooming in and sliding across, not cutting — and a ring closes on it when it lands |
+| `tab:Name` | Opens that drawing |
+| `https://example.com` | Opens it in a new tab, **after asking** |
+
+The field says what it found as you type it — *"Switches to the drawing 'Write
+path'"*, or *"Points nowhere: nothing in this file has the id 'api-gatway'"* —
+and the **Follow it** button beside it tries it there and then. A link is the
+one property whose correctness is invisible in the drawing: a transposed letter
+in an id renders exactly like a link that works, right up until somebody clicks
+it in front of a room.
+
+Every linked element wears a small badge at its upper-right corner, and that
+badge is the whole of how anyone knows there is more to see. A link that stays
+inside the file is a blue chain; one that leaves is an amber arrow out of a
+box — a different shape as well as a different colour, because a badge has to
+survive being six pixels across at the zoom a whole diagram fits at, which is
+the zoom a presentation opens on.
+
+**The camera flying is the feature, not the decoration.** A link that cut
+straight to its target would leave you somewhere else in a drawing the size of a
+wall with no idea which direction you came from or how far — which is the
+difference between navigating and being teleported. It takes about six tenths of
+a second, and honours `prefers-reduced-motion` by arriving at once.
+
+**Leaving always asks.** A block in a diagram does not look like a link, and by
+the time somebody clicks one, the diagram has usually travelled — published to a
+URL, embedded in an article, mailed around as a file — so the person clicking is
+rarely the person who wrote it, and has none of the signals a browser gives for
+an ordinary anchor: no status bar, no underline, no address to read first. So
+the whole address is shown, unshortened, before anything opens. Moving the
+camera and changing drawing do not ask: both are undone by looking, and a
+confirmation in front of either would make a diagram with links in it tiresome
+enough that nobody would add any.
+
+Only `http`, `https` and `mailto` are ever opened. A `javascript:` or `data:`
+link is kept in the file exactly as written — so its author can see what they
+wrote and why nothing happens — and refuses to be followed. Where a link opens,
+it opens with `noopener`, so the page it opens cannot reach back and navigate
+the one that opened it. That last one matters most for an embed: without it, a
+diagram quoted in somebody's article could be made to replace the article.
+
+This is what makes a multi-drawing file navigable rather than a stack of
+unrelated pictures: put `tab:` links on the blocks an overview is an overview
+*of*, and it becomes the index to the rest.
 
 ### Embedding it in another page
 

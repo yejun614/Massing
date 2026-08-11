@@ -186,6 +186,35 @@ export function canConnect(doc, id) {
   return endpointBox(doc, id) !== null;
 }
 
+/**
+ * Anything with a place on the grid, as a box, or null.
+ *
+ * Wider than `endpointBox`, and a second name for the same reason
+ * `positionedById` is one: a connection needs somewhere to *stop*, so it only
+ * asks about things with edges to stop on, while a camera flying to a link's
+ * target needs somewhere to *look*, which a note has as much as a block does.
+ * A note hangs from a point rather than covering ground, so its box has no
+ * extent — which is the honest answer, and the caller frames it accordingly.
+ */
+export function entityBox(doc, id) {
+  const box = endpointBox(doc, id);
+  if (box) return box;
+  const text = textById(doc, id);
+  if (text) return { x: text.pos[0], y: text.pos[1], w: 0, h: 0, z: text.z, ht: 0 };
+  const image = imageById(doc, id);
+  if (image) {
+    return {
+      x: image.pos[0],
+      y: image.pos[1],
+      w: image.size[0],
+      h: image.size[1],
+      z: image.z,
+      ht: 0,
+    };
+  }
+  return null;
+}
+
 /** Re-anchor a box for the current camera rotation. */
 export function rotatedBox(box, rot) {
   const r = rotateRect(box.x, box.y, box.w, box.h, rot);
@@ -304,6 +333,7 @@ export function makeNode(doc, type, x, y, overrides = {}) {
     labelAlign: DEFAULT_LABEL_ALIGN,
     group: null,
     props: {},
+    link: null,
     ...stripIdentity(overrides),
   };
 }
@@ -320,6 +350,7 @@ export function makeGroup(doc, kind, rect, overrides = {}) {
     labelPlane: DEFAULT_ZONE_LABEL_PLANE,
     labelSize: DEFAULT_LABEL_SIZE,
     parent: null,
+    link: null,
     ...stripIdentity(overrides),
   };
 }
@@ -351,6 +382,7 @@ export function makeText(doc, x, y, overrides = {}) {
     plane: TEXT_DEFAULTS.plane,
     spin: 0,
     behind: false,
+    link: null,
     ...stripIdentity(overrides),
   };
 }
@@ -373,6 +405,7 @@ export function makeCells(doc, x, y, overrides = {}) {
     color: CELLS_DEFAULTS.color,
     labelSize: CELLS_DEFAULTS.labelSize,
     labelPlane: CELLS_DEFAULTS.labelPlane,
+    link: null,
     ...stripIdentity(overrides),
   };
 }
@@ -393,6 +426,7 @@ export function makeShape(doc, kind, x, y, overrides = {}) {
     no: '',
     yesAt: SHAPE_DEFAULTS.yesAt,
     noAt: SHAPE_DEFAULTS.noAt,
+    link: null,
     ...stripIdentity(overrides),
   };
 }
@@ -409,6 +443,7 @@ export function makeImage(doc, x, y, overrides = {}) {
     plane: IMAGE_DEFAULTS.plane,
     spin: 0,
     behind: false,
+    link: null,
     ...stripIdentity(overrides),
   };
 }
@@ -427,6 +462,7 @@ export function makeEdge(doc, from, to, overrides = {}) {
     labelPlane: DEFAULT_PLANE,
     labelSize: DEFAULT_LABEL_SIZE,
     labelAlign: DEFAULT_LABEL_ALIGN,
+    link: null,
     ...stripIdentity(overrides),
   };
 }

@@ -30,6 +30,7 @@ import { createTextView, updateTextView } from './text.js';
 import { createImageView, updateImageView } from './image.js';
 import { createShapeView, updateShapeView } from './shape.js';
 import { createCellsView, updateCellsView } from './cells.js';
+import { createLinksView, updateLinksView } from './links.js';
 import { sortForPaint } from '../geom/depth.js';
 import { nodeBox, shapeBox, cellsBox, rotatedBox, groupsInPaintOrder, endpointBox } from '../core/doc.js';
 import { canvasBackground } from '../core/schema.js';
@@ -57,10 +58,21 @@ export function createScene(container, { onResize } = {}) {
   // Annotations sit above the blocks: an explanation hidden behind a cube is
   // no explanation at all.
   const overlay = svg('g', { class: 'layer layer-overlay' });
+  /*
+   * Link badges, above everything the camera draws.
+   *
+   * A badge is a claim about what can be clicked, so it has to be visible for
+   * the claim to be true — half a chain glyph behind a taller block would be a
+   * link nobody knows is there. It is inside the camera transform, so it travels
+   * and scales with the drawing it annotates, unlike the resize grips.
+   */
+  const links = createLinksView();
 
   const handles = createHandlesView();
 
-  const root = svg('g', { class: 'scene-root' }, [grid.el, behind, zones, edges, solids, overlay]);
+  const root = svg('g', { class: 'scene-root' }, [
+    grid.el, behind, zones, edges, solids, overlay, links.el,
+  ]);
   const el = svg('svg', { class: 'scene', xmlns: 'http://www.w3.org/2000/svg' }, [root, handles.el]);
   container.append(el);
 
@@ -235,6 +247,15 @@ export function createScene(container, { onResize } = {}) {
       selected: selected.has(entity.id),
       hovered: hoverId === entity.id,
     }));
+
+    // --- link badges -------------------------------------------------------
+    updateLinksView(links, {
+      doc,
+      proj,
+      rot,
+      hoverId,
+      landed: state.landed ?? null,
+    });
 
     // --- resize grips ------------------------------------------------------
     updateHandlesView(handles, state);

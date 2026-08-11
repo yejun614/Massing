@@ -9,7 +9,7 @@
  * session collapses into one undo entry rather than one per character.
  */
 
-import { h, clear, setClass, setText } from '../util/dom.js';
+import { h, clear, setClass, setText, copyText } from '../util/dom.js';
 import { COMPONENTS, GROUP_KINDS, componentFor } from '../data/components.js';
 import {
   nodeById,
@@ -52,7 +52,16 @@ const SWATCHES = [
   '#8c4fff', '#a855f7', '#c925d1', '#e7157b', '#dd344c', '#78716c', '#64748b', '#334155',
 ];
 
-export function createInspector({ root, store, commands }) {
+/**
+ * @param {object} options
+ * @param {{follow: Function, explain: Function}} [options.links]
+ *   The navigator. The panel needs it for two things a field cannot work out on
+ *   its own: what the link someone just typed actually resolves to — which
+ *   depends on the whole file, not on the entity being edited — and a button to
+ *   try it, because a link you cannot test from where you wrote it is a link
+ *   you find out about in front of an audience.
+ */
+export function createInspector({ root, store, commands, links = null }) {
   let signature = null;
   let fields = [];
 
@@ -74,13 +83,14 @@ export function createInspector({ root, store, commands }) {
 
     const found = entityById(doc, selection[0]);
     if (!found) return buildDocument(root, store);
-    if (found.kind === 'node') return buildNode(root, store, found.entity.id);
-    if (found.kind === 'group') return buildGroup(root, store, found.entity.id);
-    if (found.kind === 'text') return buildText(root, store, found.entity.id);
-    if (found.kind === 'image') return buildImage(root, store, found.entity.id);
-    if (found.kind === 'shape') return buildShape(root, store, found.entity.id);
-    if (found.kind === 'cells') return buildCells(root, store, found.entity.id);
-    return buildEdge(root, store, found.entity.id);
+    const { id } = found.entity;
+    if (found.kind === 'node') return buildNode(root, store, id, links);
+    if (found.kind === 'group') return buildGroup(root, store, id, links);
+    if (found.kind === 'text') return buildText(root, store, id, links);
+    if (found.kind === 'image') return buildImage(root, store, id, links);
+    if (found.kind === 'shape') return buildShape(root, store, id, links);
+    if (found.kind === 'cells') return buildCells(root, store, id, links);
+    return buildEdge(root, store, id, links);
   }
 
   /**
@@ -115,9 +125,7 @@ function signatureOf(state) {
 
 function buildDocument(root, store) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Diagram' }),
-  ]);
+  const section = panelHead('Diagram');
 
   fields.push(
     textField(section, store, {
@@ -149,11 +157,9 @@ function buildDocument(root, store) {
   return fields;
 }
 
-function buildNode(root, store, id) {
+function buildNode(root, store, id, links) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Block' }),
-  ]);
+  const section = panelHead('Block', id);
   const withNode = (fn) => (doc) => {
     const node = nodeById(doc, id);
     if (node) fn(node);
@@ -262,15 +268,14 @@ function buildNode(root, store, id) {
     })
   );
 
-  root.append(section, idSection(id));
+  root.append(section);
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
-function buildGroup(root, store, id) {
+function buildGroup(root, store, id, links) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Zone' }),
-  ]);
+  const section = panelHead('Zone', id);
   const withGroup = (fn) => (doc) => {
     const group = groupById(doc, id);
     if (group) fn(group);
@@ -335,15 +340,14 @@ function buildGroup(root, store, id) {
     })
   );
 
-  root.append(section, idSection(id));
+  root.append(section);
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
-function buildText(root, store, id) {
+function buildText(root, store, id, links) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Text' }),
-  ]);
+  const section = panelHead('Text', id);
   const withText = (fn) => (doc) => {
     const note = textById(doc, id);
     if (note) fn(note);
@@ -410,7 +414,7 @@ function buildText(root, store, id) {
 
   root.append(section);
   planarFields(root, store, id, fields);
-  root.append(idSection(id));
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
@@ -465,11 +469,9 @@ function planarFields(root, store, id, fields) {
   root.append(section);
 }
 
-function buildImage(root, store, id) {
+function buildImage(root, store, id, links) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Picture' }),
-  ]);
+  const section = panelHead('Picture', id);
   const withImage = (fn) => (doc) => {
     const im = imageById(doc, id);
     if (im) fn(im);
@@ -524,7 +526,7 @@ function buildImage(root, store, id) {
 
   root.append(section);
   planarFields(root, store, id, fields);
-  root.append(idSection(id));
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
@@ -541,11 +543,9 @@ function buildImage(root, store, id) {
  * kind, so nothing typed is lost by a change of mind, but a "Yes" caption on a
  * plain box would be a control with nowhere to put its result.
  */
-function buildShape(root, store, id) {
+function buildShape(root, store, id, links) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Flowchart shape' }),
-  ]);
+  const section = panelHead('Flowchart shape', id);
   const withShape = (fn) => (doc) => {
     const shape = shapeById(doc, id);
     if (shape) fn(shape);
@@ -658,7 +658,7 @@ function buildShape(root, store, id) {
   });
   root.append(branches);
 
-  root.append(idSection(id));
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
@@ -671,12 +671,10 @@ function buildShape(root, store, id) {
  * third box. The same goes for the pointers: `2: top` on its own line beats a
  * pair of controls per marker, and it reads as what it produces.
  */
-function buildCells(root, store, id) {
+function buildCells(root, store, id, links) {
   const NEWLINE = String.fromCharCode(10);
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Data structure' }),
-  ]);
+  const section = panelHead('Data structure', id);
   const withCells = (fn) => (doc) => {
     const c = cellsById(doc, id);
     if (c) fn(c);
@@ -839,15 +837,13 @@ function buildCells(root, store, id) {
   );
 
   root.append(section);
-  root.append(idSection(id));
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
-function buildEdge(root, store, id) {
+function buildEdge(root, store, id, links) {
   const fields = [];
-  const section = h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Connection' }),
-  ]);
+  const section = panelHead('Connection', id);
   const withEdge = (fn) => (doc) => {
     const edge = edgeById(doc, id);
     if (edge) fn(edge);
@@ -939,11 +935,15 @@ function buildEdge(root, store, id) {
       ])
     );
   }
+  linkSection(root, store, id, fields, links);
   return fields;
 }
 
 /** English plural without a table of exceptions, for the words used below. */
 const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** How many ids a multiple selection lists before it starts counting instead. */
+const MAX_ID_CHIPS = 12;
 
 /**
  * The value every one of `items` agrees on, or null when they differ.
@@ -1019,6 +1019,28 @@ function buildMulti(root, store, commands, selection) {
 
   const head = section('Selection');
   head.append(h('div', { class: 'entity-kind', text: summary.join(' · ') }));
+  /*
+   * Every id, as chips.
+   *
+   * A single selection names itself in its heading, and a multiple one had
+   * nothing at all — which made "select these three and tell me what they are
+   * called" a matter of clicking each in turn. Marqueeing a corner of the
+   * diagram and reading back the names is the fastest way to find the id you
+   * want to link to.
+   *
+   * Capped, because a Select All would otherwise fill the panel with a list
+   * nobody is reading. The cap says how much it is hiding rather than trailing
+   * off, since "and 40 more" and "and 4 more" are different situations.
+   */
+  const shown = selection.slice(0, MAX_ID_CHIPS);
+  head.append(
+    h('div', { class: 'id-chips' }, [
+      ...shown.map((id) => idChip(id)),
+      selection.length > shown.length
+        ? h('span', { class: 'entity-kind', text: `and ${selection.length - shown.length} more` })
+        : null,
+    ])
+  );
 
   if (captioned.length) {
     fields.push(
@@ -1225,11 +1247,123 @@ function buildMulti(root, store, commands, selection) {
   return fields;
 }
 
-function idSection(id) {
+/**
+ * A panel's heading: what this is, and what it is called.
+ *
+ * The id used to be a section of its own at the *bottom*, under ten fields —
+ * which on any window shorter than the panel meant scrolling to find out what
+ * the thing you have selected is called. That was survivable while an id was
+ * something you only read when a warning mentioned one. It stopped being so
+ * once links existed: writing `#element-id` means reading the id off one
+ * element and typing it onto another, so it has to be somewhere you can see
+ * both without hunting, and somewhere you can take a copy of without
+ * transcribing it.
+ *
+ * Beside the kind rather than under it, because that is what the pair says
+ * together: *this is a Block, and it is called `api-gateway`*.
+ */
+function panelHead(title, id = null) {
   return h('section', { class: 'section' }, [
-    h('h2', { class: 'section-title', text: 'Identifier' }),
-    h('div', { class: 'entity-id', text: id }),
+    h('div', { class: 'section-head' }, [
+      h('h2', { class: 'section-title', text: title }),
+      id ? idChip(id) : null,
+    ]),
   ]);
+}
+
+/** How long the chip says it worked before going back to being an id. */
+const COPIED_MS = 1400;
+
+/**
+ * The id, as something you can take away.
+ *
+ * A button rather than a label, since it does something — but it keeps the
+ * plain monospace look of the text it replaced, because it is still primarily
+ * a thing to read. Failure is reported rather than swallowed: the clipboard is
+ * refused often enough (a denied permission, an unfocused document, some
+ * `file://` contexts) that a copy which silently did nothing would have you
+ * pasting whatever was there before.
+ */
+function idChip(id) {
+  let timer = 0;
+  const chip = h('button', {
+    class: 'entity-id id-chip',
+    type: 'button',
+    title: `Copy "${id}"`,
+    text: id,
+    onClick: async () => {
+      const copied = await copyText(id);
+      clearTimeout(timer);
+      setClass(chip, 'is-copied', copied);
+      setClass(chip, 'is-uncopied', !copied);
+      timer = setTimeout(() => {
+        setClass(chip, 'is-copied', false);
+        setClass(chip, 'is-uncopied', false);
+      }, COPIED_MS);
+    },
+  });
+  return chip;
+}
+
+/**
+ * Where this element leads, if anywhere.
+ *
+ * One section for every kind of entity, built once and appended by each panel,
+ * because a link means exactly the same thing on a block, a note and a picture
+ * — it is a property of *being an element*, not of being a block. Seven copies
+ * of it would be seven places for the placeholder text and the hint wording to
+ * drift apart.
+ *
+ * The hint under the field is the point of the section. A link is the one
+ * property whose correctness cannot be seen in the drawing: a `#api-gatway`
+ * with the letters transposed looks exactly like one that works, right up until
+ * somebody clicks it. So the panel says, on every keystroke, what following it
+ * would actually do — and the button beside it does that, so it can be checked
+ * from where it was written rather than by leaving to go and try it.
+ */
+function linkSection(root, store, id, fields, links) {
+  const section = h('section', { class: 'section' }, [
+    h('h2', { class: 'section-title', text: 'Link' }),
+  ]);
+
+  fields.push(
+    textField(section, store, {
+      label: 'Goes to',
+      placeholder: 'https://…  #element-id  tab:Name',
+      get: (s) => entityById(s.doc, id)?.entity.link ?? '',
+      // Empty is `null` rather than `""`: "no link" is the absence of the field,
+      // and writing an empty string would put `"link": ""` in every saved file.
+      set: (value) => (doc) => {
+        const found = entityById(doc, id);
+        if (found) found.entity.link = value.trim() || null;
+      },
+    })
+  );
+
+  const hint = h('p', { class: 'panel-hint' });
+  const follow = h('button', {
+    class: 'btn link-try',
+    type: 'button',
+    text: 'Follow it',
+    onClick: () => links?.follow(id),
+  });
+  section.append(hint, follow);
+
+  fields.push({
+    sync: (state) => {
+      const raw = entityById(state.doc, id)?.entity.link ?? '';
+      setText(
+        hint,
+        raw
+          ? links?.explain(raw) ?? ''
+          : 'Nothing. Give it an address, another element or another drawing, and a ' +
+            'click follows it while presenting — Ctrl-click while editing.'
+      );
+      follow.disabled = !raw;
+    },
+  });
+
+  root.append(section);
 }
 
 // ---------------------------------------------------------------------------
@@ -1244,9 +1378,10 @@ function commitWith(store, label, mutatorFactory, value) {
   store.commit(label, mutatorFactory(value));
 }
 
-function textField(parent, store, { label, get, set }) {
+function textField(parent, store, { label, get, set, placeholder = null }) {
   const input = h('input', {
     type: 'text',
+    placeholder,
     onFocus: () => store.beginGesture(`Edit ${label.toLowerCase()}`),
     onBlur: () => store.endGesture(),
     onInput: (e) => commitWith(store, `Edit ${label.toLowerCase()}`, set, e.target.value),

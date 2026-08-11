@@ -539,3 +539,97 @@
     stroke-opacity: 0.9;
   }
 }
+
+/* --- links ----------------------------------------------------------------
+ *
+ * The badge is the whole of how anyone knows a link is there. It has to read on
+ * a block of any colour, over a zone, against a light canvas and a dark one, at
+ * every rotation -- so it is its own opaque disc rather than a mark drawn onto
+ * whatever it sits on, and it takes its colours from the scene's ink so it
+ * flips with the background the way captions do.
+ *
+ * `pointer-events: none` on the layer, and it matters: the thing the badge
+ * belongs to is what you click. Otherwise a badge would swallow a drag that
+ * began on the block underneath it, and a link on a block hidden behind a
+ * taller one would be clickable only on the badge poking out.
+ */
+.layer-links { pointer-events: none; }
+
+/*
+ * Solid, not outlined.
+ *
+ * A pale disc with a thin rule around it disappears against a pale canvas at
+ * the zoom a whole diagram fits at -- which is the zoom a presentation opens on,
+ * and the one moment the badge has a job to do. Filled, it survives being six
+ * pixels across: the disc still reads as "there is something here" long after
+ * the glyph inside it has stopped resolving, and zooming in is what brings the
+ * glyph back.
+ *
+ * The ring around it is the canvas colour, so the badge separates from a block
+ * of any colour it happens to land on without needing a colour of its own for
+ * each.
+ */
+.link-mark-disc {
+  fill: #2563eb;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.link-mark-glyph {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/*
+ * Leaving is worth saying before the click, not only in the sheet after it --
+ * and it is said with a different glyph rather than a different colour, since
+ * shape survives being small, printed and colour-blind in a way a hue does not.
+ * The warmer fill is the second, redundant channel.
+ */
+.link-mark.is-external .link-mark-disc { fill: #d97706; }
+
+.link-mark.is-hovered .link-mark-disc {
+  fill: #1d4ed8;
+  stroke-width: 3;
+}
+.link-mark.is-external.is-hovered .link-mark-disc { fill: #b45309; }
+
+/*
+ * Where a link just put you.
+ *
+ * A camera move alone does not say which of the things now on screen was the
+ * destination -- least of all when the destination was already in frame and the
+ * camera barely travelled. The ring collapses onto it once and fades, which
+ * points without leaving anything behind to be mistaken for part of the drawing.
+ */
+.link-landing {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+
+@keyframes link-landing {
+  0%   { opacity: 0; transform: scale(2.4); }
+  25%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+.link-landing.is-landing {
+  /* Scaled about the circle's own centre, which is where it was placed. */
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: link-landing 1.5s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link-landing.is-landing {
+    animation: none;
+    opacity: 0.85;
+  }
+}

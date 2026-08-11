@@ -18,7 +18,7 @@
  * entries are whole documents, it would do so by replacing the one you are.
  */
 
-import { serializeDoc, normalizeDoc, createEmptyDoc, tabNameFrom } from './schema.js';
+import { serializeDoc, normalizeDoc, createEmptyDoc, tabNameFrom, CONTENT_KEYS } from './schema.js';
 
 /** A default name for tab `index`, one-based as the strip shows it. */
 export const tabName = (index) => `Tab ${index + 1}`;
@@ -58,13 +58,12 @@ export function joinTabs(tabs, active = 0) {
   return {
     ...createEmptyDoc(lead.meta.title),
     canvas: { ...lead.canvas },
+    // Every collection, taken from the list rather than named one by one: the
+    // hand-written version quietly dropped flowchart shapes and data structures
+    // from a tabbed file, because nothing makes a missing name here fail.
     tabs: tabs.map(({ name, doc }, index) => ({
       name: name || tabName(index),
-      groups: doc.groups,
-      nodes: doc.nodes,
-      edges: doc.edges,
-      texts: doc.texts,
-      images: doc.images,
+      ...Object.fromEntries(CONTENT_KEYS.map((key) => [key, doc[key] ?? []])),
     })),
   };
 }

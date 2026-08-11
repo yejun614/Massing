@@ -32,6 +32,12 @@ import { isTextTarget } from '../input/pointer.js';
 /** On the root element, so the phone layout's `--rail-w` can be zeroed with it. */
 const PRESENT_CLASS = 'is-presenting';
 
+/** Whether this drawing has anything to click, so the mode can say so or not. */
+const hasLinks = (doc) =>
+  ['nodes', 'groups', 'shapes', 'cells', 'texts', 'images', 'edges'].some((key) =>
+    (doc[key] ?? []).some((entity) => entity.link)
+  );
+
 /** Presenting inside somebody else's page, which the stylesheet tightens up. */
 const EMBED_CLASS = 'is-embedded';
 
@@ -372,6 +378,7 @@ export function createPresenter({ store, tabs, commands, toaster, onExit } = {})
       hover: null,
       hoverId: null,
       aiTouched: [],
+      landed: null,
     });
 
     // An embed is already the whole page it is given; taking over the reader's
@@ -391,6 +398,11 @@ export function createPresenter({ store, tabs, commands, toaster, onExit } = {})
         ? 'Presenting. ← → change drawing, drag to look around, Esc leaves.'
         : 'Presenting. Drag to look around, Esc leaves.'
     );
+    // Said separately, and only when there is one to click: it is an
+    // instruction about this particular drawing rather than about the mode.
+    if (hasLinks(store.state.doc)) {
+      toaster?.info('Anything wearing a badge is a link — click it.');
+    }
   }
 
   function exit() {

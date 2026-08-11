@@ -455,7 +455,7 @@ collections move one level down and each tab carries its own:
   [Minimal document](#minimal-document). The editor only wraps a document once
   it has a second drawing to wrap, so every file written before tabs existed
   round-trips byte for byte, and saving a single-tab file never adds a layer.
-- `meta` and `canvas` belong to the file. A tab has a `name` and its five
+- `meta` and `canvas` belong to the file. A tab has a `name` and its content
   collections, and nothing else. A name is at most 40 characters — the strip
   elides what will not fit, but the file itself is bounded too — and a tab
   without one is numbered.
@@ -470,6 +470,58 @@ Use it when one picture would have to answer two questions: an overview and the
 inside of one service, a before and an after. Splitting a crowded drawing down
 the middle for want of space reads worse than the crowd did.
 
+## Links
+
+Anything in a drawing — a block, a zone, a note, a picture, a flowchart shape,
+a data structure, a connection — may carry a `link`, and clicking it follows
+that link. It is one string, and its form says where it goes:
+
+```json
+{ "id": "api", "type": "apigateway", "pos": [4, 4], "link": "#auth-service" }
+{ "id": "detail", "kind": "process", "pos": [0, 0], "link": "tab:Write path" }
+{ "id": "docs", "text": "Runbook", "pos": [2, 9], "link": "https://example.com/runbook" }
+```
+
+| Form | Where it goes |
+|---|---|
+| `#element-id` | Another element. The camera **flies** to it, zooming in and sliding across rather than cutting, so you can see where you went. |
+| `tab:Name` | Another drawing in the file, by its name. Case is ignored. `tab:2` counts from one, but only when no drawing is actually called `2`. |
+| anything else | A web address. It opens in a new tab, **after a sheet asks**, showing the whole address. |
+
+Notes on each:
+
+- **`#element-id` may name something in another drawing.** The element is looked
+  for in the drawing you are on first, then in the others — so `#api` means the
+  `api` beside you when there is one, and two tabs may both have a block by that
+  name without the link becoming ambiguous. Following one that lives elsewhere
+  switches drawings and then flies to it.
+- **A web address may be written bare.** `example.com/docs` is read as
+  `https://example.com/docs`. A bare word without a dot is not: `notes` is
+  far more likely to be an unfinished thought than a host.
+- **Only `http`, `https` and `mailto` are ever opened.** A diagram travels — it
+  is published to a URL, embedded in somebody else's article, mailed around as a
+  file — so a `javascript:` or `data:` link in one would be a script run by
+  somebody else's click. Anything else is kept in the file exactly as written
+  and refuses to be followed, so its author can see what they wrote; the
+  validator reports it as an error.
+- **A link that points at nothing is kept too**, for the same reason, and
+  reported. Nothing about the drawing shows a typo in an id: `#api-gatway`
+  renders exactly like a link that works.
+
+### Following one
+
+| Where | Gesture |
+|---|---|
+| Presenting, or the pan tool | A plain click. A press that turns into a drag is still a drag. |
+| Editing | **Ctrl-click** (Cmd on a Mac), the same gesture an editor uses. A plain click still selects. |
+| The inspector | The **Follow it** button, under the field, so a link can be tested from where it was written. |
+
+Every linked element wears a small badge at its upper-right corner, which is
+the only thing telling a room there is more to see. A link that stays inside
+the file is a blue chain; one that leaves is an amber arrow out of a box — a
+different shape as well as a different colour, since shape survives being small,
+printed and colour-blind.
+
 ## Identifiers
 
 Ids are readable slugs — lower case, hyphen separated — and must be unique
@@ -479,6 +531,11 @@ file, that means within one tab). Derive them from the label:
 load (`web-1`, `web-1-2`) and reported.
 
 `edges[].id` may be omitted; one is generated from the endpoints.
+
+In the editor, an element's id sits beside the heading of its inspector panel,
+and clicking it takes a copy. Selecting several lists all of their ids. That is
+the id you write into a `#element-id` link, into an edge's `from` and `to`, and
+into a node's `group`.
 
 ## Rules the loader enforces
 
@@ -501,6 +558,7 @@ error:
 | `labelSize` out of range | Clamped to 6–96 |
 | Text `size` or `align` out of range | Clamped to the default |
 | Coordinate outside ±400 | Clamped |
+| `link` that is not a link, or points nowhere | Kept as written, and never followed |
 | An entry in a collection that is not an object | Dropped, named with its index |
 | A collection written as something other than a list | Ignored |
 

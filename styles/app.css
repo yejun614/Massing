@@ -570,6 +570,62 @@ body.is-resizing .resizer::after { opacity: 1; }
   word-break: break-all;
 }
 
+/*
+ * The panel's heading: what this is on the left, what it is called on the right.
+ *
+ * Baseline-aligned rather than centred, so the small-caps kind and the
+ * monospace id sit on one line of text instead of two boxes of different
+ * heights. The id is allowed to shrink and wrap; the kind is not, since it is
+ * three known words and the id is whatever somebody typed.
+ */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.section-head .section-title { margin: 0; flex: none; }
+
+/*
+ * The id, as something you can take away.
+ *
+ * Styled as the text it replaced rather than as a button, because it is still
+ * mostly a thing to read: the affordance is the hover. It stays selectable by
+ * hand, which is the way out if the clipboard is refused — and deliberately not
+ * `user-select: all`, which would leave the whole id highlighted blue after
+ * every click, fighting the tick that is already saying it worked.
+ */
+.id-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  text-align: right;
+  cursor: pointer;
+  user-select: text;
+}
+.id-chip:hover { background: var(--surface-2); border-color: var(--border); color: var(--ink); }
+.id-chip.is-copied { color: var(--accent); }
+.id-chip.is-copied::after { content: " ✓"; }
+/* The clipboard is refused often enough that a copy which did nothing, and said
+   nothing, would have you pasting whatever was there before. */
+.id-chip.is-uncopied { color: var(--danger); }
+.id-chip.is-uncopied::after { content: " ✕"; }
+
+/* A multiple selection lists its ids, so they wrap and read left to right. */
+.id-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  margin-bottom: 4px;
+}
+.id-chips .id-chip { text-align: left; }
+.id-chips .entity-kind { margin-bottom: 0; }
+
 /* --- canvas --------------------------------------------------------------- */
 
 .canvas {
@@ -590,6 +646,17 @@ body.is-resizing .resizer::after { opacity: 1; }
 .canvas.is-pan-ready, .canvas.is-pan-ready * { cursor: grab; }
 .canvas.is-pan-tool:active, .canvas.is-pan-tool:active *,
 .canvas.is-pan-ready:active, .canvas.is-pan-ready:active * { cursor: grabbing; }
+
+/*
+ * Something under the pointer leads somewhere.
+ *
+ * After the pan rules and at the same specificity, so it wins: presenting
+ * borrows the pan tool for every press, and a link shown with an open hand
+ * would look like one more piece of ground to drag. `:active` is deliberately
+ * not overridden -- a press that turns into a drag really is a pan, and the
+ * cursor closing on it says so.
+ */
+.canvas.is-over-link, .canvas.is-over-link * { cursor: pointer; }
 
 .canvas.is-drop-target::after {
   content: "Drop a .arch.json file to open it";
@@ -2589,3 +2656,54 @@ kbd {
 .chat-notice-actions { display: flex; gap: 6px; margin-top: 9px; }
 .chat-notice-get { border-color: var(--accent); color: var(--accent); }
 .chat-notice-drop { color: var(--ink-muted); }
+
+/* --- the "this link leaves" sheet -----------------------------------------
+ *
+ * The address is the content of this sheet, not a detail of it, so it is set in
+ * a monospace face at full length and allowed to wrap anywhere. Eliding it with
+ * an ellipsis would hide the end of a URL, which is where a link that is not
+ * what it looks like keeps the part you needed to read.
+ */
+.link-ask-from {
+  margin: 0 0 12px;
+}
+
+.link-ask-host {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.link-ask-url {
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+  /* Long enough to read, bounded so a share link kilobytes long cannot push
+     the buttons off the bottom of the screen. */
+  max-height: 8.4em;
+  overflow-y: auto;
+}
+
+/*
+ * Full width under the hint it belongs to, rather than squeezed beside it.
+ *
+ * Given a border of its own, unlike the toolbar buttons this shares a class
+ * with: those live in a row where being a control is obvious from the company
+ * they keep, and this one sits alone under a paragraph, where borderless text
+ * that happens to be clickable is a guess.
+ */
+.link-try {
+  width: 100%;
+  margin-top: 8px;
+  justify-content: center;
+  border-color: var(--border);
+}

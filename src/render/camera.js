@@ -114,8 +114,20 @@ export function fitToSceneBox(cam, box, viewport, padding = breathingRoom(viewpo
  *
  * @param {{x0:number,y0:number,x1:number,y1:number,zmax:number}} box
  * @param {{width:number,height:number}} viewport
+ * @param {number} maxZoom
+ *   How close this is allowed to get. Fitting the *diagram* wants the full
+ *   range, so it is the range by default. Fitting one block does not: a 2x2
+ *   cube alone on a wide screen fits at 4x, which is a wall of one colour with
+ *   the caption off the bottom, and "show me that block" is not a request to
+ *   see nothing else at all.
  */
-export function fitToBox(cam, box, viewport, padding = breathingRoom(viewport, 80)) {
+export function fitToBox(
+  cam,
+  box,
+  viewport,
+  padding = breathingRoom(viewport, 80),
+  maxZoom = MAX_ZOOM
+) {
   const proj = projectionOf(cam);
   const corners = [];
   for (const [gx, gy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]) {
@@ -135,7 +147,7 @@ export function fitToBox(cam, box, viewport, padding = breathingRoom(viewport, 8
   const zoom = clamp(
     Math.min((viewport.width - padding * 2) / w, (viewport.height - padding * 2) / h),
     MIN_ZOOM,
-    MAX_ZOOM
+    Math.min(maxZoom, MAX_ZOOM)
   );
   return {
     ...cam,
@@ -143,5 +155,34 @@ export function fitToBox(cam, box, viewport, padding = breathingRoom(viewport, 8
     tx: viewport.width / 2 - ((minX + maxX) / 2) * zoom,
     ty: viewport.height / 2 - ((minY + maxY) / 2) * zoom,
   };
+}
+
+/**
+ * A camera part of the way between two others.
+ *
+ * What is interpolated is *what is in the middle of the screen* and how far
+ * away it is, rather than `tx`, `ty` and `zoom` one number at a time. The
+ * difference is the whole of whether the motion reads: interpolating the
+ * translations linearly while the zoom changes swings the subject out of frame
+ * and back, because the translation that centres a point depends on the zoom
+ * it is centred at. Following the centre point instead keeps the destination
+ * pinned for the entire flight.
+ *
+ * Zoom moves geometrically — each frame multiplies by the same factor — so
+ * 0.3 to 1.2 and 1.2 to 4.8 take the same time and feel like the same gesture.
+ *
+ * `to` decides everything else, so a rotation or a projection change committed
+ * mid-flight arrives with it rather than being blended into something that is
+ * neither.
+ */
+export function lerpCamera(from, to, t, viewport) {
+  const zoom = from.zoom * Math.pow(to.zoom / from.zoom, t);
+  const cx = viewport.width / 2;
+  const cy = viewport.height / 2;
+  const a = screenToScene(from, cx, cy);
+  const b = screenToScene(to, cx, cy);
+  const x = a.x + (b.x - a.x) * t;
+  const y = a.y + (b.y - a.y) * t;
+  return { ...to, zoom, tx: cx - x * zoom, ty: cy - y * zoom };
 }
 

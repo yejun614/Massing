@@ -62,7 +62,28 @@ const DRAG_THRESHOLD = 3; // px before a press becomes a drag
 const CONNECT_KEY = 'c';
 const MAX_HEIGHT = 40; // matches the loader's own bound on `height`
 
-export function attachPointer({ canvas, store, scene, overlay, toaster, onEditText }) {
+/**
+ * @param {object} options
+ * @param {{follow: (id: string) => boolean, has: (id: string) => boolean}} options.links
+ *   Following a link is navigation, not editing, so the pointer asks this
+ *   rather than knowing what a link is. `has` decides the cursor; `follow`
+ *   reports whether the press was consumed, so a press on an unlinked thing
+ *   goes on being an ordinary press.
+ * @param {() => void} options.onCameraGrab
+ *   Called whenever this layer is about to move the camera itself, so a flight
+ *   to a linked element gets out of the way instead of fighting the drag for
+ *   the same three numbers every frame.
+ */
+export function attachPointer({
+  canvas,
+  store,
+  scene,
+  overlay,
+  toaster,
+  onEditText,
+  links = null,
+  onCameraGrab = null,
+}) {
   /** @type {null | {mode: string, ...}} */
   let drag = null;
   let spaceDown = false;
@@ -173,6 +194,17 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     };
   }
 
+  /**
+   * A hand over anything that leads somewhere.
+   *
+   * A class on the container rather than a cursor on the entity, for the same
+   * reason space-to-pan uses one: the blocks, captions and pictures underneath
+   * all set cursors of their own, and this has to outrank every one of them.
+   */
+  function showLinkCursor(id) {
+    canvas.classList.toggle('is-over-link', Boolean(links?.has(id)));
+  }
+
   function refreshOverlay() {
     const { camera, hover } = store.state;
     const armed = armedPlacement();
@@ -187,6 +219,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
 
   canvas.addEventListener('pointerdown', (e) => {
     canvas.focus({ preventScroll: true });
+    onCameraGrab?.();
     const pt = local(e);
 
     if (e.pointerType === 'touch') {
@@ -211,7 +244,22 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     if (wantsPan) {
       e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
-      drag = { mode: 'pan', last: pt };
+      /*
+       * A press that goes nowhere is a click, even here.
+       *
+       * Presenting borrows the pan gesture for every press, which is what makes
+       * a drag mean "look over there" — but it would also make a linked block
+       * unclickable in the one mode the links were added for. So what was under
+       * the press is remembered, and if the pointer never travels far enough to
+       * have been a drag, the release follows the link instead.
+       */
+      drag = {
+        mode: 'pan',
+        last: pt,
+        origin: pt,
+        moved: false,
+        linkId: e.button === 0 ? hitId(e) : null,
+      };
       return;
     }
     if (e.button !== 0) return;
@@ -222,6 +270,20 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       placeNode(store.state.pendingType, cellAt(pt));
       if (!e.shiftKey) store.setUI({ pendingType: null, tool: 'select' });
       refreshOverlay(); // drop the ghost now rather than on the next move
+      return;
+    }
+
+    /*
+     * Ctrl or Cmd and a click follows a link, which is what it does in every
+     * editor anyone using this has open beside it.
+     *
+     * A plain click cannot: in the select tool a click is how you pick a thing
+     * up, and a block that moved the camera instead of being selected would be
+     * a block you could not edit. Shift is excluded because it already means
+     * "add to the selection", and the two together should keep meaning that.
+     */
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && links?.follow(hitId(e))) {
+      e.preventDefault();
       return;
     }
 
@@ -307,8 +369,14 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     }
 
     if (!drag) {
-      // Nothing under the pointer is selectable while presenting, so nothing
-      // under it should light up as though it were.
+      /*
+       * Nothing under the pointer is selectable while presenting, so nothing
+       * under it should light up as though it were -- but a link is not a
+       * selection, and it is the one thing that is *more* clickable in this
+       * mode than out of it. So the cursor is still answered here, and only the
+       * hover state below is skipped.
+       */
+      showLinkCursor(hitId(e));
       if (store.state.presenting) return;
       const cell = cellAt(pt);
       const id = hitId(e);
@@ -326,6 +394,11 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
           camera: pan(store.state.camera, pt.x - drag.last.x, pt.y - drag.last.y),
         });
         drag.last = pt;
+        // Measured from where the press began rather than accumulated frame by
+        // frame, so a drag out and back still counts as a drag.
+        if (Math.hypot(pt.x - drag.origin.x, pt.y - drag.origin.y) >= DRAG_THRESHOLD) {
+          drag.moved = true;
+        }
         break;
       }
 
@@ -470,6 +543,12 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       canvas.releasePointerCapture(e.pointerId);
     } catch { /* pointer already released */ }
 
+    // A press that never became a drag, on something that leads somewhere. This
+    // is what a click means while presenting, where every press starts a pan.
+    if (active.mode === 'pan' && !active.moved && active.linkId) {
+      links?.follow(active.linkId);
+    }
+
     if (active.mode === 'move' && active.moved) {
       store.commit('Move', (doc) => {
         reassignGroups(doc, active.targets.nodes.map((t) => nodeById(doc, t.id)).filter(Boolean));
@@ -500,6 +579,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
 
   canvas.addEventListener('pointerleave', () => {
     if (drag) return;
+    canvas.classList.remove('is-over-link');
     store.setUI({ hover: null, hoverId: null });
     overlay.clear();
   });
@@ -510,6 +590,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     'wheel',
     (e) => {
       e.preventDefault();
+      onCameraGrab?.();
       const pt = local(e);
       if (e.shiftKey && !e.ctrlKey) {
         store.setUI({ camera: pan(store.state.camera, -e.deltaY, 0) });

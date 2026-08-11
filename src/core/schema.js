@@ -26,6 +26,7 @@ import { componentFor, isKnownType, groupKindFor, FALLBACK_TYPE } from '../data/
 import { shapeKindFor } from '../data/shapes.js';
 import { clamp, clampInt, clampTenth } from '../util/num.js';
 import { isPlane, normaliseSpin, SPINS } from '../geom/plane.js';
+import { readLink } from './link.js';
 
 export const FORMAT_VERSION = 1;
 export const FILE_EXTENSION = '.arch.json';
@@ -397,6 +398,7 @@ function readBody(raw, doc, warnings, where = '') {
       // like a block's does.
       labelPlane: isPlane(g.labelPlane) ? g.labelPlane : DEFAULT_ZONE_LABEL_PLANE,
       labelSize: clampInt(g.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
+      link: readLink(g.link),
       parent: null,
     };
     groupIndex.set(id, group);
@@ -449,6 +451,7 @@ function readBody(raw, doc, warnings, where = '') {
       labelAlign: TEXT_ALIGNS.has(n.labelAlign) ? n.labelAlign : DEFAULT_LABEL_ALIGN,
       group: null,
       props: plainProps(n.props),
+      link: readLink(n.link),
     };
     const group = str(n.group);
     if (group) {
@@ -498,6 +501,7 @@ function readBody(raw, doc, warnings, where = '') {
       no: readLabel(sh.no, ''),
       yesAt: SHAPE_SIDES.has(sh.yesAt) ? sh.yesAt : SHAPE_DEFAULTS.yesAt,
       noAt: SHAPE_SIDES.has(sh.noAt) ? sh.noAt : SHAPE_DEFAULTS.noAt,
+      link: readLink(sh.link),
     });
   }
 
@@ -565,6 +569,7 @@ function readBody(raw, doc, warnings, where = '') {
       color: color(c.color) || CELLS_DEFAULTS.color,
       labelSize: clampInt(c.labelSize, 6, 96, CELLS_DEFAULTS.labelSize),
       labelPlane: isPlane(c.labelPlane) ? c.labelPlane : CELLS_DEFAULTS.labelPlane,
+      link: readLink(c.link),
     });
   }
 
@@ -606,6 +611,7 @@ function readBody(raw, doc, warnings, where = '') {
       labelPlane: isPlane(e.labelPlane) ? e.labelPlane : DEFAULT_PLANE,
       labelSize: clampInt(e.labelSize, 6, 96, DEFAULT_LABEL_SIZE),
       labelAlign: TEXT_ALIGNS.has(e.labelAlign) ? e.labelAlign : DEFAULT_LABEL_ALIGN,
+      link: readLink(e.link),
     });
   }
 
@@ -630,6 +636,7 @@ function readBody(raw, doc, warnings, where = '') {
       italic: t.italic === true,
       underline: t.underline === true,
       align: TEXT_ALIGNS.has(t.align) ? t.align : TEXT_DEFAULTS.align,
+      link: readLink(t.link),
       ...readPlanar(t, TEXT_DEFAULTS.plane),
     });
   }
@@ -648,6 +655,7 @@ function readBody(raw, doc, warnings, where = '') {
       pos: readPair(im.pos ?? [im.x, im.y], [0, 0]),
       size: readPair(im.size ?? [im.w, im.h], IMAGE_DEFAULTS.size, 1),
       opacity: clamp(Number.isFinite(Number(im.opacity)) ? Number(im.opacity) : 1, 0.05, 1),
+      link: readLink(im.link),
       ...readPlanar(im, IMAGE_DEFAULTS.plane),
     });
   }
@@ -732,6 +740,7 @@ export function serializeDoc(doc) {
       color: g.color,
       labelPlane: g.labelPlane === DEFAULT_ZONE_LABEL_PLANE ? null : g.labelPlane,
       labelSize: g.labelSize === DEFAULT_LABEL_SIZE ? null : g.labelSize,
+      link: g.link,
       parent: g.parent,
     })),
     nodes: doc.nodes.map((n) => omitEmpty({
@@ -745,6 +754,7 @@ export function serializeDoc(doc) {
       labelPlane: n.labelPlane === DEFAULT_PLANE ? null : n.labelPlane,
       labelSize: n.labelSize === DEFAULT_LABEL_SIZE ? null : n.labelSize,
       labelAlign: n.labelAlign === DEFAULT_LABEL_ALIGN ? null : n.labelAlign,
+      link: n.link,
       group: n.group,
       props: isEmpty(n.props) ? null : n.props,
     })),
@@ -761,6 +771,7 @@ export function serializeDoc(doc) {
       labelPlane: e.labelPlane === DEFAULT_PLANE ? null : e.labelPlane,
       labelSize: e.labelSize === DEFAULT_LABEL_SIZE ? null : e.labelSize,
       labelAlign: e.labelAlign === DEFAULT_LABEL_ALIGN ? null : e.labelAlign,
+      link: e.link,
     })),
     // Styling flags are written only when set, so a plain note stays a plain
     // three-line object in the file.
@@ -774,6 +785,7 @@ export function serializeDoc(doc) {
       italic: t.italic || null,
       underline: t.underline || null,
       align: t.align === TEXT_DEFAULTS.align ? null : t.align,
+      link: t.link,
       ...planarWire(t, TEXT_DEFAULTS.plane),
     })),
     images: doc.images.map((im) => omitEmpty({
@@ -783,6 +795,7 @@ export function serializeDoc(doc) {
       pos: im.pos,
       size: im.size,
       opacity: im.opacity === 1 ? null : im.opacity,
+      link: im.link,
       ...planarWire(im, IMAGE_DEFAULTS.plane),
     })),
     cells: doc.cells.map((c) => omitEmpty({
@@ -802,6 +815,7 @@ export function serializeDoc(doc) {
       color: c.color === CELLS_DEFAULTS.color ? null : c.color,
       labelSize: c.labelSize === CELLS_DEFAULTS.labelSize ? null : c.labelSize,
       labelPlane: c.labelPlane === CELLS_DEFAULTS.labelPlane ? null : c.labelPlane,
+      link: c.link,
     })),
     shapes: doc.shapes.map((sh) => omitEmpty({
       id: sh.id,
@@ -818,18 +832,24 @@ export function serializeDoc(doc) {
       // Only worth writing beside a branch label that exists.
       yesAt: sh.yes && sh.yesAt !== SHAPE_DEFAULTS.yesAt ? sh.yesAt : null,
       noAt: sh.no && sh.noAt !== SHAPE_DEFAULTS.noAt ? sh.noAt : null,
+      link: sh.link,
     })),
   };
   return stringify(wire, 0) + '\n';
 }
 
 /**
- * The five collections of one tab, in wire form.
+ * The collections of one tab, in wire form.
  *
  * Written by handing the tab to `serializeDoc` as though it were a whole
  * document and keeping the collections off the result. Roundabout, and the
  * point: every field's default, omission and key order is decided in exactly
  * one place, so a tab and a plain document cannot be written differently.
+ *
+ * `CONTENT_KEYS` rather than a list written out here, for the reason the last
+ * two additions to it demonstrated: flowchart shapes and data structures were
+ * hand-listed out of this function by omission, so a tabbed file silently threw
+ * both away every time it was saved.
  */
 function bodyWire(doc, tab) {
   const whole = JSON.parse(serializeDoc({
@@ -839,8 +859,11 @@ function bodyWire(doc, tab) {
     ...tab,
     tabs: undefined,
   }));
-  const { groups, nodes, edges, texts, images } = whole;
-  return { groups, nodes, edges, texts, images };
+  // Filtered rather than mapped, so a tab's keys come out in the order
+  // `serializeDoc` chose rather than in the order they happen to be listed in.
+  return Object.fromEntries(
+    Object.entries(whole).filter(([key]) => CONTENT_KEYS.includes(key))
+  );
 }
 
 /**

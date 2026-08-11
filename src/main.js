@@ -44,6 +44,8 @@ import { createCloud, publishedKeyFrom } from './core/cloud.js';
 import { createAssistant } from './core/assistant.js';
 import { createLibrary } from './core/library.js';
 import { createTabs, splitTabs } from './core/tabs.js';
+import { createNavigator } from './core/navigate.js';
+import { createLinkDialog } from './ui/link-dialog.js';
 import { createTabStrip } from './ui/tabs.js';
 import { createHandleStore } from './core/handles.js';
 import { createLibraryDialog } from './ui/library.js';
@@ -275,7 +277,25 @@ const palette = createPalette({
     pointer.refreshOverlay();
   },
 });
-const inspector = createInspector({ root: region('inspector'), store, commands });
+/*
+ * Following the links written on the drawing.
+ *
+ * Built here rather than inside the pointer or the panel because it is the one
+ * thing in the editor that needs all of them at once: the drawing on screen to
+ * read the link off, the whole file to resolve it against, the camera to fly,
+ * and a sheet to ask before leaving. Everything that can follow a link -- a
+ * click while presenting, Ctrl-click while editing, the button in the panel --
+ * comes through this and not through three implementations of it.
+ */
+const linkDialog = createLinkDialog(document.body);
+const links = createNavigator({
+  store,
+  tabs,
+  commands,
+  toaster,
+  askExternal: (href, options) => linkDialog.ask(href, options),
+});
+const inspector = createInspector({ root: region('inspector'), store, commands, links });
 // Inside the canvas, so it sits over the drawing rather than taking a strip of
 // the window from it — and so it is beside what it switches between.
 const tabStrip = createTabStrip(canvasEl, { tabs, toaster, onChange: () => scheduleRender() });
@@ -287,6 +307,9 @@ const pointer = attachPointer({
   overlay,
   toaster,
   onEditText: () => inspector.focusEditor(),
+  links,
+  // A hand on the camera outranks a flight it is already making.
+  onCameraGrab: () => commands.stopGlide(),
 });
 attachKeyboard({
   store,
@@ -610,6 +633,6 @@ async function copyPrompt() {
  */
 window.massing = {
   store, scene, commands, io, exporter, exportDialog, pointer, tabs, toaster,
-  presenter,
+  presenter, links,
   prompt: LLM_PROMPT,
 };

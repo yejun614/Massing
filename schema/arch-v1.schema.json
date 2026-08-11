@@ -401,6 +401,9 @@
           ],
           "default": "center",
           "description": "Which part of the caption lines up with what it names. On a block that is the block's own left edge, centre or right edge; on a connection it is which end of the caption is pinned to the midpoint."
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
     },
@@ -468,6 +471,9 @@
           "minimum": 6,
           "maximum": 96,
           "description": "Caption size in pixels. Default 12."
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
     },
@@ -560,6 +566,9 @@
         },
         "behind": {
           "$ref": "#/$defs/placement/properties/behind"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
     },
@@ -625,6 +634,9 @@
         },
         "behind": {
           "$ref": "#/$defs/placement/properties/behind"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
     },
@@ -710,6 +722,9 @@
           ],
           "default": "center",
           "description": "Which part of the caption lines up with what it names. On a block that is the block's own left edge, centre or right edge; on a connection it is which end of the caption is pinned to the midpoint."
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
     },
@@ -813,6 +828,9 @@
             "left"
           ],
           "default": "bottom"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
     },
@@ -944,8 +962,16 @@
             "left"
           ],
           "default": "floor"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
         }
       }
+    },
+    "link": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "Where clicking this element leads. Three forms: \"#element-id\" moves the view to another element in this file, flying the camera to it; \"tab:Name\" opens another drawing (by its name, or by its number when no name matches); anything else is a web address, which opens in a new tab after asking. Only http, https and mailto are ever opened. A click follows a link while presenting; Ctrl-click does while editing."
     }
   }
 }

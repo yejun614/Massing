@@ -15,7 +15,15 @@ import {
   CELL,
 } from '../src/geom/iso.js';
 import { sortForPaint } from '../src/geom/depth.js';
-import { createCamera, screenToGrid, gridToScreen, zoomAt, rotate } from '../src/render/camera.js';
+import {
+  createCamera,
+  screenToGrid,
+  gridToScreen,
+  zoomAt,
+  rotate,
+  fitToBox,
+  lerpCamera,
+} from '../src/render/camera.js';
 import {
   normalizeDoc,
   serializeDoc,
@@ -75,6 +83,8 @@ import {
   MAX_ENTRIES,
 } from '../src/core/library.js';
 import { createEmptyDoc as emptyDoc } from '../src/core/schema.js';
+import { readLink, parseLink, resolveLink, describeLink, MAX_LINK } from '../src/core/link.js';
+import { entityBox } from '../src/core/doc.js';
 import { PLATFORMS, detectPlatform, platformFiles } from '../src/data/downloads.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
@@ -94,6 +104,7 @@ export function runCases(check) {
   assistantPromptCases(check);
   heightCases(check);
   tabCases(check);
+  linkCases(check);
   libraryCases(check);
   textCases(check);
   arrangeCases(check);
@@ -549,6 +560,35 @@ function tabCases(check) {
     return joinTabs(splitTabs(doc)).tabs === undefined;
   })());
 
+  /*
+   * Every collection survives the wrapper.
+   *
+   * Both the join and the write used to name the collections one by one, so the
+   * two kinds added since -- flowchart shapes and data structures -- were
+   * dropped from a tabbed file on every save, silently, because nothing about a
+   * missing name in a list of them fails. Both read `CONTENT_KEYS` now, and this
+   * is what says so when the next kind is added.
+   */
+  check('a tabbed file keeps every kind of content', (() => {
+    const rich = normalizeDoc({
+      tabs: [
+        { name: 'One', nodes: [node('a')] },
+        {
+          name: 'Two',
+          nodes: [node('b')],
+          groups: [{ id: 'g', rect: [0, 0, 6, 6] }],
+          shapes: [{ id: 's', kind: 'decision', pos: [10, 0] }],
+          cells: [{ id: 'c', pos: [0, 10] }],
+          texts: [{ id: 't', text: 'note', pos: [4, 4] }],
+        },
+      ],
+    }).doc;
+    const back = normalizeDoc(JSON.parse(serializeDoc(rich))).doc;
+    const two = back.tabs[1];
+    return CONTENT_KEYS.filter((key) => key !== 'edges' && key !== 'images')
+      .every((key) => two[key].length === 1);
+  })());
+
   // --- the controller -------------------------------------------------------
   const controller = () => {
     const parts = splitTabs(twoTabs());
@@ -844,6 +884,218 @@ function coverageCases(check) {
  * check that silently stops firing is worse than no check — it reports PASSED
  * on a broken drawing.
  */
+/**
+ * Links: what one means, where it points, and what refuses to be one.
+ *
+ * The security half is the part worth having tests for at all. Everything else
+ * here fails visibly the moment anyone clicks it; a `javascript:` link that
+ * quietly became clickable would work perfectly for whoever wrote it.
+ */
+function linkCases(check) {
+  // --- reading --------------------------------------------------------------
+  check('a blank link is no link', readLink('   ') === null && readLink(null) === null);
+  check('a link is stored as typed, trimmed',
+    readLink('  https://example.com/a  ') === 'https://example.com/a');
+  check('a link is bounded', readLink('h'.repeat(MAX_LINK + 500)).length === MAX_LINK);
+
+  // --- what a form means ----------------------------------------------------
+  check('a hash names an element', (() => {
+    const link = parseLink('#api-gateway');
+    return link.kind === 'element' && link.id === 'api-gateway';
+  })());
+  check('a tab prefix names a drawing', (() => {
+    const link = parseLink('tab:Network detail');
+    return link.kind === 'tab' && link.name === 'Network detail' && link.index === null;
+  })());
+  check('a numbered tab link counts from one', (() => {
+    const link = parseLink('tab:2');
+    return link.kind === 'tab' && link.index === 1;
+  })());
+  check('an address is an address', parseLink('https://example.com').kind === 'url');
+  check('a bare host is read as https', parseLink('example.com/x').href === 'https://example.com/x');
+  check('mail is a link too', parseLink('mailto:a@b.com').kind === 'url');
+  check('a bare word is not a host',
+    parseLink('notes').kind === 'unknown' && parseLink('todo later').kind === 'unknown');
+  check('a lone hash names nothing', parseLink('#').kind === 'unknown');
+
+  /*
+   * The one that matters. A diagram travels -- published to a URL, embedded in
+   * an article, mailed as a file -- so a scheme that runs code in the reader's
+   * page must never survive as far as being followed.
+   */
+  for (const hostile of [
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    'data:text/html;base64,PHNjcmlwdD4=',
+    'vbscript:msgbox',
+    'file:///etc/passwd',
+  ]) {
+    check(`"${hostile.slice(0, 22)}" is not a link`, parseLink(hostile).kind === 'unknown');
+  }
+
+  // --- where a link points --------------------------------------------------
+  const node = (id) => ({ id, type: 'ec2', pos: [0, 0] });
+  const one = normalizeDoc({ nodes: [node('api'), node('db')] }).doc;
+  const file = [
+    { name: 'Overview', doc: one },
+    { name: 'Detail', doc: normalizeDoc({ nodes: [node('cache')] }).doc },
+  ];
+  const at = (raw, activeTab = 0) =>
+    resolveLink(raw, { doc: file[activeTab].doc, tabs: file, activeTab });
+
+  check('an element link finds an element here', (() => {
+    const found = at('#db');
+    return found.kind === 'element' && found.id === 'db' && found.tab === 0;
+  })());
+  check('an element link reaches into another drawing', (() => {
+    const found = at('#cache');
+    return found.kind === 'element' && found.tab === 1;
+  })());
+  check('an element link prefers the drawing you are on', (() => {
+    // Both drawings get an `api`; standing in the second must find the second.
+    const both = [file[0], { name: 'Detail', doc: normalizeDoc({ nodes: [node('api')] }).doc }];
+    const found = resolveLink('#api', { doc: both[1].doc, tabs: both, activeTab: 1 });
+    return found.kind === 'element' && found.tab === 1;
+  })());
+  check('an element link to nothing says so', at('#nope').kind === 'missing');
+
+  check('a tab link finds a drawing by name', (() => {
+    const found = at('tab:Detail');
+    return found.kind === 'tab' && found.index === 1 && found.here === false;
+  })());
+  check('a tab link ignores case', at('tab:  detail ').index === 1);
+  check('a tab link falls back to the number', at('tab:2').index === 1);
+  check('a name beats a number', (() => {
+    // A drawing genuinely called "2" is found by its name, not counted to.
+    const odd = [{ name: 'One', doc: one }, { name: 'x', doc: one }, { name: '2', doc: one }];
+    return resolveLink('tab:2', { doc: one, tabs: odd, activeTab: 0 }).index === 2;
+  })());
+  check('a tab link to the drawing you are on knows it', at('tab:Overview').here === true);
+  check('a tab link to no drawing says so', at('tab:Ghost').kind === 'missing');
+
+  check('every kind of link explains itself', (() => {
+    const said = ['#db', 'tab:Detail', 'https://example.com', '#nope', 'notes']
+      .map((raw) => describeLink(raw, { doc: one, tabs: file, activeTab: 0 }));
+    return said.every((line) => line.length > 10) && new Set(said).size === said.length;
+  })());
+
+  // --- the document ---------------------------------------------------------
+  check('a link survives a round trip', (() => {
+    const doc = normalizeDoc({
+      nodes: [{ ...node('api'), link: '#db' }, node('db')],
+      texts: [{ id: 't', text: 'see also', pos: [0, 0], link: 'https://example.com' }],
+    }).doc;
+    const text = serializeDoc(doc);
+    return text.includes('"link": "#db"') && serializeDoc(parseDoc(text).doc) === text;
+  })());
+  check('no link is written when there is none', (() => {
+    const doc = normalizeDoc({ nodes: [node('api')] }).doc;
+    return !serializeDoc(doc).includes('link');
+  })());
+  check('a link that is not one is kept rather than eaten', (() => {
+    // The author has to be able to see what they wrote to find out why nothing
+    // happens; a loader that deleted it would hide the mistake, not fix it.
+    const doc = normalizeDoc({ nodes: [{ ...node('api'), link: 'javascript:alert(1)' }] }).doc;
+    return doc.nodes[0].link === 'javascript:alert(1)';
+  })());
+
+  // --- what a link may hang off --------------------------------------------
+  check('anything with a place on the grid can be flown to', (() => {
+    const doc = normalizeDoc({
+      nodes: [node('n')],
+      groups: [{ id: 'g', rect: [0, 0, 4, 4] }],
+      shapes: [{ id: 's', kind: 'process', pos: [8, 0] }],
+      cells: [{ id: 'c', pos: [0, 8] }],
+      texts: [{ id: 't', text: 'hi', pos: [4, 4] }],
+      images: [{ id: 'i', src: 'https://example.com/a.png', pos: [6, 6] }],
+    }).doc;
+    return ['n', 'g', 's', 'c', 't', 'i'].every((id) => entityBox(doc, id) !== null);
+  })());
+  check('a note is a point rather than a footprint', (() => {
+    const doc = normalizeDoc({ texts: [{ id: 't', text: 'hi', pos: [3, 4] }] }).doc;
+    const box = entityBox(doc, 't');
+    return box.x === 3 && box.y === 4 && box.w === 0 && box.h === 0;
+  })());
+
+  // --- the flight -----------------------------------------------------------
+  const viewport = { width: 800, height: 600 };
+  check('flying to one small thing does not fill the screen with it', (() => {
+    const box = { x0: 0, y0: 0, x1: 2, y1: 2, zmax: 1 };
+    return fitToBox(createCamera(), box, viewport, 40, 1.6).zoom === 1.6;
+  })());
+  check('a flight ends exactly where it was aimed', (() => {
+    const from = { ...createCamera(), tx: 0, ty: 0, zoom: 0.4 };
+    const to = { ...createCamera(), tx: -300, ty: 120, zoom: 1.6 };
+    const end = lerpCamera(from, to, 1, viewport);
+    return near(end.tx, to.tx, 1e-6) && near(end.ty, to.ty, 1e-6) && near(end.zoom, to.zoom, 1e-6);
+  })());
+  check('a flight starts exactly where it was', (() => {
+    const from = { ...createCamera(), tx: 40, ty: -20, zoom: 0.4 };
+    const to = { ...createCamera(), tx: -300, ty: 120, zoom: 1.6 };
+    const start = lerpCamera(from, to, 0, viewport);
+    return near(start.tx, from.tx, 1e-6) && near(start.ty, from.ty, 1e-6);
+  })());
+  check('a flight keeps its destination in the middle the whole way', (() => {
+    /*
+     * The reason the interpolation follows the centre point rather than the
+     * three camera numbers: interpolating `tx` and `ty` linearly while the zoom
+     * changes swings the subject out of frame and back, because the translation
+     * that centres a point depends on the zoom it is centred at.
+     */
+    const from = { ...createCamera(), tx: 0, ty: 0, zoom: 0.35 };
+    const to = { ...createCamera(), tx: -400, ty: -250, zoom: 1.6 };
+    // Where `to` puts the middle of the screen, in scene coordinates.
+    const target = { x: (400 - to.tx) / to.zoom, y: (300 - to.ty) / to.zoom };
+    const away = (t) => {
+      const cam = lerpCamera(from, to, t, viewport);
+      return Math.hypot((400 - cam.tx) / cam.zoom - target.x, (300 - cam.ty) / cam.zoom - target.y);
+    };
+    // Strictly closing, every frame. Naively interpolating tx and ty gives a
+    // curve that sails past the destination and comes back, which is what this
+    // is here to catch.
+    let closing = true;
+    for (let i = 1; i <= 20; i++) {
+      if (away(i / 20) > away((i - 1) / 20) + 1e-9) closing = false;
+    }
+    return closing;
+  })());
+
+  // --- validation -----------------------------------------------------------
+  check('a broken element link is an error in a whole file', (() => {
+    const { errors } = validateDocument({ nodes: [{ ...node('api'), link: '#ghost' }] });
+    return errors.some((m) => m.includes('#ghost'));
+  })());
+  check('an element link across drawings passes', (() => {
+    const { errors } = validateDocument({
+      tabs: [
+        { name: 'One', nodes: [{ ...node('api'), link: '#cache' }] },
+        { name: 'Two', nodes: [node('cache')] },
+      ],
+    });
+    return !errors.some((m) => m.includes('cache'));
+  })());
+  check('one drawing alone only warns about a link it cannot check', (() => {
+    const found = validateDrawing({ nodes: [{ ...node('api'), link: '#elsewhere' }] });
+    return found.errors.length === 0 && found.warnings.some((m) => m.includes('elsewhere'));
+  })());
+  check('a tab link to no such drawing is an error', (() => {
+    const { errors } = validateDocument({
+      tabs: [{ name: 'One', nodes: [{ ...node('api'), link: 'tab:Ghost' }] }, { name: 'Two', nodes: [node('b')] }],
+    });
+    return errors.some((m) => m.includes('tab:Ghost'));
+  })());
+  check('a link that is not a link is an error', (() => {
+    const { errors } = validateDocument({ nodes: [{ ...node('api'), link: 'javascript:alert(1)' }] });
+    return errors.some((m) => m.includes('not one'));
+  })());
+  check('a sound link is quiet', (() => {
+    const found = validateDocument({
+      nodes: [{ ...node('api'), link: 'https://example.com' }, node('db')],
+    });
+    return !found.errors.some((m) => m.includes('link'));
+  })());
+}
+
 function validateCases(check) {
   const clean = {
     groups: [{ id: 'z', kind: 'vpc', label: 'Prod', rect: [0, 0, 20, 20], color: '#eab308' }],

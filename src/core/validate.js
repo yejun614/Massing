@@ -22,8 +22,13 @@
  *   INFO   counts, for reference
  *
  * Everything here is pure and dependency-free, so it runs unchanged in the
- * browser, in a function and in a test.
+ * browser, in a function and in a test. The one import is `link.js`, which is
+ * pure for the same reason and holds the single definition of what a link means
+ * — checking it against a second copy of those rules written out here is how
+ * the validator and the editor come to disagree.
  */
+
+import { parseLink, LINK_SYNTAX } from './link.js';
 
 /** Footprint of a flat thing as [x0, y0, x1, y1]. */
 const box = (o) => {
@@ -37,6 +42,13 @@ const rectsIntersect = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[
 const heightOf = (n) => (Number.isFinite(n.height) ? n.height : 2);
 
 const LABEL_PLANES = new Set(['floor', 'screen', 'left', 'right']);
+
+/** Every id in one drawing, for resolving links across a whole file. */
+const idsIn = (view) =>
+  ['nodes', 'groups', 'edges', 'texts', 'images', 'shapes', 'cells']
+    .flatMap((key) => view?.[key] ?? [])
+    .map((entity) => entity?.id)
+    .filter(Boolean);
 
 /**
  * A caption that names a group of things rather than one thing.
@@ -117,13 +129,27 @@ function cuts([x0, y0], [x1, y1], [rx0, ry0, rx1, ry1]) {
 
 const side = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
 
+/** Whether a `tab:` link names one of the drawings in the file. */
+function namesDrawing(link, names) {
+  const wanted = link.name.trim().toLowerCase();
+  if (names.some((name) => (name ?? '').trim().toLowerCase() === wanted)) return true;
+  return link.index !== null && link.index >= 0 && link.index < names.length;
+}
+
 /**
  * Check one drawing.
  *
  * @param {object} view a document, or one tab out of one
+ * @param {{ids: Set<string>, tabs: string[]} | null} file
+ *   What the rest of the file holds, when there is a rest of the file to know
+ *   about. Links are the only thing here that can reach outside one drawing, so
+ *   they are the only thing that needs it: without it, an element link to a
+ *   sibling drawing is unprovable and warns; with it, it is decidable and either
+ *   passes or fails. Everything else — collisions, occlusion, zone membership —
+ *   is true or false within one picture and ignores this entirely.
  * @returns {{errors: string[], warnings: string[], infos: string[]}}
  */
-export function validateDrawing(view = {}) {
+export function validateDrawing(view = {}, file = null) {
   const groups = view.groups ?? [];
   const nodes = view.nodes ?? [];
   const edges = view.edges ?? [];
@@ -408,6 +434,50 @@ export function validateDrawing(view = {}) {
     }
   }
 
+  // --- links ---------------------------------------------------------------
+  //
+  // A link is the one property whose correctness is invisible in the render: a
+  // typo in an id draws exactly like a link that works, and the first anyone
+  // hears of it is a click that goes nowhere -- usually in front of a room. So
+  // every one is resolved here.
+  //
+  // Only `#element` links can be checked within a drawing. A `tab:` link is
+  // about the file rather than the drawing, so `validateDocument` below is where
+  // it is answered; a web address is somebody else's server to answer for.
+  const linked = [...nodes, ...groups, ...edges, ...texts, ...images, ...shapes, ...cells]
+    .filter((o) => o.link);
+  for (const o of linked) {
+    const link = parseLink(o.link);
+    if (!link) continue;
+
+    if (link.kind === 'unknown') {
+      err(`${o.id} has link "${o.link}", which is not one — write ${LINK_SYNTAX}`);
+      continue;
+    }
+
+    if (link.kind === 'element') {
+      if (seen.has(link.id)) continue;
+      if (!file) {
+        // Checked on its own, one drawing cannot know whether the id it names
+        // lives in a sibling. Handed the whole file, it can, and does below.
+        warn(`${o.id} links to "#${link.id}", which is not in this drawing — ` +
+             'it has to be in another one, or the link goes nowhere');
+      } else if (!file.ids.has(link.id)) {
+        err(`${o.id} links to "#${link.id}", which is nowhere in this file`);
+      }
+      continue;
+    }
+
+    if (link.kind === 'tab' && file) {
+      if (!file.tabs.length) {
+        err(`${o.id} links to "tab:${link.name}", and this file holds one drawing`);
+      } else if (!namesDrawing(link, file.tabs)) {
+        err(`${o.id} links to "tab:${link.name}", and no drawing in this file is called that`);
+      }
+    }
+  }
+  if (linked.length) info(`${linked.length} linked element(s)`);
+
   info(`${nodes.length} blocks · ${edges.length} connections · ${groups.length} zones · ` +
        `${images.length} pictures · ${texts.length} notes`);
 
@@ -422,15 +492,28 @@ export function validateDrawing(view = {}) {
  * would invent clashes nobody can see.
  */
 export function validateDocument(doc = {}) {
-  const drawings = Array.isArray(doc.tabs) && doc.tabs.length
+  const tabbed = Array.isArray(doc.tabs) && doc.tabs.length;
+  const drawings = tabbed
     ? doc.tabs.map((t, i) => [t, `${t.name ?? `tab ${i + 1}`}: `])
     : [[doc, '']];
+
+  /*
+   * What every drawing in the file may link to.
+   *
+   * Empty `tabs` for a plain file is the answer rather than a missing one: a
+   * document with one drawing has nowhere to switch to, and a `tab:` link in it
+   * is a link that cannot work however it is spelled.
+   */
+  const file = {
+    ids: new Set(drawings.flatMap(([view]) => idsIn(view))),
+    tabs: tabbed ? doc.tabs.map((t, i) => t.name ?? `tab ${i + 1}`) : [],
+  };
 
   const errors = [];
   const warnings = [];
   const infos = [];
   for (const [view, where] of drawings) {
-    const found = validateDrawing(view);
+    const found = validateDrawing(view, file);
     errors.push(...found.errors.map((m) => where + m));
     warnings.push(...found.warnings.map((m) => where + m));
     infos.push(...found.infos.map((m) => where + m));

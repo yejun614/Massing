@@ -50,6 +50,16 @@ export function createStore(doc = createEmptyDoc()) {
      * lives here and clears itself.
      */
     aiTouched: [],
+    /**
+     * What following a link just arrived at, so the render can ring it.
+     *
+     * Beside `aiTouched` rather than folded into it: both point at something for
+     * a few seconds, but one is "the model changed these" and the other is
+     * "this is the thing you asked to see", and a link followed while the
+     * assistant's highlight was still fading must not cancel it. Like that one,
+     * it is a fact about the last few seconds and clears itself.
+     */
+    landed: null,
     /** Document revision; bumped on every committed change. */
     revision: 0,
     /** True when the document differs from the last saved copy. */

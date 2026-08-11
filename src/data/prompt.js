@@ -203,7 +203,8 @@ axis it turns on) and \`bend\` (where it crosses over, in half cells):
 
 When the block count passes about 25 the answer is two diagrams, and \`tabs\` is
 where the second one goes — the collections move one level down, each tab
-carrying its own \`groups\`, \`nodes\`, \`edges\`, \`texts\`, \`images\` and \`shapes\`:
+carrying its own \`groups\`, \`nodes\`, \`edges\`, \`texts\`, \`images\`, \`shapes\` and
+\`cells\`:
 
 \`\`\`json
 {
@@ -666,6 +667,39 @@ Group block colours by role, one colour per tier. A palette that worked:
 \`canvas.background\` is optional, and leaving it out is a real choice: a diagram
 that names no colour follows the viewer's light or dark theme instead of being
 a white rectangle in a dark room.
+
+## Links
+
+Anything you draw may carry a \`link\`, and clicking it follows that link. One
+string, whose form says where it goes:
+
+\`\`\`json
+{ "id": "auth", "type": "cognito", "pos": [4, 4], "link": "#token-store" }
+{ "id": "inner", "kind": "process", "pos": [0, 0], "link": "tab:Write path" }
+{ "id": "docs", "text": "Runbook", "pos": [2, 9], "link": "https://example.com/runbook" }
+\`\`\`
+
+- \`#element-id\` — another element. The camera flies to it. It may be in another
+  drawing of the same file; the one you are on is searched first.
+- \`tab:Name\` — another drawing, by name. This is the one that makes a multi-tab
+  file navigable rather than a stack of unrelated pictures.
+- anything else — a web address, opened after a confirmation. \`example.com/x\` is
+  read as https. **Only http, https and mailto are ever opened**; a
+  \`javascript:\` or \`data:\` link is kept in the file and refuses to be followed.
+
+Use them for the two things a single picture cannot do:
+
+- **An overview block that opens its own detail drawing.** This is what makes
+  the "two diagrams past 25 blocks" rule above work as one document instead of
+  two: put \`"link": "tab:Write path"\` on the block the second drawing is about,
+  and the overview becomes the index.
+- **A block that opens the thing it stands for** — a repository, a dashboard, a
+  runbook, an API reference. A diagram is usually the map somebody arrives at
+  first, and a map whose landmarks lead somewhere is worth far more than one
+  that has to be read alongside a list of URLs.
+
+Link deliberately, not everywhere. A badge on every block is a badge that says
+nothing, and the point of the mark is that it picks something out.
 
 ## Identifiers
 
