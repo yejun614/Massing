@@ -272,6 +272,27 @@ it is supposed to undo. Drags collapse into one entry via
 `beginGesture`/`endGesture`, and a gesture that changed nothing is discarded
 rather than pushed.
 
+**Presentation mode is a state flag, not a stylesheet.** `state.presenting`
+hides the interface through a class on the root element, but that is the half
+that does not matter: what makes the diagram read-only is the pointer and the
+keyboard both refusing, and they read the flag exactly as they read the active
+tool. A mode whose safety came from the toolbar merely being off screen would
+still be one drag or one keystroke away from moving a block in front of a room
+full of people. `ui/present.js` also listens for keys in the *capture* phase and
+swallows what it does not use, so the editor's own shortcuts — which are window
+listeners — never see them.
+
+**An embed is that mode with the exits removed**, reached by `?embed=1` in the
+address rather than by a second, cut-down build — so a diagram in a frame on
+somebody's blog is the same renderer and the same document loader as the one it
+was drawn in, and stays that way with nobody maintaining a second copy. The flag
+is a query parameter because the fragment is already spoken for by `#d=` (a
+whole diagram) and `#s=` (a published key), and either kind of link has to be
+embeddable. It also switches off everything that writes to the reader's browser
+on this editor's behalf — the autosaved draft, the library and the analytics
+question — because a visit to a page that contains a diagram is not a session
+with the editor. See `core/embed.js`.
+
 ---
 
 ## 7. The document is the product
@@ -523,8 +544,9 @@ src/
   core/{io,export,commands}.js
   render/           scene, camera, block, group, edge, text, image, grid, overlay, handles
   input/            pointer, keyboard
+  core/embed.js     the ?embed=1 flag, and the snippet it goes in
   ui/               toolbar, palette, inspector, theme, toasts, shortcuts,
-                    export dialog, tooltips, analytics consent
+                    export + embed dialogs, tooltips, presentation, consent
   data/             component registry, icons, prompt, samples
 ```
 

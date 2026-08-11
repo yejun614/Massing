@@ -39,6 +39,14 @@ export const UI_ICONS = {
   rotateRight: wrap('<path d="M12.8 6.6h-4V2.6"/><path d="M12.5 6.5A5.2 5.2 0 1 0 13 10.2"/>'),
   cube: wrap('<path d="M8 1.8 14 5v6l-6 3.2L2 11V5Z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/>'),
   square: wrap('<rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.4"/>'),
+  embed: wrap('<path d="M5.6 4.6 1.8 8l3.8 3.4M10.4 4.6 14.2 8l-3.8 3.4M9.4 2.8 6.6 13.2"/>'),
+  // Diagonal arrows rather than corner brackets: `fit` above is already four
+  // brackets, and two near-identical squares side by side in the presenting
+  // bar were indistinguishable at 15px.
+  expand: wrap('<path d="M9.4 2.6h4v4M13.4 2.6 8.8 7.2M6.6 13.4h-4v-4M2.6 13.4l4.6-4.6"/>'),
+  compress: wrap('<path d="M13.2 6.6h-4v-4M13.2 2.8 9.2 6.6M2.8 9.4h4v4M2.8 13.2l4-4"/>'),
+  external: wrap('<path d="M9.4 2.6h4v4M13.4 2.6 7.6 8.4"/><path d="M12 9.6v2.8a1.2 1.2 0 0 1-1.2 1.2H3.6a1.2 1.2 0 0 1-1.2-1.2V5.2A1.2 1.2 0 0 1 3.6 4h2.8"/>'),
+  present: wrap('<rect x="1.8" y="2.4" width="12.4" height="9" rx="1.3"/><path d="M5.6 14.2h4.8M8 11.4v2.8"/><path d="M6.9 5.4 10 6.9 6.9 8.4Z"/>'),
   cursor: wrap('<path d="M3.4 2.2 12.6 7.8l-4 1.1-1.7 3.9Z"/>'),
   hand: wrap('<path d="M5.4 7.4V3.9a1.15 1.15 0 0 1 2.3 0v3"/><path d="M7.7 6.9V2.9a1.15 1.15 0 0 1 2.3 0v4"/><path d="M10 7.2V4.4a1.15 1.15 0 0 1 2.3 0v5.1c0 2.7-1.8 4.7-4.3 4.7-1.6 0-2.7-.6-3.5-1.8L2.9 9.6a1.2 1.2 0 0 1 2-1.4l.5.8"/>'),
   link: wrap('<path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/>'),

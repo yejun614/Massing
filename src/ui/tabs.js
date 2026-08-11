@@ -524,6 +524,29 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
     }
   }
 
+  /**
+   * The half of a render that reads the layout back — and refuses to when there
+   * is no layout to read.
+   *
+   * A hidden strip measures every tab at zero. Presentation mode hides it, and
+   * switching drawings from in there still renders the row, so without this the
+   * pill was written to zero width at nought pixels and stayed there: nothing
+   * renders the strip again on the way out, so the diagram came back with no
+   * tab marked as the current one.
+   *
+   * Bailing out keeps the last good geometry instead. It is stale by exactly one
+   * switch, which is why `render` is called again when the strip returns — see
+   * `onExit` in `main.js`. A `ResizeObserver` is not enough for that: an element
+   * with no box is skipped rather than reported, so coming back at the same width
+   * it left at produces no notification at all.
+   */
+  function measure() {
+    if (!list.clientWidth) return;
+    placeMarker();
+    revealActive();
+    paintOverflow();
+  }
+
   function render() {
     // A render mid-drag would pull the element out from under the pointer.
     if (drag?.moving) return;
@@ -532,9 +555,7 @@ export function createTabStrip(root, { tabs, toaster, onChange } = {}) {
       title: `Add another drawing to this file (${entries.length} so far)`,
     });
     clear(list).append(marker, ...entries.map(tabButton), addBtn);
-    placeMarker();
-    revealActive();
-    paintOverflow();
+    measure();
   }
 
   render();

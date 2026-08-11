@@ -49,6 +49,9 @@ import { createHandleStore } from './core/handles.js';
 import { createLibraryDialog } from './ui/library.js';
 import { createTheme } from './ui/theme.js';
 import { createPanels } from './ui/panels.js';
+import { createPresenter } from './ui/present.js';
+import { createEmbedDialog } from './ui/embed-dialog.js';
+import { embedded } from './core/embed.js';
 
 import { THREE_TIER } from './data/samples.js';
 import { LLM_PROMPT } from './data/prompt.js';
@@ -174,6 +177,17 @@ const publishDialog = createPublishDialog(document.body, {
   toaster,
   onPublished: (result) => library.recordPublish(result),
 });
+const embedDialog = createEmbedDialog(document.body, {
+  store,
+  tabs,
+  toaster,
+  // For the one thing the sheet offers to *do*: turn a diagram whose address
+  // runs to kilobytes into a short link, without sending anyone off to another
+  // sheet and back. The library keeps the address either way, exactly as it
+  // does when the publish sheet is what produced it.
+  cloud,
+  onPublished: (result) => library.recordPublish(result),
+});
 const libraryDialog = createLibraryDialog(document.body, {
   library,
   toaster,
@@ -204,6 +218,20 @@ const theme = createTheme((state) => {
   scheduleRender();
 });
 store.setUI({ dark: theme.current().dark });
+// Takes the interface away and turns editing off; everything it needs is a
+// store to say so in, the tabs to step through and the view commands.
+const presenter = createPresenter({
+  store,
+  tabs,
+  commands,
+  toaster,
+  // The strip is hidden while presenting, and a hidden strip cannot measure
+  // itself -- so a drawing switched to from in there left its marker behind on
+  // the tab that was current when the mode began. It is rendered again here,
+  // with a layout under it. `tabStrip` is built further down and this is only
+  // ever called long after that.
+  onExit: () => tabStrip.render(),
+});
 const toolbar = createToolbar({
   root: document,
   store,
@@ -218,6 +246,8 @@ const toolbar = createToolbar({
   onAssistant: () => assistantPanel.toggle(),
   onLibrary: () => libraryDialog.open(),
   onDownload: downloadDialog ? () => downloadDialog.open() : null,
+  onPresent: () => presenter.enter(),
+  onEmbed: () => embedDialog.open(),
   theme,
   panels,
 });
@@ -237,7 +267,7 @@ const palette = createPalette({
 const inspector = createInspector({ root: region('inspector'), store, commands });
 // Inside the canvas, so it sits over the drawing rather than taking a strip of
 // the window from it — and so it is beside what it switches between.
-createTabStrip(canvasEl, { tabs, toaster, onChange: () => scheduleRender() });
+const tabStrip = createTabStrip(canvasEl, { tabs, toaster, onChange: () => scheduleRender() });
 
 const pointer = attachPointer({
   canvas: canvasEl,
@@ -247,7 +277,26 @@ const pointer = attachPointer({
   toaster,
   onEditText: () => inspector.focusEditor(),
 });
-attachKeyboard({ store, commands, io, panels, onExport: () => exportDialog.open() });
+attachKeyboard({
+  store,
+  commands,
+  io,
+  panels,
+  onExport: () => exportDialog.open(),
+  onPresent: () => presenter.enter(),
+});
+
+/*
+ * This page is a frame on somebody else's site.
+ *
+ * Everything below the flag follows from that: it opens presenting and locked,
+ * and the three things that write to this browser on behalf of *its* owner --
+ * the draft, the library and the analytics question -- are all off. An embed
+ * is a visit to a page that happens to contain a diagram, and it has no
+ * business leaving a stranger's document in the reader's editor, nor asking
+ * them a question they did not come here to answer.
+ */
+const isEmbed = embedded();
 
 io.attachDropZone(canvasEl, (e) => {
   const r = canvasEl.getBoundingClientRect();
@@ -258,6 +307,7 @@ io.attachDropZone(canvasEl, (e) => {
 // Pasting a screenshot straight onto the canvas is the fastest way in.
 window.addEventListener('paste', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (store.state.presenting) return; // presenting is not editing
   const file = [...(e.clipboardData?.items ?? [])]
     .filter((item) => item.kind === 'file')
     .map((item) => item.getAsFile())
@@ -276,16 +326,18 @@ window.addEventListener('paste', (e) => {
  * finding in a list tomorrow.
  */
 let libraryTimer = 0;
-store.subscribe((state, what) => {
-  if (what !== 'doc') return;
-  clearTimeout(libraryTimer);
-  libraryTimer = setTimeout(() => library.remember(tabs.document()), 1500);
-});
-io.startAutosave();
+if (!isEmbed) {
+  store.subscribe((state, what) => {
+    if (what !== 'doc') return;
+    clearTimeout(libraryTimer);
+    libraryTimer = setTimeout(() => library.remember(tabs.document()), 1500);
+  });
+  io.startAutosave();
 
-// Does nothing at all unless this build was made with analytics in it, which
-// is every build except one made deliberately with MASSING_VERCEL_FEATURES=1.
-createConsent();
+  // Does nothing at all unless this build was made with analytics in it, which
+  // is every build except one made deliberately with MASSING_VERCEL_FEATURES=1.
+  createConsent();
+}
 
 // --- render loop -----------------------------------------------------------
 
@@ -327,12 +379,28 @@ scheduleRender();
 const publishedKey = publishedKeyFrom();
 if (publishedKey) openPublishedDiagram(publishedKey);
 else if (sharePayloadFrom()) openSharedDiagram();
-else offerRecovery();
+// A frame on somebody else's page carries its own diagram in its address. There
+// is no draft of theirs to recover into it, and offering one would put a
+// stranger's work in the middle of an article.
+else if (!isEmbed) offerRecovery();
+
+/*
+ * Presenting from the first frame.
+ *
+ * Before the document arrives rather than after: opening the diagram is a
+ * network round trip for a published link and a decompression for a shared one,
+ * and a frame that showed the editor's panels for half a second before folding
+ * them away would announce itself as a web app on a page that asked for a
+ * picture. Both routes fit the camera when they land, so nothing is lost by
+ * being early.
+ */
+if (isEmbed) presenter.enter({ locked: true });
 
 // Last, because it is the only thing here that touches the network, and the
 // editor has to be usable before the answer arrives — or without one.
 features.load().then((flags) => {
   toolbar.setHostedFeatures(flags);
+  embedDialog.setHostedFeatures(flags);
 });
 
 /**
@@ -531,5 +599,6 @@ async function copyPrompt() {
  */
 window.massing = {
   store, scene, commands, io, exporter, exportDialog, pointer, tabs, toaster,
+  presenter,
   prompt: LLM_PROMPT,
 };

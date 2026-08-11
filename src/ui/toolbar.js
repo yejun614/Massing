@@ -7,7 +7,7 @@ import { h, clear, setClass, setAttrs } from '../util/dom.js';
 import { UI_ICONS } from './icons-ui.js';
 import { REPO_URL } from '../data/links.js';
 
-export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, onLibrary, onDownload, theme, panels }) {
+export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt, onAddImage, onCopyLink, onExport, onPublish, onAssistant, onLibrary, onDownload, onPresent, onEmbed, theme, panels }) {
   const region = (name) => root.querySelector(`[data-region="${name}"]`);
   /** The bar itself: a row across the top, or a rail down the side. */
   const bar = root.querySelector('.toolbar');
@@ -166,6 +166,16 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
   const zoomIn = docked(btn('zoomIn', 'Zoom in (+)', () => commands.zoomIn()));
   const fitBtn = docked(btn('fit', 'Zoom to fit (0)', () => commands.zoomFit()));
   const modeBtn = btn('cube', 'Toggle 2D / 3D (2)', () => commands.toggleMode());
+  const presentBtn = btn(
+    'present',
+    'Present (P) — the diagram alone, with editing off',
+    () => onPresent?.()
+  );
+  const embedBtn = btn(
+    'embed',
+    'Embed — put this diagram in a frame on another page',
+    () => onEmbed?.()
+  );
   const themeBtn = btn('themeSystem', 'Theme', () => {
     paintTheme(theme.cycle());
   });
@@ -235,7 +245,7 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     selectBtn, panBtn, zoneBtn, connectBtn,
     rotLeft, rotRight,
     zoomOut, zoomIn, fitBtn,
-    modeBtn, themeBtn,
+    modeBtn, presentBtn, embedBtn, themeBtn,
     // Spread rather than passed straight in: `append` is the DOM's, and it
     // writes a missing child into the toolbar as the text "null".
     ...(downloadBtn ? [downloadBtn] : []),
@@ -378,6 +388,9 @@ export function createToolbar({ root, store, commands, io, onHelp, onCopyPrompt,
     setClass(zoneBtn, 'is-active', state.tool === 'group');
     setClass(connectBtn, 'is-active', state.tool === 'connect');
     setClass(modeBtn, 'is-active', state.camera.mode === 'flat');
+    // The toolbar is not on screen while this is true, but it is on screen for
+    // the frame the mode ends on, and a button left lit would be lying.
+    setClass(presentBtn, 'is-active', state.presenting);
     setAttrs(modeBtn, {
       html: UI_ICONS[state.camera.mode === 'flat' ? 'square' : 'cube'],
       title: state.camera.mode === 'flat' ? 'Switch to 3D (2)' : 'Switch to 2D (2)',

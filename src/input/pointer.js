@@ -162,7 +162,11 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       if (touches.size > 2) return;
     }
 
-    const wantsPan = e.button === 1 || spaceDown || store.state.tool === 'pan';
+    // Presenting is unconditional rather than a consequence of the tool it
+    // borrows: it is the promise that a press cannot select, place or move
+    // anything, and it should not depend on nothing else having set the tool.
+    const wantsPan =
+      e.button === 1 || spaceDown || store.state.tool === 'pan' || store.state.presenting;
     if (wantsPan) {
       e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
@@ -251,6 +255,9 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     }
 
     if (!drag) {
+      // Nothing under the pointer is selectable while presenting, so nothing
+      // under it should light up as though it were.
+      if (store.state.presenting) return;
       const cell = cellAt(pt);
       const id = hitId(e);
       const prev = store.state.hover;
@@ -495,6 +502,9 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
   // --- space-to-pan --------------------------------------------------------
 
   const onKeyDown = (e) => {
+    // Presentation mode drags to look around from every tool, so it needs no
+    // held Space -- and it has no use at all for a tool that draws connections.
+    if (store.state.presenting) return;
     if (e.code === 'Space' && !isTextTarget(e.target)) {
       spaceDown = true;
       // A class rather than an inline cursor: blocks and captions set cursors

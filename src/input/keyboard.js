@@ -33,15 +33,19 @@ export const SHORTCUTS = [
   ['H', 'Pan tool'],
   ['2', 'Toggle 2D / 3D'],
   ['0', 'Zoom to fit'],
+  ['P', 'Present — the diagram alone, with editing off. Arrows change drawing, Esc leaves'],
   ['Space + drag', 'Pan'],
   ['The + on the tab strip', 'Add another drawing to this file — drag a tab to reorder, or click the tab you are on to rename, duplicate or delete it'],
   ['[ / ]', 'Show or hide the left / right panel'],
   ['Drag a panel edge', 'Resize the side panels (double-click to reset)'],
 ];
 
-export function attachKeyboard({ store, commands, io, panels, onExport }) {
+export function attachKeyboard({ store, commands, io, panels, onExport, onPresent }) {
   function onKeyDown(e) {
     if (isTextTarget(e.target)) return;
+    // Presentation mode handles its own keys ahead of this one and swallows the
+    // rest; this is the same refusal stated where the shortcuts actually live.
+    if (store.state.presenting) return;
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
 
@@ -130,6 +134,11 @@ export function attachKeyboard({ store, commands, io, panels, onExport }) {
       case 'g':
         commands.setTool('group');
         break;
+      // The way out is the same key, handled by the mode itself -- which is
+      // listening ahead of this and never lets a press get here while it runs.
+      case 'p':
+        onPresent?.();
+        break;
       case 't':
         commands.setTool('text');
         break;
@@ -165,6 +174,8 @@ export function attachKeyboard({ store, commands, io, panels, onExport }) {
 
   function onCopy(e, alsoDelete) {
     if (isTextTarget(e.target)) return;
+    // Copying out of a diagram being presented is harmless; cutting is an edit.
+    if (alsoDelete && store.state.presenting) return;
     const fragment = commands.fragmentFromSelection();
     if (!fragment) return;
     e.preventDefault();
@@ -173,7 +184,7 @@ export function attachKeyboard({ store, commands, io, panels, onExport }) {
   }
 
   function onPaste(e) {
-    if (isTextTarget(e.target)) return;
+    if (isTextTarget(e.target) || store.state.presenting) return;
     const text = e.clipboardData?.getData('text/plain');
     if (!text?.trim()) return;
     e.preventDefault();

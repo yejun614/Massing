@@ -58,6 +58,15 @@ export function createStore(doc = createEmptyDoc()) {
      * with no background of its own takes its colour from it.
      */
     dark: false,
+    /**
+     * Whether the diagram is being presented rather than edited.
+     *
+     * Here rather than only as a class on the page, because the two layers that
+     * have to refuse an edit -- the pointer and the keyboard -- ask the state
+     * for everything else they decide and should not be reading the DOM to
+     * decide this one. See `ui/present.js`.
+     */
+    presenting: false,
   };
 
   function notify(what) {

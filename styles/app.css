@@ -1273,6 +1273,255 @@ kbd {
   .panel, .panel-scrim { transition: none; }
 }
 
+/* --- presentation ----------------------------------------------------------
+ *
+ * Everything but the diagram goes. The class is on the root element rather than
+ * on the body for one reason worth stating: `--rail-w` is declared on `:root`
+ * by the phone layout and read back by `commands.zoomFit`, so zeroing it here
+ * is what lets a fitted diagram use the width the vanished rail was holding.
+ *
+ * Every rule is written from `:root.is-presenting` so it outranks whatever it
+ * is overriding — the phone layout has its own opinions about the panels and
+ * the toolbar, and this must win at any width without a stack of `!important`.
+ *
+ * `ui/present.js` is the other half: hiding the controls is not what makes the
+ * diagram read-only, refusing the gestures is.
+ */
+
+:root.is-presenting {
+  --rail-w: 0px;
+}
+
+/* The two panel columns and the toolbar row collapse; the canvas takes the lot. */
+:root.is-presenting .app {
+  grid-template-columns: 0 1fr 0;
+  grid-template-rows: 0 1fr;
+}
+
+:root.is-presenting .toolbar,
+:root.is-presenting .panel,
+:root.is-presenting .resizer,
+:root.is-presenting .panel-scrim,
+:root.is-presenting .zoom-dock,
+:root.is-presenting .tab-strip,
+:root.is-presenting .chat,
+:root.is-presenting .tooltip,
+:root.is-presenting .consent {
+  display: none;
+}
+
+/*
+ * Toasts own the bottom centre, and now so does the bar. They step up over it:
+ * the first thing this mode says is itself a toast, and it appearing on top of
+ * the control it is describing is the one place they are guaranteed to collide.
+ */
+:root.is-presenting .toasts { bottom: 76px; }
+
+/*
+ * The one control left: which drawing this is, the way to the next one, and the
+ * way out. Bottom centre — the tab strip's corner is where a diagram's own
+ * bottom-left content sits, and this is not a strip of tabs anyway.
+ */
+/*
+ * Centred by margins between a left and a right offset, rather than by the
+ * usual `left: 50%` and a translate: a fixed box laid out from the middle of
+ * the screen may only be as wide as the half it started in, which on a phone
+ * was enough to crush the drawing's name to two letters while most of the bar
+ * sat empty.
+ */
+.present-bar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 30px rgb(15 23 42 / 0.22);
+  transition: opacity 0.3s ease;
+}
+.present-bar.is-hidden { display: none; }
+
+/*
+ * Out of the way while the diagram is being talked about, and back on the first
+ * sign of life. Hover and focus hold it up regardless, so reaching for it is
+ * never a race against its own timer.
+ */
+.present-bar.is-idle { opacity: 0.35; }
+.present-bar:hover,
+.present-bar:focus-within { opacity: 1; }
+
+.present-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  /* "Open" is an anchor, so the UA's link colour and underline are undone here
+     exactly as `.btn` does it for the toolbar's link to the source. */
+  color: var(--ink-muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+.present-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+.present-btn:disabled { opacity: 0.3; cursor: default; }
+.present-btn svg { display: block; width: 15px; height: 15px; }
+/* The bar keeps every button it might need and hides the ones this mode does
+   not use — and `display` on the class above beats the browser's own rule for
+   `hidden`, so the attribute has to be honoured here or it does nothing. */
+.present-btn[hidden] { display: none; }
+
+.present-nav { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.present-nav[hidden] { display: none; }
+
+.present-where {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 4px;
+}
+.present-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.present-count {
+  flex: none;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.present-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+.present-exit { padding: 0 10px 0 8px; }
+.present-exit-icon svg { width: 11px; height: 11px; }
+
+@media (pointer: coarse) {
+  .present-btn { height: 40px; min-width: 40px; padding: 0 10px; }
+  .present-btn svg { width: 18px; height: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .present-bar { transition: none; }
+}
+
+/*
+ * Presenting inside somebody else's page.
+ *
+ * A frame in an article is a few hundred pixels tall, so the bar sits closer to
+ * the edge than it would on a projector, and the drawing's name gives up width
+ * first — in an embed the diagram is the content and the chrome is a caption.
+ */
+:root.is-embedded .present-bar {
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  max-width: calc(100% - 16px);
+}
+:root.is-embedded .present-name { max-width: 30vw; }
+
+/* --- embedding ------------------------------------------------------------
+ *
+ * The sheet that hands over the snippet: a preview, the source, and one button
+ * that copies it. The preview is a real frame running the real page, so the
+ * only thing this stylesheet has to do is give it a box the chosen height and
+ * keep the source from stretching the sheet.
+ */
+
+.sheet-embed { max-width: min(94vw, 620px); }
+
+.embed-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+
+.embed-size { display: flex; align-items: center; gap: 6px; }
+.embed-size-label { color: var(--ink-muted); }
+.embed-size-by { color: var(--ink-muted); }
+.embed-size-input {
+  width: 68px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+}
+.embed-size-input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+
+.embed-preview {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  /* A frame that has not loaded yet is a hole in the sheet otherwise. */
+  background: var(--surface-2);
+}
+.embed-frame {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 0;
+}
+
+/*
+ * The snippet, in the same box the preview occupies so switching between them
+ * does not resize the sheet. It scrolls in both directions rather than wrapping:
+ * a URL with a whole diagram in it would otherwise be a wall of characters.
+ */
+.embed-source {
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  /* Enough that switching to it does not collapse the sheet to a strip, capped
+     so a snippet with a whole diagram in its URL cannot take the screen. */
+  min-height: 150px;
+  max-height: 300px;
+}
+.embed-code {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--ink);
+}
+
+.embed-preview.is-hidden,
+.embed-source.is-hidden { display: none; }
+
+.embed-note { margin: 10px 0 0; }
+.embed-note[hidden] { display: none; }
+
+/* Directly under the sentence that explains why it is there. */
+.embed-publish { margin-top: 8px; border-color: var(--border); }
+
 /* --- analytics consent ---------------------------------------------------- */
 
 /*

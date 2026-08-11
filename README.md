@@ -74,6 +74,8 @@ npm run test:rust                 # the config-writing tests
 | Edit many at once | Select several and the inspector offers what they have in common — caption size and plane, footprint, height, line style, note styling, placement |
 | Add a picture | The picture button, or drag an image file onto the canvas, or paste a screenshot |
 | Several drawings in one file | The `+` on the tab strip in the bottom-left corner. Drag a tab to reorder, or click the tab you are on to rename, duplicate or delete it |
+| Present it | `P` — the diagram and nothing else, with editing off. `←` `→` step through the drawings, drag to look around, `Esc` leaves |
+| Embed it elsewhere | The embed button — a frame to paste into another page, previewed before you copy it |
 | Tidy | `A` — nudge blocks apart until nothing is hidden, keeping your layout |
 | Auto layout | `Shift+A` — re-flow the whole diagram from its connections |
 | Rotate the view | `Q` / `E` |
@@ -354,6 +356,70 @@ The toolbar answers to the same pressure. Both of its ends are pinned while the
 middle scrolls under them: the panel toggles, because on a narrow window they
 are the way a hidden panel comes back, and the document title, because whether
 there is unsaved work should never be something you scroll a toolbar to find.
+
+## Presenting
+
+`P`, or the screen button in the toolbar, gives the diagram the whole window:
+no toolbar, no panels, no tab strip, and — the part that is not about
+appearances — **no editing**. Showing a diagram to a room is a different
+activity from drawing one, and the thing you least want in the middle of it is
+a click that lands on a block and moves it a cell.
+
+So the mode takes editing away rather than merely hiding the buttons for it. A
+drag anywhere looks around, a wheel or a pinch zooms, `Q` / `E` / `2` / `0` do
+what they always do — and every other key is swallowed. Nothing you press can
+change the document; the file is not even marked as unsaved by an hour of
+presenting it.
+
+One strip stays, along the bottom: which drawing this is, arrows to the ones
+either side, fit, and the way out. `←` and `→` step through the drawings, as do
+`Page Up` / `Page Down` and the space bar, so a remote clicker works. `Home` and
+`End` jump to the first and last. The strip fades back after a few seconds of
+nothing happening and returns the moment the pointer moves — with a single
+drawing in the file there is nothing to step through, so the navigator half of
+it is not drawn at all.
+
+The page goes fullscreen if the browser allows it, and leaving fullscreen leaves
+the mode: `Esc` inside fullscreen belongs to the browser before it reaches us,
+so without that the tools would stay hidden with the one obvious key already
+spent. Nothing about your layout is touched — the panels come back exactly as
+wide, and as open, as you left them.
+
+### Embedding it in another page
+
+The embed button hands over an `<iframe>` to paste into a blog post, a wiki or
+a README that renders HTML. What the frame shows is presentation mode, locked:
+the same renderer and the same drawings, with no editor behind it. The sheet
+shows the snippet and a **live preview of it** — a real frame running the real
+page — so whether the height you picked fits the diagram is something you can
+see rather than discover after publishing somebody else's page.
+
+Two addresses can go in the frame, and the sheet says which one it used:
+
+- **A published diagram embeds itself.** Short, stable, and updated by
+  publishing again — so the frame shows the copy on the server, not necessarily
+  the one on your screen.
+- **Anything else travels inside the URL**, exactly as a shared link does. The
+  frame then shows precisely this version and fetches nothing from a server, at
+  the cost of a longer snippet.
+
+A diagram of blocks and connections compresses to about a kilobyte of address,
+so length only becomes a question once pictures are embedded — those are already
+compressed bytes and gzip cannot help them. Past a few thousand characters the
+sheet says how long it has become, and what to do about it: where the deployment
+stores diagrams, **Publish for a short link** does it in one press and rebuilds
+the frame around the result, so `413 kB` of `#d=…` becomes `/d/name`. Where it
+does not — an offline build, the desktop app, a deployment with storage off —
+the sheet says that instead of recommending a button that is not there. Either
+way the long snippet still works; it is simply one that some sites will truncate
+or refuse.
+
+Inside an embed the bar offers what a reader needs and nothing else: the
+drawings, fullscreen, and **Open**, which leads to the whole diagram in a tab of
+its own. `Esc` does not strand anyone in an editor squeezed into a column. An
+embed also writes nothing to the reader's browser — no recovered draft, no
+library entry, no analytics question — because a visit to somebody else's page
+is not a session with this editor.
 
 ## Themes
 
