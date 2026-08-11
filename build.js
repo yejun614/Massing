@@ -41,7 +41,8 @@ const OUT = resolve(ROOT, 'dist/index.html');
 // Module graph
 // ---------------------------------------------------------------------------
 
-const IMPORT_RE = /^\s*import\s+(?:[\s\S]*?)\s+from\s+['"]([^'"]+)['"];?\s*$/gm;
+/** Group 1 is the clause between `import` and `from`; group 2 the specifier. */
+const IMPORT_RE = /^\s*import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?\s*$/gm;
 const BARE_IMPORT_RE = /^\s*import\s+['"]([^'"]+)['"];?\s*$/gm;
 const EXPORT_KEYWORD_RE = /^(\s*)export\s+(?=(?:async\s+)?(?:function|class|const|let|var)\b)/gm;
 const EXPORT_LIST_RE = /^\s*export\s*\{[^}]*\};?\s*$/gm;
@@ -141,21 +142,122 @@ function collect(entry) {
 
 function importsOf(source) {
   const found = new Set();
-  for (const match of source.matchAll(IMPORT_RE)) found.add(match[1]);
+  for (const match of source.matchAll(IMPORT_RE)) found.add(match[2]);
   for (const match of source.matchAll(BARE_IMPORT_RE)) found.add(match[1]);
   return found;
 }
 
 /**
- * Concatenation only works if every module's top level can share one scope.
- * These are the two ways that quietly breaks.
+ * The names an `import { ... }` clause brings into a module's scope.
+ *
+ * Only the braced form, because `checkModule` has already refused every other
+ * one. Once the imports are deleted and the modules share a scope, these are
+ * exactly the names the module expects somebody else to have declared — which
+ * is what `assertImportsResolve` goes on to check.
  */
-function checkModule(path, source) {
+function importedNames(code) {
+  const names = [];
+  for (const match of code.matchAll(IMPORT_RE)) {
+    const clause = match[1].trim();
+    if (!clause.startsWith('{')) continue;
+    for (const part of clause.replace(/[{}]/g, '').split(',')) {
+      const name = part.trim();
+      if (name) names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Concatenation only works if every module's top level can share one scope.
+ * These are the ways that quietly breaks.
+ *
+ * "Quietly" is the word that earns this function. The bundle deletes import
+ * statements outright, so anything an import statement *does* beyond naming a
+ * dependency is done by nothing at all afterwards — and the result is not a
+ * build failure but a working build that throws in somebody's browser. That is
+ * how `import { FACE_LIGHT as TOP_LIGHT }` reached production as
+ * "TOP_LIGHT is not defined": the source ran perfectly, because unbundled the
+ * browser honours the rename, and only the bundle did not.
+ *
+ * So every form except the plain braced list is refused here rather than
+ * assumed absent.
+ */
+export function checkModule(path, source) {
   if (/\bimport\s*\(/.test(source)) {
     throw new Error(`${rel(path)} uses a dynamic import(), which the bundle cannot inline`);
   }
   if (/^\s*export\s+default\b/m.test(source)) {
     throw new Error(`${rel(path)} uses "export default"; use a named export instead`);
+  }
+
+  for (const match of source.matchAll(IMPORT_RE)) {
+    const clause = match[1].trim();
+    if (clause.startsWith('*')) {
+      throw new Error(
+        `${rel(path)} imports a namespace ("${clause}"); the bundle has no module ` +
+          'objects to give it. Import the names one by one.'
+      );
+    }
+    if (!clause.startsWith('{')) {
+      throw new Error(
+        `${rel(path)} imports a default ("${clause}"); use a named import instead.`
+      );
+    }
+    if (/\bas\b/.test(clause)) {
+      throw new Error(
+        `${rel(path)} renames an import ("${clause.replace(/\s+/g, ' ')}"). The bundle ` +
+          'deletes the statement that would do the renaming, leaving the new name ' +
+          'undeclared — which fails only once it is in a browser. Import it under its ' +
+          'own name.'
+      );
+    }
+  }
+
+  for (const match of source.matchAll(EXPORT_LIST_RE)) {
+    if (/\bas\b/.test(match[0])) {
+      throw new Error(
+        `${rel(path)} renames an export ("${match[0].trim()}"), which the bundle drops ` +
+          'along with the statement. Export it under its own name.'
+      );
+    }
+  }
+}
+
+/**
+ * Every imported name is declared by somebody, once they all share a scope.
+ *
+ * The general net under `checkModule`'s specific refusals: it catches a name
+ * that was never exported, one lost to a typo, and any future way of ending up
+ * with an identifier the bundle reads and nothing writes. It is the check that
+ * would have turned "TOP_LIGHT is not defined" from a production incident into
+ * a failed build.
+ *
+ * Declarations are read from the raw `source` rather than from the blanked
+ * `code`, and the difference is deliberate. `blankTemplates` does not track
+ * regular expression literals, so a backtick inside one -- `util/markdown.js`
+ * has three -- opens a template frame that is never really open and blanks a
+ * stretch of genuine code behind it, declarations included. Reading `source`
+ * means the worst this can do is count a declaration that was only ever quoted
+ * inside a template literal, and so fail to report something. A check that
+ * gates the build has to lean that way: a false negative costs a bug getting
+ * through, a false positive costs everyone the build.
+ */
+function assertImportsResolve(modules) {
+  const declared = new Set();
+  for (const { source } of modules) {
+    for (const name of topLevelNames(source)) declared.add(name);
+  }
+  const missing = [];
+  for (const { path, code } of modules) {
+    for (const name of importedNames(code)) {
+      if (!declared.has(name)) missing.push(`${name} (imported by ${rel(path)})`);
+    }
+  }
+  if (missing.length) {
+    throw new Error(
+      `Imported but never declared, so the bundle would read an undefined name:\n  ${missing.join('\n  ')}`
+    );
   }
 }
 
@@ -260,6 +362,7 @@ const VERCEL_META = [
 export function build({ docPath, fontPath, vercel = false } = {}) {
   const modules = collect(ENTRY);
   assertNoCollisions(modules);
+  assertImportsResolve(modules);
 
   const script = modules
     .map(({ path, source, code }) => `// ---- ${rel(path)} ${'-'.repeat(Math.max(0, 60 - rel(path).length))}\n${stripModuleSyntax(source, code)}`)

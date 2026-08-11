@@ -18,7 +18,7 @@ import {
   sharePayloadFrom,
 } from '../src/core/share.js';
 
-import { build, vercelFeaturesWanted } from '../build.js';
+import { build, vercelFeaturesWanted, checkModule } from '../build.js';
 import { readConsent, writeConsent, analyticsSources } from '../src/ui/consent.js';
 
 let passed = 0;
@@ -50,6 +50,65 @@ check(
   schema.$defs.placement.properties.plane.default === DEFAULT_PLANE,
   `schema says ${schema.$defs.placement.properties.plane.default}, loader uses ${DEFAULT_PLANE}`
 );
+
+/*
+ * What the bundle refuses, and why it is worth a test.
+ *
+ * The bundle deletes import statements and concatenates the modules into one
+ * scope, so anything an import statement *does* beyond naming a dependency is
+ * afterwards done by nothing. The failure is not a broken build: it is a build
+ * that works, ships, and throws in somebody's browser. `import { A as B }`
+ * reached production exactly that way, as "TOP_LIGHT is not defined", because
+ * unbundled the browser honours the rename and only the bundle does not.
+ *
+ * So each unsupported form is refused at build time, and each refusal is pinned
+ * here — a check nobody can quietly relax by editing one regex.
+ */
+const refuses = (label, source) => {
+  let threw = null;
+  try {
+    checkModule('src/example.js', source);
+  } catch (err) {
+    threw = err.message;
+  }
+  check(`the bundle refuses ${label}`, threw !== null, 'it was accepted');
+  return threw;
+};
+
+refuses('a renamed import', "import { FACE_LIGHT as TOP_LIGHT } from './solid.js';\n");
+refuses('a namespace import', "import * as geom from './iso.js';\n");
+refuses('a default import', "import iso from './iso.js';\n");
+refuses('a renamed export', 'const a = 1;\nexport { a as b };\n');
+refuses('a dynamic import', "const m = await import('./iso.js');\n");
+refuses('a default export', 'export default function draw() {}\n');
+
+check(
+  'the refusal explains what would break rather than only naming the rule',
+  /undeclared/.test(refuses('a renamed import', "import { A as B } from './x.js';\n") ?? '')
+);
+
+check('a plain named import is fine', (() => {
+  try {
+    checkModule('src/example.js', "import { CELL, rotatePoint } from './iso.js';\nexport const x = 1;\n");
+    return true;
+  } catch {
+    return false;
+  }
+})());
+
+/*
+ * And the general net under those refusals: a name read by the bundle that
+ * nothing in it declares. `build()` throws rather than emitting the file, so
+ * simply getting here with a bundle in hand is the assertion.
+ */
+check('the bundle has no imported name that nobody declares', (() => {
+  try {
+    build();
+    return true;
+  } catch (err) {
+    return `build() threw: ${err.message}`;
+  }
+})() === true);
 
 /*
  * A CSS declaration outranks an SVG presentation attribute, so a `font-size`

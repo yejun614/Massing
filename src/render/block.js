@@ -18,7 +18,12 @@ import { iconMarkup } from '../data/icons.js';
 
 // The light every solid on this ground shares, so a cuboid and a slab standing
 // beside it cannot disagree about where it comes from.
-import { FACE_LIGHT as TOP_LIGHT, RIGHT_SHADE, LEFT_SHADE } from './solid.js';
+//
+// Imported under its own name. The bundler concatenates modules into one scope
+// and deletes the import statements, so `FACE_LIGHT as TOP_LIGHT` left the
+// bundle calling a name nothing had ever declared -- see `checkModule` in
+// build.js, which now refuses the rename rather than letting it ship.
+import { FACE_LIGHT, RIGHT_SHADE, LEFT_SHADE } from './solid.js';
 const ICON_SCALE = 0.62; // fraction of the smaller footprint dimension
 const LABEL_GAP = 15; // px below the block's lowest screen point
 /** Daylight a left- or right-aligned caption keeps from the block's own edge. */
@@ -54,7 +59,7 @@ export function updateBlockView(view, node, ctx) {
 
   const faces = boxFaces(proj, r.w, r.h, ht);
   const base = node.color;
-  const topFill = shade(base, TOP_LIGHT);
+  const topFill = shade(base, FACE_LIGHT);
 
   setAttr(view.top, 'points', faces.top);
   setAttr(view.top, 'fill', topFill);
