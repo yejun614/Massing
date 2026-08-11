@@ -16,9 +16,9 @@ import { textAnchorFor } from '../util/text.js';
 import { componentFor } from '../data/components.js';
 import { iconMarkup } from '../data/icons.js';
 
-const TOP_LIGHT = 0.06;
-const RIGHT_SHADE = -0.07;
-const LEFT_SHADE = -0.18;
+// The light every solid on this ground shares, so a cuboid and a slab standing
+// beside it cannot disagree about where it comes from.
+import { FACE_LIGHT as TOP_LIGHT, RIGHT_SHADE, LEFT_SHADE } from './solid.js';
 const ICON_SCALE = 0.62; // fraction of the smaller footprint dimension
 const LABEL_GAP = 15; // px below the block's lowest screen point
 /** Daylight a left- or right-aligned caption keeps from the block's own edge. */

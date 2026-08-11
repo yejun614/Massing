@@ -6,14 +6,24 @@
 
 import { svg, setAttr } from '../util/dom.js';
 import { screenToScene } from './camera.js';
-import { rotatePoint } from '../geom/iso.js';
+import { CELL } from '../geom/iso.js';
+import { projectRing, ringPath, liftRing, bodyPath } from './solid.js';
 import { round2 } from '../util/num.js';
 
 export function createOverlay(layer) {
   const marquee = svg('rect', { class: 'marquee', visibility: 'hidden' });
-  const ghost = svg('polygon', { class: 'ghost-cell', visibility: 'hidden' });
+  /*
+   * The ghost is a solid, not a footprint.
+   *
+   * What is about to be placed has a height, and a flat rectangle on the floor
+   * says nothing about how much of the diagram it will cover once it stands up
+   * — which is exactly what you are judging while deciding where to put it. Two
+   * paths, the same body-and-lid the real thing is drawn with.
+   */
+  const ghostBody = svg('path', { class: 'ghost-cell ghost-body', visibility: 'hidden' });
+  const ghost = svg('path', { class: 'ghost-cell ghost-top', visibility: 'hidden' });
   const link = svg('polyline', { class: 'link-preview', visibility: 'hidden' });
-  layer.append(marquee, ghost, link);
+  layer.append(marquee, ghostBody, ghost, link);
 
   return {
     /** @param {{x0,y0,x1,y1}|null} rect in viewport pixels */
@@ -28,16 +38,29 @@ export function createOverlay(layer) {
       show(marquee);
     },
 
-    /** @param {{x,y,w,h}|null} box in document grid coordinates */
+    /**
+     * @param {{x,y,w,h,ht?}|null} box in document grid coordinates. `ht` is how
+     *   tall the thing being placed will stand; a zone being dragged out has
+     *   none and draws as the floor rectangle it is.
+     */
     ghost(cam, proj, box) {
-      if (!box) return hide(ghost);
-      const points = [[0, 0], [box.w, 0], [box.w, box.h], [0, box.h]]
-        .map(([dx, dy]) => rotatePoint(box.x + dx, box.y + dy, cam.rot))
-        .map((p) => proj.project(p.x, p.y, 0))
-        .map((p) => `${round2(p.x)},${round2(p.y)}`)
-        .join(' ');
-      setAttr(ghost, 'points', points);
+      if (!box) {
+        hide(ghost);
+        return hide(ghostBody);
+      }
+      const lift = proj.showsSides ? (box.ht ?? 0) * CELL : 0;
+      const ring = projectRing(
+        [[0, 0], [box.w * CELL, 0], [box.w * CELL, box.h * CELL], [0, box.h * CELL]],
+        [box.x, box.y],
+        proj,
+        cam.rot
+      );
+      const top = liftRing(ring, lift);
+      setAttr(ghost, 'd', ringPath(top));
       show(ghost);
+      if (lift <= 0) return hide(ghostBody);
+      setAttr(ghostBody, 'd', bodyPath(ring, top));
+      show(ghostBody);
     },
 
     /** @param {Array<{x,y}>|null} pts in viewport pixels */

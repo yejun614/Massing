@@ -176,7 +176,8 @@ think in them rather than in x and y:
 }
 \`\`\`
 
-\`groups\`, \`edges\`, \`texts\`, \`images\`, \`canvas\`, \`size\` and \`color\` are all
+\`groups\`, \`edges\`, \`texts\`, \`images\`, \`shapes\`, \`canvas\`, \`size\` and
+\`color\` are all
 optional; omitted fields take the component type's defaults.
 
 | Applies to | Fields |
@@ -202,7 +203,7 @@ axis it turns on) and \`bend\` (where it crosses over, in half cells):
 
 When the block count passes about 25 the answer is two diagrams, and \`tabs\` is
 where the second one goes — the collections move one level down, each tab
-carrying its own \`groups\`, \`nodes\`, \`edges\`, \`texts\` and \`images\`:
+carrying its own \`groups\`, \`nodes\`, \`edges\`, \`texts\`, \`images\` and \`shapes\`:
 
 \`\`\`json
 {
@@ -536,6 +537,83 @@ about what a 40px block caption comes out as once the ground has taken its cut.
 At 50px a line is wide, so keep them short — two or three lines of four or five
 words, split with \`\\n\` — and park the note in open ground beside the diagram
 rather than across it. \`align\` is \`left\`, \`center\` or \`right\`.
+
+## Algorithms and data flow: flowchart shapes
+
+\`shapes\` are flat outlines lying on the ground, for the parts of a picture that
+are steps rather than things. A server is a cuboid because it occupies space;
+"if b = 0" does not, and the century-old convention for it is a silhouette:
+diamond for a question, stadium for where the thing starts and stops.
+
+\`\`\`json
+{ "id": "check", "kind": "decision", "label": "b = 0 ?", "pos": [5, 8],
+  "size": [6, 4], "yes": "yes", "no": "no" }
+\`\`\`
+
+| \`kind\` | For |
+|---|---|
+| \`terminal\` | Where the algorithm begins or ends. Default \`size\` \`[4, 2]\` |
+| \`process\` | A step that does something. \`[5, 2]\` |
+| \`decision\` | A question. \`[5, 3]\` — give it more depth than a process, or the diamond gets thin |
+| \`io\` | Something read in or written out. \`[5, 2]\` |
+| \`subroutine\` | A step defined elsewhere. \`[5, 2]\` |
+| \`connector\` | Picks a line up where it was left off. \`[2, 2]\` |
+
+**A shape stands up.** \`height\` defaults to \`0.5\` — half a cell of thickness,
+so the silhouette is a slab with sides rather than an outline on the floor. Read
+flat through the isometric skew a diamond is a parallelogram, and the sides are
+what stop it looking like one. Leave it alone unless a step should stand as tall
+as a block; \`0\` lays it flat.
+
+**A shape is a connection endpoint like any block**, so \`edges\` join them with
+the same \`from\` and \`to\`, and the line stops on the real silhouette — on the
+slope of a diamond, on the curve of a connector — rather than on a box around
+it. That is the whole reason these are shapes and not labelled squares.
+
+**Only a \`decision\` uses \`yes\` and \`no\`.** They are written beside it, at
+\`yesAt\` and \`noAt\` — \`top\`, \`right\`, \`bottom\` or \`left\`, defaulting to \`right\`
+and \`bottom\`. Set them to the sides the two branches actually leave from, or
+they will point at nothing.
+
+**Captions lie on the shape's top face** by default, like every other caption
+here, so a step reads as writing on the slab rather than a sign floating over
+it. Keep them short for that reason — a few words, not a sentence — and set
+\`labelPlane\` to \`screen\` only on the odd step whose words must be read square.
+
+Lay a flowchart out down the diagram — each step a few cells below the last, on
+one column, with the branch of a decision stepping sideways. Do not mix a
+flowchart into a diagram of servers: one drawing answers "what is deployed", the
+other "what happens", and a file can hold both as separate tabs.
+
+## Data structures: arrays, stacks, queues, matrices
+
+\`cells\` is a run of slots. One entity for all four, because they are one picture
+and what tells them apart is the shape of the run: a stack is one column, a
+queue is one row, a matrix is both.
+
+\`\`\`json
+{ "id": "a", "label": "a", "pos": [0, 0], "cols": 7,
+  "items": ["3", "1", "4", "1", "5", "9"],
+  "indices": true, "marks": [{ "text": "i", "at": 2 }] }
+\`\`\`
+
+\`cols\` and \`rows\` are how many slots; \`slot\` is one slot's footprint, default
+\`[2, 2]\` — square, like an array's boxes anywhere else. \`items\` fills them row-major and may be shorter than the grid — an
+array with room left in it is a thing people draw on purpose. \`indices\` writes
+numbers along the edges; turn it on only when *where* a value sits is the point.
+
+\`marks\` are the pointers that make an algorithm legible: \`{ "text": "top", "at":
+4 }\` names a slot by index, so it stays on that slot. Use them for \`i\`, \`j\`,
+\`head\`, \`tail\`, \`top\` — the things prose would otherwise have to say.
+
+\`ends\` names the two ends — \`["Front", "Back"]\` on a queue, \`["top",
+"bottom"]\` on a stack — and \`flow\` (\`back\` or \`forward\`) marks which way things
+travel through it. Between them they are what makes a picture of a queue read as
+a queue rather than as a row of boxes. The name in \`label\` sits over the run.
+
+A structure is a connection endpoint like a block, so an edge can run from the
+step that touches it to the structure itself. Draw the algorithm as \`shapes\` and
+the data it works on as \`cells\`, side by side.
 
 ## Pictures and logos
 

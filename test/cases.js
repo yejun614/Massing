@@ -30,7 +30,15 @@ import {
   CONTENT_KEYS,
   MAX_TAB_NAME,
 } from '../src/core/schema.js';
-import { nodeBox, rotatedBox, docBounds, containingGroup } from '../src/core/doc.js';
+import {
+  nodeBox,
+  rotatedBox,
+  docBounds,
+  containingGroup,
+  endpointBox,
+  canConnect,
+  cellsBox,
+} from '../src/core/doc.js';
 import { tidy, autoLayout, countOccluded } from '../src/core/arrange.js';
 import { estimateTextBox, estimateLineWidth, textAnchorFor } from '../src/util/text.js';
 import { parseMarkdown } from '../src/util/markdown.js';
@@ -44,6 +52,7 @@ import {
 } from '../src/geom/plane.js';
 import { handlesFor, resizeFootprint } from '../src/render/handles.js';
 import { heightFromDrag } from '../src/input/pointer.js';
+import { SHAPE_KINDS, shapeContains, shapeKindFor, outlinePath } from '../src/data/shapes.js';
 import { edgeRoute } from '../src/render/edge.js';
 import { encodeGif } from '../src/core/gif.js';
 import { splitTitle } from '../src/ui/tooltip.js';
@@ -2016,6 +2025,181 @@ function handleCases(check) {
       if (back.y + back.h < rect[1] + rect[3]) return false;
     }
     return true;
+  })());
+
+
+  // --- flowchart shapes ------------------------------------------------------
+
+  check('a shape survives a round trip through the file', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      shapes: [{ id: 'q', kind: 'decision', label: 'b = 0 ?', pos: [2, 3], size: [6, 4],
+                 yes: 'yes', no: 'no', noAt: 'left' }],
+    });
+    const again = normalizeDoc(JSON.parse(serializeDoc(doc))).doc;
+    const a = doc.shapes[0];
+    const b = again.shapes[0];
+    return (
+      a.kind === 'decision' && b.kind === 'decision' && b.label === 'b = 0 ?' &&
+      b.pos[0] === 2 && b.size[1] === 4 && b.yes === 'yes' && b.noAt === 'left' &&
+      serializeDoc(doc) === serializeDoc(again)
+    );
+  })());
+
+  check('an unknown shape kind degrades to a process', (() => {
+    const { doc, warnings } = normalizeDoc({
+      version: 1,
+      shapes: [{ id: 's', kind: 'trapezoid', pos: [0, 0] }],
+    });
+    return doc.shapes[0].kind === 'process' && warnings.some((w) => /trapezoid/.test(w));
+  })());
+
+  check('a connection may name a shape at either end', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      nodes: [{ id: 'n', type: 'ec2', pos: [0, 0] }],
+      shapes: [{ id: 's', kind: 'process', pos: [10, 0] }],
+      edges: [{ id: 'e', from: 'n', to: 's' }, { id: 'e2', from: 's', to: 'nope' }],
+    });
+    // The first joins a block to a shape; the second names nothing and goes.
+    return doc.edges.length === 1 && doc.edges[0].to === 's' && canConnect(doc, 's');
+  })());
+
+  check('a shape is an endpoint that carries its silhouette', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      shapes: [{ id: 'd', kind: 'decision', pos: [0, 0], size: [4, 4] }],
+    });
+    const box = endpointBox(doc, 'd');
+    return box.shape === 'decision' && box.w === 4 && box.ht === 0.5;
+  })());
+
+  check('a diamond claims its middle and not its corners', () =>
+    shapeContains('decision', 0.5, 0.5, 4, 4) &&
+    !shapeContains('decision', 0.02, 0.02, 4, 4) &&
+    !shapeContains('decision', 0.98, 0.02, 4, 4));
+
+  check('a rectangular kind claims the whole box', () =>
+    ['process', 'subroutine'].every((kind) =>
+      [[0, 0], [1, 1], [0.5, 0.5], [1, 0]].every(([u, v]) => shapeContains(kind, u, v, 5, 2))));
+
+  check('a connector claims a circle', () =>
+    shapeContains('connector', 0.5, 0.5, 2, 2) &&
+    !shapeContains('connector', 0.05, 0.05, 2, 2));
+
+  check('an I/O box leans one way and keeps its area', () =>
+    // The lean takes the top-left and bottom-right corners off, not the others.
+    !shapeContains('io', 0.01, 0.01, 5, 2) &&
+    !shapeContains('io', 0.99, 0.99, 5, 2) &&
+    shapeContains('io', 0.99, 0.01, 5, 2) &&
+    shapeContains('io', 0.01, 0.99, 5, 2));
+
+  check('every kind rings itself with usable points at any size', () =>
+    SHAPE_KINDS.every((kind) =>
+      [[1, 1], [5, 2], [2, 9], [40, 40]].every(([w, h]) => {
+        const pts = kind.points(w * 40, h * 40);
+        return (
+          Array.isArray(pts) && pts.length >= 3 &&
+          pts.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y) &&
+            x >= -0.01 && y >= -0.01 && x <= w * 40 + 0.01 && y <= h * 40 + 0.01)
+        );
+      })));
+
+  check('a ring turns into a path that starts where it ends', () => {
+    const d = outlinePath(shapeKindFor('decision').points(200, 120));
+    return d.startsWith('M') && d.endsWith('Z') && !/NaN/.test(d);
+  });
+
+  check('a shape stands up by default and may be laid flat', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      shapes: [
+        { id: 'a', kind: 'process', pos: [0, 0] },
+        { id: 'b', kind: 'process', pos: [8, 0], height: 0 },
+        { id: 'c', kind: 'process', pos: [16, 0], height: 99 },
+      ],
+    });
+    const [a, b, c] = doc.shapes;
+    return a.height === 0.5 && b.height === 0 && c.height === 40 &&
+      endpointBox(doc, 'a').ht === 0.5;
+  })());
+
+  check('a shape counts towards what the camera has to fit', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      shapes: [{ id: 's', kind: 'process', pos: [10, 4], size: [6, 2] }],
+    });
+    const b = docBounds(doc);
+    return b.x0 === 10 && b.y0 === 4 && b.x1 === 16 && b.y1 === 6;
+  })());
+
+
+  // --- data structures -------------------------------------------------------
+
+  check('a structure survives a round trip, values and pointers alike', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      cells: [{ id: 'a', label: 'a', pos: [2, 3], cols: 5, rows: 2, slot: [3, 2],
+                items: ['3', '', '4'], indices: true, marks: [{ text: 'i', at: 2 }] }],
+    });
+    const again = normalizeDoc(JSON.parse(serializeDoc(doc))).doc;
+    const c = again.cells[0];
+    return (
+      c.cols === 5 && c.rows === 2 && c.items.length === 3 && c.items[1] === '' &&
+      c.indices === true && c.marks[0].text === 'i' && c.marks[0].at === 2 &&
+      serializeDoc(doc) === serializeDoc(again)
+    );
+  })());
+
+  check('a structure measures itself from its slots', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      cells: [{ id: 'a', pos: [4, 1], cols: 5, rows: 3, slot: [3, 2] }],
+    });
+    const box = cellsBox(doc.cells[0]);
+    const bounds = docBounds(doc);
+    return box.w === 15 && box.h === 6 && bounds.x1 === 19 && bounds.y1 === 7;
+  })());
+
+  check('a connection may name a structure', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      shapes: [{ id: 's', kind: 'process', pos: [0, 0] }],
+      cells: [{ id: 'a', pos: [10, 0] }],
+      edges: [{ id: 'e', from: 's', to: 'a' }],
+    });
+    return doc.edges.length === 1 && canConnect(doc, 'a');
+  })());
+
+  check('a structure with no columns asked for takes its length from its values', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      cells: [{ id: 'a', pos: [0, 0], items: ['1', '2', '3'] }],
+    });
+    return doc.cells[0].cols === 3;
+  })());
+
+  check('a queue keeps the names of its ends and which way it runs', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      cells: [{ id: 'q', pos: [0, 0], cols: 5, ends: ['Front', 'Back'], flow: 'back' }],
+    });
+    const again = normalizeDoc(JSON.parse(serializeDoc(doc))).doc.cells[0];
+    return (
+      again.ends[0] === 'Front' && again.ends[1] === 'Back' && again.flow === 'back' &&
+      // An unknown direction is no direction rather than a broken one.
+      normalizeDoc({ version: 1, cells: [{ id: 'q', pos: [0, 0], flow: 'sideways' }] })
+        .doc.cells[0].flow === null
+    );
+  })());
+
+  check('a pointer beyond the run is kept but bounded', (() => {
+    const { doc } = normalizeDoc({
+      version: 1,
+      cells: [{ id: 'a', pos: [0, 0], cols: 3, marks: [{ text: 'x', at: -5 }, { at: 2 }] }],
+    });
+    // The negative index clamps; the one with no text is not a pointer at all.
+    return doc.cells[0].marks.length === 1 && doc.cells[0].marks[0].at === 0;
   })());
 
   // --- the height a drag produces ------------------------------------------

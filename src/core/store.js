@@ -36,6 +36,8 @@ export function createStore(doc = createEmptyDoc()) {
     pendingType: null,
     /** Zone kind used by the group tool. */
     pendingGroupKind: 'vpc',
+    /** Flowchart shape queued for placement by the palette. */
+    pendingShape: null,
     /** Grid cell under the pointer, or null. */
     hover: null,
     /** Id of the entity under the pointer, or null. */
@@ -250,6 +252,7 @@ function pruneSelection(selection, doc) {
     ...doc.edges.map((e) => e.id),
     ...doc.texts.map((t) => t.id),
     ...doc.images.map((i) => i.id),
+    ...doc.shapes.map((sh) => sh.id),
   ]);
   return selection.filter((id) => alive.has(id));
 }

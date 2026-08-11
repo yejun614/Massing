@@ -80,6 +80,20 @@
         "$ref": "#/$defs/image"
       }
     },
+    "shapes": {
+      "type": "array",
+      "description": "Flowchart shapes: flat outlines lying on the ground, for the parts of a picture that are steps rather than things. A shape is a connection endpoint like any block or zone, and a line into one stops on its silhouette rather than on its bounding box.",
+      "items": {
+        "$ref": "#/$defs/shape"
+      }
+    },
+    "cells": {
+      "type": "array",
+      "description": "Data structures: runs of slots — arrays, stacks, queues, matrices.",
+      "items": {
+        "$ref": "#/$defs/cells"
+      }
+    },
     "tabs": {
       "type": "array",
       "description": "Several drawings in one file, shown as tabs. Use it for views of one system that do not belong in a single picture — an overview and a detail, a before and an after. A file with one drawing writes its collections at the top level instead and omits this entirely. The title and the canvas belong to the file, not to a tab.",
@@ -124,6 +138,20 @@
             "type": "array",
             "items": {
               "$ref": "#/$defs/image"
+            }
+          },
+          "shapes": {
+            "type": "array",
+            "description": "Flowchart shapes: flat outlines lying on the ground, for the parts of a picture that are steps rather than things. A shape is a connection endpoint like any block or zone, and a line into one stops on its silhouette rather than on its bounding box.",
+            "items": {
+              "$ref": "#/$defs/shape"
+            }
+          },
+          "cells": {
+            "type": "array",
+            "description": "Data structures: runs of slots — arrays, stacks, queues, matrices.",
+            "items": {
+              "$ref": "#/$defs/cells"
             }
           }
         }
@@ -682,6 +710,240 @@
           ],
           "default": "center",
           "description": "Which part of the caption lines up with what it names. On a block that is the block's own left edge, centre or right edge; on a connection it is which end of the caption is pinned to the midpoint."
+        }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "required": [
+        "kind",
+        "pos"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "terminal",
+            "process",
+            "decision",
+            "io",
+            "subroutine",
+            "connector"
+          ],
+          "description": "Which flowchart silhouette this step is drawn as. An unknown kind loads as a process, with a warning."
+        },
+        "label": {
+          "type": "string",
+          "description": "What the step says. The words are the step, so this is the content rather than a name."
+        },
+        "pos": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/coord"
+          },
+          "description": "[x, y] of the shape's minimum corner on the grid."
+        },
+        "size": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/extent"
+          },
+          "description": "[width, depth] of the bounding box in cells. Each kind supplies its own default."
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 40,
+          "default": 0.5,
+          "description": "How thick the slab is, in cells to one decimal place. The default stands the silhouette off the floor so its sides read; 0 draws it flat."
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "labelSize": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 96,
+          "default": 20
+        },
+        "labelPlane": {
+          "type": "string",
+          "enum": [
+            "screen",
+            "floor",
+            "right",
+            "left"
+          ],
+          "default": "floor",
+          "description": "Which plane the caption hangs on. It lands on the shape's top face, so the default reads as writing on the slab; screen faces the viewer instead."
+        },
+        "yes": {
+          "type": "string",
+          "description": "Branch label for the affirmative answer. Only a decision has anywhere to put it."
+        },
+        "no": {
+          "type": "string",
+          "description": "Branch label for the negative answer."
+        },
+        "yesAt": {
+          "type": "string",
+          "enum": [
+            "top",
+            "right",
+            "bottom",
+            "left"
+          ],
+          "default": "right",
+          "description": "Which side of the decision the yes branch leaves from."
+        },
+        "noAt": {
+          "type": "string",
+          "enum": [
+            "top",
+            "right",
+            "bottom",
+            "left"
+          ],
+          "default": "bottom"
+        }
+      }
+    },
+    "cells": {
+      "type": "object",
+      "required": [
+        "pos"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "description": "What the structure is called; written beside it."
+        },
+        "description": {
+          "type": "string",
+          "description": "A quieter second line under the name: what it holds, how big it is, what a slot means."
+        },
+        "pos": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/coord"
+          },
+          "description": "[x, y] of the run's minimum corner."
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 6
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 1,
+          "description": "1 for an array or a queue; more for a matrix. A stack is one column."
+        },
+        "slot": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/extent"
+          },
+          "description": "One slot's footprint in cells. Default [2, 2]."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Values, row-major. May be shorter than the grid."
+        },
+        "indices": {
+          "type": "boolean",
+          "default": false,
+          "description": "Index numbers along the edges."
+        },
+        "ends": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "string"
+          },
+          "description": "What the two ends are called, e.g. [\"Front\", \"Back\"]. Written beyond the ends rather than over a slot."
+        },
+        "flow": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "back",
+            "forward",
+            "both",
+            null
+          ],
+          "description": "Which way things travel through the run; drawn as a mark beyond each end."
+        },
+        "marks": {
+          "type": "array",
+          "description": "Pointers into the run, each naming a slot by index so it cannot drift off it.",
+          "items": {
+            "type": "object",
+            "required": [
+              "text",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "at": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 40,
+          "default": 0.5
+        },
+        "color": {
+          "$ref": "#/$defs/color"
+        },
+        "labelSize": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 96,
+          "default": 20
+        },
+        "labelPlane": {
+          "type": "string",
+          "enum": [
+            "screen",
+            "floor",
+            "right",
+            "left"
+          ],
+          "default": "floor"
         }
       }
     }

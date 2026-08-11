@@ -17,7 +17,7 @@ import { rotateRect, CELL } from '../geom/iso.js';
 import { projectionOf, sceneToScreen, gridToScreen } from './camera.js';
 import { edgeRoute, EDGE_Z } from './edge.js';
 import { planeAxes } from '../geom/plane.js';
-import { nodeById, groupById, imageById, edgeById } from '../core/doc.js';
+import { nodeById, groupById, imageById, edgeById, shapeById, cellsById } from '../core/doc.js';
 import { clampInt, round2 } from '../util/num.js';
 import { MAX_SPAN } from '../core/schema.js';
 
@@ -67,6 +67,18 @@ export function handlesFor(state, { size = isCoarse() ? SIZES.coarse : SIZES.fin
   if (node) return blockHandles(node, camera, size);
   const group = groupById(doc, id);
   if (group) return footprintHandles(id, group.rect, 0, camera, size);
+  // A flowchart shape is a rectangle on the ground like a zone; the silhouette
+  // inside it is the renderer's business, not the grips'.
+  const shape = shapeById(doc, id);
+  if (shape) return shapeHandles(shape, camera, size);
+  const cells = cellsById(doc, id);
+  if (cells) {
+    return shapeHandles(
+      { id, pos: cells.pos, size: [cells.cols * cells.slot[0], cells.rows * cells.slot[1]], height: cells.height },
+      camera,
+      size
+    );
+  }
   const image = imageById(doc, id);
   if (image) return pictureHandles(image, camera, size);
   const edge = edgeById(doc, id);
@@ -99,6 +111,21 @@ function edgeHandles(doc, edge, cam, size) {
   }];
 }
 
+/**
+ * A slab is gripped like a block: its footprint at the height it stands at, and
+ * one more grip above it for the height itself. Sharing `blockHandles`' shape
+ * rather than its code, because a slab has no `type` and no icon and the two
+ * would have to be told apart inside it anyway.
+ */
+function shapeHandles(shape, cam, size) {
+  const proj = projectionOf(cam);
+  const ht = proj.showsSides ? shape.height : 0;
+  const rect = [...shape.pos, ...shape.size];
+  const grips = footprintHandles(shape.id, rect, ht, cam, size);
+  if (grips.length && proj.showsSides) grips.push(heightGrip(shape.id, rect, ht, cam, size));
+  return grips;
+}
+
 function blockHandles(node, cam, size) {
   const proj = projectionOf(cam);
   const ht = proj.showsSides ? node.height : 0;
@@ -106,28 +133,35 @@ function blockHandles(node, cam, size) {
   const grips = footprintHandles(node.id, rect, ht, cam, size);
 
   // Height is the one dimension the footprint grips cannot reach, so it gets
-  // one of its own, floating over the top face on a stem. In 2D there is no
-  // height to see, so there is nothing to drag either.
-  if (grips.length && proj.showsSides) {
-    const r = rotateRect(rect[0], rect[1], rect[2], rect[3], cam.rot);
-    const stem = screenPoint(cam, proj.project(r.x + r.w / 2, r.y + r.h / 2, ht));
-    // Cleared past the back corner rather than lifted a fixed amount off the
-    // centre: on a small block a fixed lift lands the grip on the corner grip
-    // that is already there. The (r.x, r.y) corner projects to the topmost
-    // point of the top face, and to the same screen x as its centre.
-    const back = screenPoint(cam, proj.project(r.x, r.y, ht));
-    grips.push({
-      key: 'height',
-      role: 'height',
-      target: node.id,
-      size,
-      x: stem.x,
-      y: back.y - GRIP_LIFT,
-      stem,
-      cursor: 'ns-resize',
-    });
-  }
+  // one of its own. In 2D there is no height to see, so there is nothing to
+  // drag either.
+  if (grips.length && proj.showsSides) grips.push(heightGrip(node.id, rect, ht, cam, size));
   return grips;
+}
+
+/**
+ * The grip that stands over a thing's top face and drags its height.
+ *
+ * Cleared past the back corner rather than lifted a fixed amount off the
+ * centre: on a small footprint a fixed lift lands the grip on the corner grip
+ * that is already there. The (r.x, r.y) corner projects to the topmost point of
+ * the top face, and to the same screen x as its centre.
+ */
+function heightGrip(id, rect, ht, cam, size) {
+  const proj = projectionOf(cam);
+  const r = rotateRect(rect[0], rect[1], rect[2], rect[3], cam.rot);
+  const stem = screenPoint(cam, proj.project(r.x + r.w / 2, r.y + r.h / 2, ht));
+  const back = screenPoint(cam, proj.project(r.x, r.y, ht));
+  return {
+    key: 'height',
+    role: 'height',
+    target: id,
+    size,
+    x: stem.x,
+    y: back.y - GRIP_LIFT,
+    stem,
+    cursor: 'ns-resize',
+  };
 }
 
 /**

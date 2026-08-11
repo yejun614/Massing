@@ -23,6 +23,7 @@
  */
 
 import { componentFor, isKnownType, groupKindFor, FALLBACK_TYPE } from '../data/components.js';
+import { shapeKindFor } from '../data/shapes.js';
 import { clamp, clampInt, clampTenth } from '../util/num.js';
 import { isPlane, normaliseSpin, SPINS } from '../geom/plane.js';
 
@@ -86,6 +87,8 @@ export function createEmptyDoc(title = 'Untitled diagram') {
     edges: [],
     texts: [],
     images: [],
+    shapes: [],
+    cells: [],
   };
 }
 
@@ -132,6 +135,88 @@ export const IMAGE_DEFAULTS = {
   opacity: 1,
 };
 
+/** Which side of a decision a branch label is written beside. */
+export const SHAPE_SIDES = new Set(['top', 'right', 'bottom', 'left']);
+
+export const SHAPE_DEFAULTS = {
+  /*
+   * One neutral for every kind, and it is a choice rather than an omission.
+   * A flowchart is read by silhouette — the diamond is the question — so
+   * colouring the shapes by kind would spend the drawing's one loud channel on
+   * something already said by their outlines. Colour is left for the author to
+   * mean something with.
+   */
+  color: '#64748b',
+  /*
+   * Standing, but only just.
+   *
+   * Flat on the ground, a silhouette is read through the projection's skew, and
+   * a diamond seen that way is a parallelogram — the one thing it most needed
+   * not to look like. Half a cell of thickness gives the eye the sides it needs
+   * to read the top face as a top face. A whole cell would make these blocks,
+   * which they are not.
+   */
+  height: 0.5,
+  /*
+   * On the ground with everything else, which is the same default the rest of
+   * this format has.
+   *
+   * Standing the caption up was the right call when the shape was a flat
+   * outline and the words were all there was to look at. Now that a shape is a
+   * slab, the caption lands on its top face and reads as writing on the thing
+   * itself — where a screen-facing label floats over the scene looking stuck on.
+   * A step whose words really need to be read square can still say so.
+   */
+  labelPlane: DEFAULT_PLANE,
+  /*
+   * Bigger than the 12px a caption starts at elsewhere, because it now lies on
+   * the ground and ground text is foreshortened twice over — squashed by the
+   * projection and skewed 45 degrees. This is the same correction the format's
+   * own advice makes for notes, at a size that suits a phrase inside a shape
+   * rather than a paragraph beside the diagram.
+   */
+  labelSize: 20,
+  yesAt: 'right',
+  noAt: 'bottom',
+};
+
+/**
+ * A row, a column or a grid of slots: an array, a stack, a queue, a matrix.
+ *
+ * One entity for all four because they are one picture — a run of boxes with
+ * values in them — and what tells them apart is the shape of the run and what
+ * the author writes beside it, not anything the drawing needs to know. A stack
+ * is one column, a queue is one row, a matrix is both.
+ */
+/** Which way a run is worked through, if it is worked through at all. */
+export const CELLS_FLOW = new Set(['forward', 'back', 'both']);
+
+export const CELLS_DEFAULTS = {
+  /**
+   * One slot's footprint, in grid cells.
+   *
+   * Square, because a slot is a box holding one value and a square is what an
+   * array's boxes are drawn as everywhere they are drawn. A wider slot reads as
+   * a row of fields rather than as a run of equal cells, and the run being
+   * *equal* is most of what the picture is saying.
+   */
+  slot: [2, 2],
+  cols: 6,
+  rows: 1,
+  height: 0.5,
+  color: '#64748b',
+  labelSize: 20,
+  labelPlane: DEFAULT_PLANE,
+};
+
+/** Bound on how many slots one structure may have, in each direction. */
+export const MAX_SLOTS = 200;
+
+/** Whether two short numeric arrays match, for deciding what to omit. */
+function sameNumbers(a, b) {
+  return Array.isArray(a) && a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 /** Shared placement fields for anything flat: pictures and text alike. */
 function readPlanar(raw, defaultPlane) {
   return {
@@ -147,12 +232,12 @@ function readPlanar(raw, defaultPlane) {
 // ---------------------------------------------------------------------------
 
 /**
- * The five collections that make an object a diagram rather than merely JSON.
+ * The six collections that make an object a diagram rather than merely JSON.
  *
  * An empty one still counts. A saved empty diagram writes all five as `[]`,
  * and refusing to reopen the file you just saved would be its own bug.
  */
-export const CONTENT_KEYS = ['nodes', 'groups', 'edges', 'texts', 'images'];
+export const CONTENT_KEYS = ['nodes', 'groups', 'edges', 'texts', 'images', 'shapes', 'cells'];
 
 /** What a value is, in the words the error message wants. */
 function jsonKind(v) {
@@ -274,7 +359,7 @@ export function tabNameFrom(name, index) {
 
 /** The five collections a drawing is made of, empty. */
 function emptyBody() {
-  return { groups: [], nodes: [], edges: [], texts: [], images: [] };
+  return { groups: [], nodes: [], edges: [], texts: [], images: [], shapes: [], cells: [] };
 }
 
 /**
@@ -374,13 +459,125 @@ function readBody(raw, doc, warnings, where = '') {
     doc.nodes.push(node);
   }
 
+  // --- flowchart shapes -----------------------------------------------------
+  //
+  // A shape lies on the ground and occupies a rectangle of cells, exactly as a
+  // picture does, so it reads as part of the drawing rather than as an overlay
+  // — and so a connection can find its edges. An unknown kind becomes a plain
+  // process box for the same reason an unknown block type becomes a plain
+  // block: the diagram still says what it was for.
+  const shapeIndex = new Set();
+  for (const sh of readCollection(raw, 'shapes', warnings, where)) {
+    const def = shapeKindFor(str(sh.kind));
+    if (sh.kind && def.kind !== sh.kind) {
+      warnings.push(`Shape kind "${sh.kind}" is unknown; used "${def.kind}".`);
+    }
+    const label = readLabel(sh.label, '');
+    const id = takeId(sh.id, label || def.kind, usedIds, warnings, 'Shape');
+    shapeIndex.add(id);
+    doc.shapes.push({
+      id,
+      kind: def.kind,
+      label,
+      pos: readPair(sh.pos ?? [sh.x, sh.y], [0, 0]),
+      size: readPair(sh.size ?? [sh.w, sh.h], def.size, 1),
+      // A slab rather than a cuboid: enough to stand the silhouette off the
+      // floor and give the eye a depth cue, not enough to compete with the
+      // blocks. Zero is allowed and draws the flat outline.
+      height: clampTenth(sh.height, 0, 40, SHAPE_DEFAULTS.height),
+      color: color(sh.color) || SHAPE_DEFAULTS.color,
+      labelSize: clampInt(sh.labelSize, 6, 96, SHAPE_DEFAULTS.labelSize),
+      // A caption laid on the floor skews with the floor, which is right for a
+      // drawing and hard work for a long line of code. So the caption may face
+      // the viewer instead, the same choice a block's caption already has.
+      labelPlane: isPlane(sh.labelPlane) ? sh.labelPlane : SHAPE_DEFAULTS.labelPlane,
+      // Only a decision has anywhere to put these, but reading them off every
+      // shape costs nothing and means a kind changed in the inspector does not
+      // silently drop what was typed.
+      yes: readLabel(sh.yes, ''),
+      no: readLabel(sh.no, ''),
+      yesAt: SHAPE_SIDES.has(sh.yesAt) ? sh.yesAt : SHAPE_DEFAULTS.yesAt,
+      noAt: SHAPE_SIDES.has(sh.noAt) ? sh.noAt : SHAPE_DEFAULTS.noAt,
+    });
+  }
+
+  // --- data structures ------------------------------------------------------
+  //
+  // Read beside the shapes and before the edges, for the same reason: a
+  // connection may point at one, so the ids have to exist by the time the edges
+  // are read.
+  const cellsIndex = new Set();
+  for (const c of readCollection(raw, 'cells', warnings, where)) {
+    const label = readLabel(c.label, '');
+    const id = takeId(c.id, label || 'cells', usedIds, warnings, 'Cells');
+    cellsIndex.add(id);
+    const items = Array.isArray(c.items)
+      ? c.items.slice(0, MAX_SLOTS * MAX_SLOTS).map((v) => readLabel(v, ''))
+      : [];
+    const cols = clampInt(c.cols, 1, MAX_SLOTS, Math.max(1, items.length) || CELLS_DEFAULTS.cols);
+    doc.cells.push({
+      id,
+      label,
+      pos: readPair(c.pos ?? [c.x, c.y], [0, 0]),
+      cols,
+      rows: clampInt(c.rows, 1, MAX_SLOTS, CELLS_DEFAULTS.rows),
+      slot: readPair(c.slot ?? c.cell, CELLS_DEFAULTS.slot, 1),
+      // Row-major, and shorter than the grid is fine: an array with room left
+      // in it is a thing people draw on purpose.
+      items,
+      /** Numbers along the edges. Off unless asked for: they are for when the
+          position of a value is the point, which is not every diagram. */
+      indices: c.indices === true,
+      /*
+       * What the two ends of the run are called — "Front" and "Back" on a
+       * queue, "top" and "bottom" on a stack.
+       *
+       * Ends rather than slots, because that is what they name: a queue's front
+       * is wherever the front currently is, not slot 0 forever, and a pointer
+       * pinned to an index would say the wrong thing the moment anything moved.
+       */
+      ends: Array.isArray(c.ends)
+        ? [readLabel(c.ends[0], ''), readLabel(c.ends[1], '')]
+        : ['', ''],
+      /**
+       * A quieter second line under the name: what the structure holds, how big
+       * it is, what a slot means. The name says which structure this is; the
+       * description says the thing you would otherwise put in a note beside it.
+       */
+      description: readLabel(c.description, ''),
+      /** Which way things travel through it, drawn as a mark beyond each end. */
+      flow: CELLS_FLOW.has(c.flow) ? c.flow : null,
+      /**
+       * Pointers into the run — `top`, `head`, `i`. Each names a slot by index,
+       * so a marker moves with the structure and cannot drift off the slot it
+       * is pointing at, which is the whole reason it is not a free note.
+       */
+      marks: Array.isArray(c.marks)
+        ? c.marks
+            .map((m) => ({
+              text: readLabel(m?.text, ''),
+              at: clampInt(m?.at, 0, MAX_SLOTS * MAX_SLOTS - 1, 0),
+            }))
+            .filter((m) => m.text)
+            .slice(0, 24)
+        : [],
+      height: clampTenth(c.height, 0, 40, CELLS_DEFAULTS.height),
+      color: color(c.color) || CELLS_DEFAULTS.color,
+      labelSize: clampInt(c.labelSize, 6, 96, CELLS_DEFAULTS.labelSize),
+      labelPlane: isPlane(c.labelPlane) ? c.labelPlane : CELLS_DEFAULTS.labelPlane,
+    });
+  }
+
   // --- edges ----------------------------------------------------------------
   for (const e of readCollection(raw, 'edges', warnings, where)) {
     const from = str(e.from) ?? str(e.source);
     const to = str(e.to) ?? str(e.target);
-    // Either end may be a block or a zone: both are rectangles on the grid,
-    // and "this whole subnet talks to that one" is a real thing to draw.
-    const connectable = (id) => nodeIndex.has(id) || groupIndex.has(id);
+    // Either end may be a block, a zone or a flowchart shape: all three are
+    // rectangles on the grid, and "this whole subnet talks to that one" and
+    // "this step leads to that question" are both real things to draw. Shapes
+    // are read above for exactly this reason — an edge naming one must find it.
+    const connectable = (id) =>
+      nodeIndex.has(id) || groupIndex.has(id) || shapeIndex.has(id) || cellsIndex.has(id);
     if (!connectable(from) || !connectable(to)) {
       warnings.push(`Dropped edge ${from || '?'} -> ${to || '?'}: endpoint does not exist.`);
       continue;
@@ -454,6 +651,7 @@ function readBody(raw, doc, warnings, where = '') {
       ...readPlanar(im, IMAGE_DEFAULTS.plane),
     });
   }
+
 }
 
 /**
@@ -586,6 +784,40 @@ export function serializeDoc(doc) {
       size: im.size,
       opacity: im.opacity === 1 ? null : im.opacity,
       ...planarWire(im, IMAGE_DEFAULTS.plane),
+    })),
+    cells: doc.cells.map((c) => omitEmpty({
+      id: c.id,
+      label: c.label || null,
+      pos: c.pos,
+      cols: c.cols,
+      rows: c.rows === CELLS_DEFAULTS.rows ? null : c.rows,
+      slot: sameNumbers(c.slot, CELLS_DEFAULTS.slot) ? null : c.slot,
+      items: c.items.length ? c.items : null,
+      indices: c.indices || null,
+      description: c.description || null,
+      ends: c.ends[0] || c.ends[1] ? c.ends : null,
+      flow: c.flow,
+      marks: c.marks.length ? c.marks.map((m) => ({ text: m.text, at: m.at })) : null,
+      height: c.height === CELLS_DEFAULTS.height ? null : c.height,
+      color: c.color === CELLS_DEFAULTS.color ? null : c.color,
+      labelSize: c.labelSize === CELLS_DEFAULTS.labelSize ? null : c.labelSize,
+      labelPlane: c.labelPlane === CELLS_DEFAULTS.labelPlane ? null : c.labelPlane,
+    })),
+    shapes: doc.shapes.map((sh) => omitEmpty({
+      id: sh.id,
+      kind: sh.kind,
+      label: sh.label || null,
+      pos: sh.pos,
+      size: sh.size,
+      height: sh.height === SHAPE_DEFAULTS.height ? null : sh.height,
+      color: sh.color === SHAPE_DEFAULTS.color ? null : sh.color,
+      labelSize: sh.labelSize === SHAPE_DEFAULTS.labelSize ? null : sh.labelSize,
+      labelPlane: sh.labelPlane === SHAPE_DEFAULTS.labelPlane ? null : sh.labelPlane,
+      yes: sh.yes || null,
+      no: sh.no || null,
+      // Only worth writing beside a branch label that exists.
+      yesAt: sh.yes && sh.yesAt !== SHAPE_DEFAULTS.yesAt ? sh.yesAt : null,
+      noAt: sh.no && sh.noAt !== SHAPE_DEFAULTS.noAt ? sh.noAt : null,
     })),
   };
   return stringify(wire, 0) + '\n';

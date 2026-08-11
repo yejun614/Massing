@@ -17,8 +17,11 @@ import {
   groupById,
   textById,
   planarById,
+  positionedById,
   nodeBox,
   groupBox,
+  shapeBox,
+  cellsBox,
   boxContains,
   docBounds,
   removeEntities,
@@ -43,6 +46,8 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
       ...doc.groups.map((g) => g.id),
       ...doc.texts.map((t) => t.id),
       ...doc.images.map((i) => i.id),
+      ...doc.shapes.map((sh) => sh.id),
+      ...doc.cells.map((c) => c.id),
     ]);
   }
 
@@ -67,7 +72,7 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
         if (group) group.rect = [group.rect[0] + dx, group.rect[1] + dy, group.rect[2], group.rect[3]];
       }
       for (const id of ids.planar) {
-        const el = planarById(doc, id);
+        const el = positionedById(doc, id);
         if (el) el.pos = [el.pos[0] + dx, el.pos[1] + dy];
       }
       reassignGroups(doc, [...ids.nodes].map((id) => nodeById(doc, id)).filter(Boolean));
@@ -106,12 +111,29 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
       }
     }
     const images = doc.images.filter((i) => imageSet.has(i.id));
-    if (!nodes.length && !groups.length && !texts.length && !images.length) return null;
+    const shapeSet = new Set(doc.shapes.filter((sh) => sel.has(sh.id)).map((sh) => sh.id));
+    for (const group of groups) {
+      const box = groupBox(group);
+      for (const sh of doc.shapes) {
+        if (boxContains(box, shapeBox(sh))) shapeSet.add(sh.id);
+      }
+    }
+    const shapes = doc.shapes.filter((sh) => shapeSet.has(sh.id));
+    const cellsSet = new Set(doc.cells.filter((c) => sel.has(c.id)).map((c) => c.id));
+    for (const group of groups) {
+      const box = groupBox(group);
+      for (const c of doc.cells) if (boxContains(box, cellsBox(c))) cellsSet.add(c.id);
+    }
+    const cells = doc.cells.filter((c) => cellsSet.has(c.id));
+    if (!nodes.length && !groups.length && !texts.length && !images.length &&
+        !shapes.length && !cells.length) {
+      return null;
+    }
 
     const groupIds = new Set(groups.map((g) => g.id));
     // A connection can hang off a zone as readily as off a block, so both
     // count when deciding whether a copied fragment carries it along.
-    const endpoints = new Set([...nodeSet, ...groupIds]);
+    const endpoints = new Set([...nodeSet, ...groupIds, ...shapeSet, ...cellsSet]);
     return {
       version: 1,
       meta: { title: doc.meta.title },
@@ -121,6 +143,8 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
       edges: doc.edges.filter((e) => endpoints.has(e.from) && endpoints.has(e.to)),
       texts,
       images,
+      shapes,
+      cells,
     };
   }
 
@@ -130,7 +154,9 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
     const text = serializeDoc(fragment);
     localClipboard = text; // in-page fallback for when the system clipboard is denied
     await copyText(text);
-    const count = fragment.nodes.length + fragment.texts.length + fragment.images.length;
+    const count =
+      fragment.nodes.length + fragment.texts.length + fragment.images.length +
+      fragment.shapes.length + fragment.cells.length;
     toaster?.info(`Copied ${count} item(s) as JSON.`);
   }
 
@@ -158,7 +184,7 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
     }
     const { doc: incoming, warnings } = parsed;
     if (!incoming.nodes.length && !incoming.groups.length && !incoming.texts.length &&
-        !incoming.images.length) {
+        !incoming.images.length && !incoming.shapes.length && !incoming.cells.length) {
       toaster?.error('Nothing to paste.');
       return false;
     }
@@ -213,6 +239,16 @@ export function createCommands({ store, scene, toaster, io, library, tabs = null
       for (const im of incoming.images) {
         const id = claim(im.id);
         doc.images.push({ ...im, id, pos: [im.pos[0] + offset, im.pos[1] + offset] });
+        created.push(id);
+      }
+      for (const sh of incoming.shapes) {
+        const id = claim(sh.id);
+        doc.shapes.push({ ...sh, id, pos: [sh.pos[0] + offset, sh.pos[1] + offset] });
+        created.push(id);
+      }
+      for (const c of incoming.cells) {
+        const id = claim(c.id);
+        doc.cells.push({ ...c, id, pos: [c.pos[0] + offset, c.pos[1] + offset] });
         created.push(id);
       }
       reassignGroups(doc, doc.nodes.filter((n) => created.includes(n.id)));
@@ -394,7 +430,7 @@ function expandForMove(doc, selection) {
       continue;
     }
     if (nodeById(doc, id)) nodes.add(id);
-    else if (planarById(doc, id)) planar.add(id);
+    else if (positionedById(doc, id)) planar.add(id);
   }
   return { nodes, groups, planar };
 }

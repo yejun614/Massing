@@ -153,7 +153,8 @@ Zones must be large enough to hold their contents. A `[2, 2]` block at
 
 ## Connections
 
-`from` and `to` name **a block or a zone** — the two are interchangeable, so
+`from` and `to` name **a block, a zone or a flowchart shape** — all three are
+interchangeable, so
 "this subnet peers with that one" and "this gateway reaches that LAN" are both
 one edge. A connection to a zone starts at the zone's boundary rather than its
 middle, the same way it does for a block.
@@ -187,6 +188,103 @@ in knots getting around a VPC.
 
 Auto layout ranks **blocks** from the connections between blocks; a connection
 that touches a zone is left out of that calculation and simply drawn.
+
+`arrow` is `end` by default, and takes `start`, `both` or `none`. On screen it
+decides more than the arrowhead: a connection with exactly one gets a soft band
+that drifts along it from `from` to `to`, so which way it runs is legible
+without following the line to its end. `none` and `both` are an author saying
+direction is not the point — "these two talk to each other" — so those stay
+still, and so does every connection when the reader's system asks for reduced
+motion. An exported picture never has it: a still cannot drift, and a band
+frozen partway along one line would be a mark the picture cannot explain.
+
+## Flowchart shapes
+
+`shapes` are flat outlines lying on the ground, for the parts of a picture that
+are **steps rather than things**. A server is a cuboid because it occupies
+space; "if b = 0" does not, and the convention for it — a century old and taught
+everywhere — is a silhouette: a diamond is a question, a stadium is where the
+thing starts and stops.
+
+```json
+{ "id": "check", "kind": "decision", "label": "b = 0 ?", "pos": [5, 8],
+  "size": [6, 4], "yes": "yes", "no": "no" }
+```
+
+| `kind` | For | Default `size` |
+|---|---|---|
+| `terminal` | Where the algorithm begins or ends | `[4, 2]` |
+| `process` | A step that does something | `[5, 2]` |
+| `decision` | A question, with a branch per answer | `[5, 3]` |
+| `io` | Something read in or written out | `[5, 2]` |
+| `subroutine` | A step defined by another diagram | `[5, 2]` |
+| `connector` | Picks a line up where it was left off | `[2, 2]` |
+
+`pos` is the minimum corner and `size` is the bounding box, both in whole cells,
+exactly as for a block. An unknown `kind` loads as a `process`, with a warning.
+
+**A shape stands up.** `height` defaults to `0.5` — half a cell, enough to make
+the silhouette a slab with sides rather than an outline painted on the floor.
+That is not decoration: read flat through the isometric skew, a diamond is a
+parallelogram, and the sides are what tell the eye that the top face is a top
+face. `0` lays it flat again, and any block height is allowed if a step really
+should stand as tall as a server. Drag the grip above a selected shape, exactly
+as for a block.
+
+**A shape is a connection endpoint like any block or zone.** `edges` join them
+with the same `from` and `to` — and the line is trimmed back to the *silhouette*
+rather than to the bounding box, so an arrow into a decision stops on the slope
+of the diamond and one into a connector stops on its curve. That is the whole
+reason these are shapes rather than labelled rectangles.
+
+**Only a `decision` uses `yes` and `no`.** They are written just outside the
+sides named by `yesAt` and `noAt` — `top`, `right`, `bottom` or `left`,
+defaulting to `right` and `bottom`. Set them to the sides the branches actually
+leave from. Both are kept on every kind, so changing a shape's kind in the
+inspector does not throw away what was typed.
+
+`labelPlane` defaults to `floor` like every other caption in the format, and
+lands on the shape's **top face** — writing on the slab rather than a sign
+floating over it. Set it to `screen` on the odd step whose words have to be read
+square to the viewer. `color` and `labelSize` work as they do elsewhere.
+
+## Data structures
+
+`cells` is a run of slots: an array, a stack, a queue or a matrix. They are one
+entity because they are one picture — a run of boxes with values in them — and
+what tells them apart is the shape of the run. A stack is one column, a queue is
+one row, a matrix is both.
+
+```json
+{ "id": "a", "label": "a", "pos": [0, 0], "cols": 7,
+  "items": ["3", "1", "4", "1", "5", "9"],
+  "indices": true, "marks": [{ "text": "i", "at": 2 }] }
+```
+
+| Field | Meaning |
+|---|---|
+| `cols` `rows` | How many slots, across and down. `rows` defaults to 1 |
+| `slot` | One slot's footprint in cells. Default `[2, 2]` — square, which is what an array's boxes are drawn as |
+| `items` | The values, row-major. Shorter than the grid is fine — an array with room left in it is a thing people draw on purpose |
+| `indices` | Numbers along the edges, off by default. Turn them on when *where* a value sits is the point |
+| `ends` | What the two ends are called — `["Front", "Back"]` on a queue, `["top", "bottom"]` on a stack. Written beyond the ends, because that is what they name: a queue's front is wherever the front is, not slot 0 for ever |
+| `flow` | `back`, `forward` or `both` — a mark beyond each end showing which way things travel. `both` is a stack's open top or a deque |
+| `description` | A quieter second line under the name |
+| `marks` | Pointers into the run: `{ "text": "top", "at": 4 }` names a slot by index, so it moves with the structure and cannot drift off the slot it points at |
+| `height` | Thickness, like a flowchart shape. Default `0.5` |
+
+The name sits **over a row and beside a column**, which is not a setting: above a
+column is where the column's own open end already is, and beside it is the only
+clear ground a stack has.
+
+`pos` is the minimum corner; the footprint is `cols × slot[0]` by
+`rows × slot[1]`, so it is derived rather than stored and cannot go stale. A
+structure is a connection endpoint like a block, so an `edges` entry can point a
+step at the array it works on.
+
+Dragging a corner in the editor **adds and removes slots** rather than
+stretching them: the slot keeps the size it was given and the count follows the
+footprint, which is what a run of numbered boxes has to do to stay one.
 
 ## Text annotations
 

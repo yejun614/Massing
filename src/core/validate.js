@@ -129,6 +129,8 @@ export function validateDrawing(view = {}) {
   const edges = view.edges ?? [];
   const texts = view.texts ?? [];
   const images = view.images ?? [];
+  const shapes = view.shapes ?? [];
+  const cells = view.cells ?? [];
 
   const errors = [];
   const warnings = [];
@@ -139,12 +141,13 @@ export function validateDrawing(view = {}) {
 
   // --- identifiers ---------------------------------------------------------
   const seen = new Set();
-  for (const o of [...groups, ...nodes, ...edges, ...texts, ...images]) {
+  for (const o of [...groups, ...nodes, ...edges, ...texts, ...images, ...shapes, ...cells]) {
     if (o.id == null) continue;
     if (seen.has(o.id)) err(`duplicate id "${o.id}" — the loader renames it with a suffix`);
     seen.add(o.id);
   }
-  const anchors = new Set([...groups, ...nodes].map((o) => o.id));
+  // A flowchart shape is as connectable as a block or a zone.
+  const anchors = new Set([...groups, ...nodes, ...shapes, ...cells].map((o) => o.id));
   for (const e of edges) {
     for (const end of ['from', 'to']) {
       if (!anchors.has(e[end])) {
@@ -158,7 +161,7 @@ export function validateDrawing(view = {}) {
   // Negative coordinates are fine — the origin is not a corner of the world —
   // but a fractional one is not, and the loader rounds it somewhere nobody
   // asked for.
-  for (const o of [...nodes, ...texts, ...images]) {
+  for (const o of [...nodes, ...texts, ...images, ...shapes, ...cells]) {
     const p = Array.isArray(o.pos) ? o.pos : [];
     if (p.some((v) => !Number.isInteger(v))) err(`${o.id} pos is not integral`);
     // A note's size is one number, a block's and a picture's is [w, h].

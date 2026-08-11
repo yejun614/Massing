@@ -66,9 +66,11 @@ npm run test:rust                 # the config-writing tests
 | Place a block | Click a component in the left panel, then click the canvas (Shift keeps it armed) |
 | Move | Drag. Dragging a zone moves everything inside it |
 | Resize | Select one thing, then drag a grip. A block gets an extra grip above it for its height, which drags in whole storeys — tenths are typed in the inspector |
-| Connect | `C`, then drag from one block or zone to another |
+| Connect | `C`, then drag from one block or zone to another. A connection with one arrowhead drifts a soft band along itself, from its start to its end |
 | Re-route a connection | Select it and drag the grip on the run it turns on |
 | Draw a zone | `G`, then drag a rectangle |
+| Draw a data structure | The **Array** entry in the Flowchart section — a run of slots with values, index numbers and pointers like `top` or `i`. One column is a stack, one row a queue, both a matrix. Drag a corner to add or remove slots |
+| Draw an algorithm | The **Flowchart** section of the left panel — start/end, process, decision, I/O, subroutine, connector. They lie in the scene like everything else and connect with the same arrows |
 | Add a note | Double-click bare canvas, or `T` then click |
 | Rename anything | Double-click it — the caret lands in its caption, whether that is a block, a zone, a connection or a note |
 | Edit many at once | Select several and the inspector offers what they have in common — caption size and plane, footprint, height, line style, note styling, placement |

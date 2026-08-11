@@ -11,16 +11,41 @@
 
 import { h, clear, setClass, setText } from '../util/dom.js';
 import { COMPONENTS, GROUP_KINDS, componentFor } from '../data/components.js';
-import { nodeById, groupById, edgeById, textById, imageById, planarById, entityById } from '../core/doc.js';
+import {
+  nodeById,
+  groupById,
+  edgeById,
+  textById,
+  imageById,
+  planarById,
+  shapeById,
+  cellsById,
+  entityById,
+} from '../core/doc.js';
+import { SHAPE_KINDS, DEFAULT_SHAPE_KIND } from '../data/shapes.js';
 import { PLANES, PLANE_LABELS, SPINS } from '../geom/plane.js';
 // The defaults come from the schema rather than being written out again here:
 // a literal in the inspector is exactly how the two drift apart, and a control
 // that shows the wrong default is worse than one that shows none.
-import { DEFAULT_PLANE, DEFAULT_ZONE_LABEL_PLANE, DEFAULT_LABEL_ALIGN } from '../core/schema.js';
+import {
+  DEFAULT_PLANE,
+  DEFAULT_ZONE_LABEL_PLANE,
+  DEFAULT_LABEL_ALIGN,
+  SHAPE_DEFAULTS,
+  CELLS_DEFAULTS,
+} from '../core/schema.js';
 import { approximateBytes, formatSize } from '../core/images.js';
 
 /** Shared by every caption control, so the wording cannot drift apart. */
 const ALIGN_OPTIONS = [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']];
+
+/** Which side of a decision an answer leaves from. */
+const SIDE_OPTIONS = [
+  ['top', 'Top'],
+  ['right', 'Right'],
+  ['bottom', 'Bottom'],
+  ['left', 'Left'],
+];
 
 const SWATCHES = [
   '#ed7100', '#f59e0b', '#eab308', '#7aa116', '#16a34a', '#0ea5a5', '#2a7fd4', '#2563eb',
@@ -53,6 +78,8 @@ export function createInspector({ root, store, commands }) {
     if (found.kind === 'group') return buildGroup(root, store, found.entity.id);
     if (found.kind === 'text') return buildText(root, store, found.entity.id);
     if (found.kind === 'image') return buildImage(root, store, found.entity.id);
+    if (found.kind === 'shape') return buildShape(root, store, found.entity.id);
+    if (found.kind === 'cells') return buildCells(root, store, found.entity.id);
     return buildEdge(root, store, found.entity.id);
   }
 
@@ -497,6 +524,321 @@ function buildImage(root, store, id) {
 
   root.append(section);
   planarFields(root, store, id, fields);
+  root.append(idSection(id));
+  return fields;
+}
+
+
+/**
+ * A flowchart shape.
+ *
+ * `Kind` sits at the top because it is the one field that changes what the
+ * thing *says* — a process that should have been a decision is a wrong diagram,
+ * not a mis-styled one — and because swapping it keeps everything else, so a
+ * step can be re-labelled as a question without being drawn again.
+ *
+ * The two branch fields appear only on a decision. They are stored on every
+ * kind, so nothing typed is lost by a change of mind, but a "Yes" caption on a
+ * plain box would be a control with nowhere to put its result.
+ */
+function buildShape(root, store, id) {
+  const fields = [];
+  const section = h('section', { class: 'section' }, [
+    h('h2', { class: 'section-title', text: 'Flowchart shape' }),
+  ]);
+  const withShape = (fn) => (doc) => {
+    const shape = shapeById(doc, id);
+    if (shape) fn(shape);
+  };
+
+  fields.push(
+    selectField(section, store, {
+      label: 'Kind',
+      options: SHAPE_KINDS.map((k) => [k.kind, k.label]),
+      get: (s) => shapeById(s.doc, id)?.kind ?? DEFAULT_SHAPE_KIND,
+      set: (value) => withShape((sh) => (sh.kind = value)),
+    })
+  );
+
+  fields.push(
+    textField(section, store, {
+      label: 'Label',
+      get: (s) => shapeById(s.doc, id)?.label ?? '',
+      set: (value) => withShape((sh) => (sh.label = value)),
+    })
+  );
+
+  fields.push(
+    pairField(section, store, {
+      label: 'Size',
+      min: 1,
+      get: (s) => shapeById(s.doc, id)?.size ?? [5, 2],
+      set: (pair) => withShape((sh) => (sh.size = pair)),
+    })
+  );
+
+  fields.push(
+    numberField(section, store, {
+      label: 'Height',
+      min: 0,
+      max: 40,
+      step: 0.1,
+      get: (s) => shapeById(s.doc, id)?.height ?? SHAPE_DEFAULTS.height,
+      set: (value) => withShape((sh) => (sh.height = value)),
+    })
+  );
+
+  fields.push(
+    pairField(section, store, {
+      label: 'Position',
+      min: -400,
+      get: (s) => shapeById(s.doc, id)?.pos ?? [0, 0],
+      set: (pair) => withShape((sh) => (sh.pos = pair)),
+    })
+  );
+
+  fields.push(
+    swatchField(section, store, {
+      label: 'Colour',
+      colors: SWATCHES,
+      get: (s) => shapeById(s.doc, id)?.color ?? SHAPE_DEFAULTS.color,
+      set: (value) => withShape((sh) => (sh.color = value)),
+    })
+  );
+
+  fields.push(
+    selectField(section, store, {
+      label: 'Label on',
+      options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
+      get: (s) => shapeById(s.doc, id)?.labelPlane ?? SHAPE_DEFAULTS.labelPlane,
+      set: (value) => withShape((sh) => (sh.labelPlane = value)),
+    })
+  );
+
+  fields.push(
+    numberField(section, store, {
+      label: 'Label size',
+      min: 6,
+      max: 96,
+      get: (s) => shapeById(s.doc, id)?.labelSize ?? SHAPE_DEFAULTS.labelSize,
+      set: (value) => withShape((sh) => (sh.labelSize = value)),
+    })
+  );
+  root.append(section);
+
+  // --- branches -------------------------------------------------------------
+  const branches = h('section', { class: 'section' }, [
+    h('h2', { class: 'section-title', text: 'Branches' }),
+    h('p', { class: 'panel-hint', text:
+      'Written beside the shape, on the side each answer leaves from.' }),
+  ]);
+  for (const [key, at, label] of [['yes', 'yesAt', 'Yes'], ['no', 'noAt', 'No']]) {
+    fields.push(
+      textField(branches, store, {
+        label,
+        get: (s) => shapeById(s.doc, id)?.[key] ?? '',
+        set: (value) => withShape((sh) => (sh[key] = value)),
+      })
+    );
+    fields.push(
+      selectField(branches, store, {
+        label: `${label} side`,
+        options: SIDE_OPTIONS,
+        get: (s) => shapeById(s.doc, id)?.[at] ?? SHAPE_DEFAULTS[at],
+        set: (value) => withShape((sh) => (sh[at] = value)),
+      })
+    );
+  }
+  // Shown only where there is somewhere to put them, and synced like a field so
+  // changing the kind reveals or hides it without rebuilding the panel.
+  fields.push({
+    sync: (state) => {
+      setClass(branches, 'is-hidden', shapeById(state.doc, id)?.kind !== 'decision');
+    },
+  });
+  root.append(branches);
+
+  root.append(idSection(id));
+  return fields;
+}
+
+
+/**
+ * A data structure: a run of slots.
+ *
+ * The values are one field, a line per slot, because that is how the thing is
+ * actually edited — you retype the row after a swap, you do not hunt for the
+ * third box. The same goes for the pointers: `2: top` on its own line beats a
+ * pair of controls per marker, and it reads as what it produces.
+ */
+function buildCells(root, store, id) {
+  const NEWLINE = String.fromCharCode(10);
+  const fields = [];
+  const section = h('section', { class: 'section' }, [
+    h('h2', { class: 'section-title', text: 'Data structure' }),
+  ]);
+  const withCells = (fn) => (doc) => {
+    const c = cellsById(doc, id);
+    if (c) fn(c);
+  };
+
+  fields.push(
+    textField(section, store, {
+      label: 'Name',
+      get: (s) => cellsById(s.doc, id)?.label ?? '',
+      set: (value) => withCells((c) => (c.label = value)),
+    })
+  );
+
+  fields.push(
+    textField(section, store, {
+      label: 'Description',
+      get: (s) => cellsById(s.doc, id)?.description ?? '',
+      set: (value) => withCells((c) => (c.description = value)),
+    })
+  );
+
+  fields.push(
+    areaField(section, store, {
+      label: 'Values',
+      get: (s) => (cellsById(s.doc, id)?.items ?? []).join(NEWLINE),
+      // Trailing blanks are dropped so an accidental newline does not become an
+      // empty slot, but blanks *between* values are kept: a gap in an array is
+      // usually the point being made.
+      set: (value) => withCells((c) => {
+        const lines = value.split(NEWLINE);
+        while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+        c.items = lines.map((line) => line.trim());
+      }),
+    })
+  );
+
+  fields.push(
+    pairField(section, store, {
+      label: 'Slots',
+      min: 1,
+      max: 200,
+      get: (s) => {
+        const c = cellsById(s.doc, id);
+        return [c?.cols ?? 1, c?.rows ?? 1];
+      },
+      set: (pair) => withCells((c) => {
+        c.cols = pair[0];
+        c.rows = pair[1];
+      }),
+    })
+  );
+
+  fields.push(
+    pairField(section, store, {
+      label: 'Slot size',
+      min: 1,
+      get: (s) => cellsById(s.doc, id)?.slot ?? CELLS_DEFAULTS.slot,
+      set: (pair) => withCells((c) => (c.slot = pair)),
+    })
+  );
+
+  fields.push(
+    numberField(section, store, {
+      label: 'Height',
+      min: 0,
+      max: 40,
+      step: 0.1,
+      get: (s) => cellsById(s.doc, id)?.height ?? CELLS_DEFAULTS.height,
+      set: (value) => withCells((c) => (c.height = value)),
+    })
+  );
+
+  fields.push(
+    pairField(section, store, {
+      label: 'Position',
+      min: -400,
+      get: (s) => cellsById(s.doc, id)?.pos ?? [0, 0],
+      set: (pair) => withCells((c) => (c.pos = pair)),
+    })
+  );
+
+  fields.push(
+    checkboxField(section, store, {
+      label: 'Index numbers',
+      get: (s) => !!cellsById(s.doc, id)?.indices,
+      set: (value) => withCells((c) => (c.indices = value)),
+    })
+  );
+
+  fields.push(
+    pairTextField(section, store, {
+      label: 'Ends',
+      placeholder: ['Front', 'Back'],
+      get: (s) => cellsById(s.doc, id)?.ends ?? ['', ''],
+      set: (pair) => withCells((c) => (c.ends = pair)),
+    })
+  );
+
+  fields.push(
+    selectField(section, store, {
+      label: 'Flow',
+      options: [
+        ['', 'None'],
+        ['back', 'Towards the first'],
+        ['forward', 'Towards the last'],
+        ['both', 'In and out at each end'],
+      ],
+      get: (s) => cellsById(s.doc, id)?.flow ?? '',
+      set: (value) => withCells((c) => (c.flow = value || null)),
+    })
+  );
+
+  fields.push(
+    areaField(section, store, {
+      label: 'Pointers',
+      get: (s) =>
+        (cellsById(s.doc, id)?.marks ?? []).map((m) => `${m.at}: ${m.text}`).join(NEWLINE),
+      set: (value) => withCells((c) => {
+        c.marks = value
+          .split(NEWLINE)
+          .map((line) => {
+            const at = /^\s*(\d+)\s*[:=]?\s*(.*)$/.exec(line);
+            if (!at || !at[2].trim()) return null;
+            return { at: Number(at[1]), text: at[2].trim() };
+          })
+          .filter(Boolean);
+      }),
+    })
+  );
+  section.append(
+    h('p', { class: 'panel-hint', text: 'One per line, as "2: top" — the slot number, then what points at it.' })
+  );
+
+  fields.push(
+    swatchField(section, store, {
+      label: 'Colour',
+      colors: SWATCHES,
+      get: (s) => cellsById(s.doc, id)?.color ?? CELLS_DEFAULTS.color,
+      set: (value) => withCells((c) => (c.color = value)),
+    })
+  );
+
+  fields.push(
+    selectField(section, store, {
+      label: 'Text on',
+      options: PLANES.map((p) => [p, PLANE_LABELS[p]]),
+      get: (s) => cellsById(s.doc, id)?.labelPlane ?? CELLS_DEFAULTS.labelPlane,
+      set: (value) => withCells((c) => (c.labelPlane = value)),
+    })
+  );
+
+  fields.push(
+    numberField(section, store, {
+      label: 'Text size',
+      min: 6,
+      max: 96,
+      get: (s) => cellsById(s.doc, id)?.labelSize ?? CELLS_DEFAULTS.labelSize,
+      set: (value) => withCells((c) => (c.labelSize = value)),
+    })
+  );
+
+  root.append(section);
   root.append(idSection(id));
   return fields;
 }
@@ -956,6 +1298,45 @@ function numberField(parent, store, { label, get, set, min = -400, max = 400, st
     sync: (state) => {
       const value = String(get(state) ?? '');
       if (document.activeElement !== input && input.value !== value) input.value = value;
+    },
+  };
+}
+
+
+/**
+ * Two short text boxes on one row: the names of a thing's two ends.
+ *
+ * `pairField` next door does this for numbers; ends are words, and giving them
+ * a row of their own is what keeps "Front" and "Back" reading as one setting
+ * rather than two unrelated captions.
+ */
+function pairTextField(parent, store, { label, placeholder = ['', ''], get, set }) {
+  const inputs = [0, 1].map((i) =>
+    h('input', {
+      type: 'text',
+      placeholder: placeholder[i] ?? '',
+      onInput: () => {
+        const value = inputs.map((el) => el.value);
+        store.commit(label, (doc) => set(value)(doc));
+      },
+      onFocus: () => store.beginGesture(label),
+      onBlur: () => store.endGesture(),
+    })
+  );
+  parent.append(
+    h('div', { class: 'field' }, [
+      h('label', { text: label }),
+      h('div', { class: 'field-pair' }, inputs),
+    ])
+  );
+  return {
+    sync: (state) => {
+      const value = get(state);
+      for (const [i, el] of inputs.entries()) {
+        if (document.activeElement !== el && el.value !== (value[i] ?? '')) {
+          el.value = value[i] ?? '';
+        }
+      }
     },
   };
 }

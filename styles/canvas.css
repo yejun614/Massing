@@ -62,6 +62,188 @@
   pointer-events: none;
 }
 
+/* --- flowchart shapes -----------------------------------------------------
+ *
+ * A silhouette carries the meaning here, so the outline is the loud part and
+ * the fill is only enough to lift the shape off the grid and to occlude a line
+ * passing behind it. The fill is the outline's own colour at low opacity, which
+ * works on a pale canvas and a dark one without either being named.
+ */
+
+/*
+ * The wall carries the slab's body, so it is nearly opaque where the top face
+ * is a tint: a hollow side would show the grid through the middle of a solid.
+ *
+ * Unstroked, and that is not a style choice. The wall is one path of quads, one
+ * per edge of the ring, so a stroke draws every seam between them — which on a
+ * curve, where the ring is two dozen segments, comes out as a coil rather than
+ * a cylinder. The top face's own outline is what gives the slab its edge.
+ */
+.shape-walls {
+  fill-opacity: 1;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.shape-outline {
+  fill-opacity: 1;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+.shape-inner,
+.shape-groove {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+/* The lit lower lip, quieter than the shadow above it — see `.cells-groove`. */
+.shape-groove { stroke-width: 1.6; opacity: 0.75; }
+
+.shape-label {
+  /* No font-size here -- see the note on .zone-label. */
+  font-weight: 550;
+  fill: var(--scene-ink, #26313f);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* Smaller and quieter than the caption: a branch label is a road sign, not the
+   name of the thing it stands beside. */
+.shape-branch {
+  fill: var(--scene-ink-soft, #54637a);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* A solid is opaque; only a flat one is a tint over the grid. */
+.shape.is-flat .shape-outline { fill-opacity: 0.14; }
+.shape.is-flat.is-hovered .shape-outline { fill-opacity: 0.26; }
+
+/*
+ * Selection draws on a shape, it does not repaint one.
+ *
+ * The same bargain every other entity here strikes: a block turns its face
+ * edges blue and keeps its colours, a zone strengthens its own outline, a
+ * picture gets a blue frame. Filling the slab blue instead threw away the one
+ * thing the drawing was saying — this step is *this* colour — for the duration
+ * of a click, and made the selected shape the only one in the scene that
+ * changed what it was rather than gaining a highlight.
+ */
+.shape.is-hovered .shape-walls,
+.shape.is-hovered .shape-outline { stroke-width: 2.8; }
+.shape.is-selected .shape-walls,
+.shape.is-selected .shape-outline {
+  stroke: #2563eb;
+  stroke-width: 2.8;
+}
+.shape.is-selected .shape-label { fill: #1d4ed8; font-weight: 650; }
+
+/* --- data structures ------------------------------------------------------
+ *
+ * One solid with its lid divided, so the parts follow the shape's own rules:
+ * the body opaque, the dividers darker than the face they are drawn on, and
+ * everything written on the lid sharing the caption's plane.
+ */
+
+.cells-walls {
+  fill-opacity: 1;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.cells-outline {
+  fill-opacity: 1;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+}
+.cells.is-flat .cells-outline { fill-opacity: 0.14; }
+.cells-dividers,
+.cells-groove {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+/* The lit lip is the quieter half of the pair: too strong and the groove reads
+   as a second line rather than as the far wall of the first. */
+.cells-groove { stroke-width: 1.4; opacity: 0.75; }
+
+.cells-value {
+  font-weight: 550;
+  fill: var(--scene-ink, #26313f);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+/* The gutter is scenery for the values: present when position is the point,
+   never competing with what is in the slots. */
+.cells-index {
+  fill: var(--scene-ink-soft, #54637a);
+  pointer-events: none;
+}
+.cells-mark {
+  font-weight: 600;
+  fill: var(--scene-ink, #26313f);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.cells-description {
+  fill: var(--scene-ink-soft, #54637a);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.cells-end {
+  font-weight: 600;
+  fill: var(--scene-ink-soft, #54637a);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.cells-label {
+  font-weight: 600;
+  fill: var(--scene-ink-soft, #54637a);
+  paint-order: stroke;
+  stroke: var(--scene-halo, #f4f6f9);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.cells.is-hovered .cells-walls,
+.cells.is-hovered .cells-outline { stroke-width: 2.8; }
+.cells.is-selected .cells-walls,
+.cells.is-selected .cells-outline {
+  stroke: #2563eb;
+  stroke-width: 2.8;
+}
+.cells.is-selected .cells-label { fill: #1d4ed8; }
+
 /* --- edges ---------------------------------------------------------------- */
 
 .edge-hit {
@@ -81,9 +263,73 @@
 }
 .edge-arrow { pointer-events: none; }
 
+/*
+ * The band that shows which way a connection runs.
+ *
+ * One dash and a long gap, slid along the line: `stroke-dashoffset` counting
+ * down to zero moves the pattern towards the end of the polyline, and the
+ * polyline is ordered from the connection's `from` to its `to`, so the motion
+ * is the direction. `animation-direction: reverse` covers an arrow at the other
+ * end without a second, reversed copy of the geometry.
+ *
+ * `non-scaling-stroke` puts the dash lengths in screen pixels like the width
+ * above, so one band is one band at any zoom rather than a dotted line when you
+ * pull back. The two layers share a period, so they travel as one thing: a wide
+ * one in the connection's colour, which glows around the line, and a narrow one
+ * in the canvas ink, which is what is visible *on* it.
+ *
+ * It is deliberately slow and faint. A diagram is not a dashboard, and anything
+ * brisk enough to notice while reading is something you end up reading instead.
+ */
+.edge-flow {
+  display: none;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.edge-flow-halo { stroke-width: 10; opacity: 0.22; stroke-dasharray: 56 198; }
+.edge-flow-core {
+  stroke-width: 3;
+  opacity: 0.62;
+  stroke-dasharray: 22 232;
+  /* The ink, not the connection's colour: painting the line its own colour a
+     second time changes nothing, and the ink follows the canvas — light on a
+     dark drawing, dark on a pale one — so the bead reads either way. */
+  stroke: var(--scene-ink, #26313f);
+}
+
+.edge.is-flowing .edge-flow {
+  display: block;
+  animation: edge-flow 3.6s linear infinite;
+}
+.edge.is-flowing .edge-flow-core { animation-name: edge-flow-core; }
+.edge.flows-back .edge-flow { animation-direction: reverse; }
+
+@keyframes edge-flow {
+  from { stroke-dashoffset: 254; }
+  to { stroke-dashoffset: 0; }
+}
+/* The same journey at the same speed, shifted by half the difference in dash
+   lengths, so the bright bead rides in the middle of the soft band rather than
+   at its leading edge — which is what makes the pair read as one thing fading
+   out at both ends instead of as a dash with a tail. */
+@keyframes edge-flow-core {
+  from { stroke-dashoffset: 237; }
+  to { stroke-dashoffset: -17; }
+}
+
+/* Nothing moves for anyone who has asked for that, and a band frozen halfway
+   along a line is a mark with no explanation — so it goes rather than stops. */
+@media (prefers-reduced-motion: reduce) {
+  .edge.is-flowing .edge-flow { display: none; }
+}
+
 .edge.is-hovered .edge-line { stroke-width: 3; }
 .edge.is-selected .edge-line { stroke: #2563eb; stroke-width: 3; }
 .edge.is-selected .edge-arrow { fill: #2563eb; }
+.edge.is-selected .edge-flow-halo { stroke: #2563eb; }
 
 .edge-label {
   /* No font-size here -- see the note on .zone-label. */
@@ -203,6 +449,9 @@
   stroke-dasharray: 5 4;
   vector-effect: non-scaling-stroke;
 }
+/* The body is a hint about volume, so it is quieter than the lid: the lid says
+   where the thing will be, the body only how much room it will take. */
+.ghost-body { fill-opacity: 0.07; stroke-dasharray: 3 5; }
 
 .link-preview {
   fill: none;

@@ -30,14 +30,17 @@ import { resizeFootprint } from '../render/handles.js';
 import { edgeRoute, EDGE_Z } from '../render/edge.js';
 import { rotatePoint, rotateRect, CELL } from '../geom/iso.js';
 import { planeAxes, planeVector } from '../geom/plane.js';
-import { MAX_SPAN } from '../core/schema.js';
+import { MAX_SPAN, CELLS_DEFAULTS, SHAPE_DEFAULTS } from '../core/schema.js';
 import { clamp, clampInt, clampTenth } from '../util/num.js';
 import {
   nodeById,
   groupById,
+  shapeById,
+  cellsById,
   edgeById,
   imageById,
   planarById,
+  positionedById,
   endpointBox,
   canConnect,
   nodeBox,
@@ -47,10 +50,13 @@ import {
   makeNode,
   makeGroup,
   makeText,
+  makeShape,
+  makeCells,
   makeEdge,
   reassignGroups,
 } from '../core/doc.js';
 import { componentFor } from '../data/components.js';
+import { shapeKindFor } from '../data/shapes.js';
 
 const DRAG_THRESHOLD = 3; // px before a press becomes a drag
 const CONNECT_KEY = 'c';
@@ -127,16 +133,51 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     overlay.clear();
   }
 
-  function refreshOverlay() {
-    const { camera, pendingType, hover } = store.state;
-    if (pendingType && hover) {
+  /**
+   * What the palette currently has armed, as a footprint and a height.
+   *
+   * One answer for the hint and for the press that follows it. They used to
+   * work it out separately and disagreed: the ghost drew from the pointer's
+   * cell as its *corner* while the press centred the thing on that cell, so
+   * everything landed half its own width away from where it had been promised.
+   */
+  function armedPlacement() {
+    const { pendingType, pendingShape } = store.state;
+    if (pendingType) {
       const def = componentFor(pendingType);
-      overlay.ghost(camera, projectionOf(camera), {
-        x: hover.x,
-        y: hover.y,
-        w: def.size[0],
-        h: def.size[1],
-      });
+      return { size: def.size, height: def.height };
+    }
+    if (pendingShape === 'cells') {
+      return {
+        size: [
+          CELLS_DEFAULTS.cols * CELLS_DEFAULTS.slot[0],
+          CELLS_DEFAULTS.rows * CELLS_DEFAULTS.slot[1],
+        ],
+        height: CELLS_DEFAULTS.height,
+      };
+    }
+    if (pendingShape) {
+      return { size: shapeKindFor(pendingShape).size, height: SHAPE_DEFAULTS.height };
+    }
+    return null;
+  }
+
+  /** Where that thing lands when the canvas is pressed at `cell`: centred on it. */
+  function placementBox(armed, cell) {
+    return {
+      x: cell.x - Math.floor(armed.size[0] / 2),
+      y: cell.y - Math.floor(armed.size[1] / 2),
+      w: armed.size[0],
+      h: armed.size[1],
+      ht: armed.height ?? 0,
+    };
+  }
+
+  function refreshOverlay() {
+    const { camera, hover } = store.state;
+    const armed = armedPlacement();
+    if (armed && hover) {
+      overlay.ghost(camera, projectionOf(camera), placementBox(armed, hover));
     } else if (!drag) {
       overlay.ghost(camera, projectionOf(camera), null);
     }
@@ -193,6 +234,17 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
         drag = resize;
         return;
       }
+    }
+
+    // A flowchart shape is placed by a click like a component, not drawn by a
+    // drag like a zone: it has a shape of its own to keep, and the size that
+    // suits it is the one its kind asks for.
+    if (store.state.tool === 'shape' && store.state.pendingShape) {
+      if (store.state.pendingShape === 'cells') placeCells(cellAt(pt));
+      else placeShape(store.state.pendingShape, cellAt(pt));
+      if (!e.shiftKey) store.setUI({ pendingShape: null, tool: 'select' });
+      refreshOverlay();
+      return;
     }
 
     if (store.state.tool === 'text') {
@@ -319,19 +371,20 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       }
 
       case 'resize-height': {
-        const node = nodeById(store.state.doc, drag.id);
-        if (!node) break;
+        const doc = store.state.doc;
+        const tall = nodeById(doc, drag.id) ?? shapeById(doc, drag.id) ?? cellsById(doc, drag.id);
+        if (!tall) break;
         const height = heightFromDrag(
           drag.startHeight,
           drag.origin.y - pt.y,
           store.state.camera.zoom,
-          node.height
+          tall.height
         );
-        if (height === node.height) break;
+        if (height === tall.height) break;
         openGesture(drag, 'Resize');
-        store.commit('Resize', (doc) => {
-          const n = nodeById(doc, drag.id);
-          if (n) n.height = height;
+        store.commit('Resize', (d) => {
+          const it = nodeById(d, drag.id) ?? shapeById(d, drag.id) ?? cellsById(d, drag.id);
+          if (it) it.height = height;
         });
         break;
       }
@@ -528,14 +581,40 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
 
   function placeNode(type, cell) {
     const def = componentFor(type);
-    const x = cell.x - Math.floor(def.size[0] / 2);
-    const y = cell.y - Math.floor(def.size[1] / 2);
+    const { x, y } = placementBox({ size: def.size }, cell);
     let newId = null;
     store.commit('Add block', (doc) => {
       const node = makeNode(doc, type, x, y);
       doc.nodes.push(node);
       reassignGroups(doc, [node]);
       newId = node.id;
+    });
+    if (newId) store.select(newId);
+  }
+
+  function placeCells(cell) {
+    let newId = null;
+    store.commit('Add structure', (doc) => {
+      const made = makeCells(doc, cell.x, cell.y);
+      const box = placementBox(
+        { size: [made.cols * made.slot[0], made.rows * made.slot[1]] },
+        cell
+      );
+      made.pos = [box.x, box.y];
+      doc.cells.push(made);
+      newId = made.id;
+    });
+    if (newId) store.select(newId);
+  }
+
+  function placeShape(kind, cell) {
+    const def = shapeKindFor(kind);
+    const { x, y } = placementBox({ size: def.size }, cell);
+    let newId = null;
+    store.commit('Add shape', (doc) => {
+      const shape = makeShape(doc, kind, x, y);
+      doc.shapes.push(shape);
+      newId = shape.id;
     });
     if (newId) store.select(newId);
   }
@@ -602,13 +681,13 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     const { camera } = store.state;
 
     if (grip.role === 'height') {
-      const node = nodeById(doc, grip.id);
-      if (!node) return null;
+      const tall = nodeById(doc, grip.id) ?? shapeById(doc, grip.id) ?? cellsById(doc, grip.id);
+      if (!tall) return null;
       return {
         mode: 'resize-height',
         id: grip.id,
         origin: pt,
-        startHeight: node.height,
+        startHeight: tall.height,
         moved: false,
       };
     }
@@ -637,7 +716,15 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
 
     const node = nodeById(doc, grip.id);
     const group = groupById(doc, grip.id);
-    const rect = node ? [...node.pos, ...node.size] : group?.rect;
+    const shape = shapeById(doc, grip.id);
+    const cells = cellsById(doc, grip.id);
+    const rect = node
+      ? [...node.pos, ...node.size]
+      : shape
+        ? [...shape.pos, ...shape.size]
+        : cells
+          ? [...cells.pos, cells.cols * cells.slot[0], cells.rows * cells.slot[1]]
+          : group?.rect;
     if (!rect) return null;
 
     return {
@@ -668,7 +755,15 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
     const doc = store.state.doc;
     const node = nodeById(doc, drag.id);
     const group = groupById(doc, drag.id);
-    const current = node ? [...node.pos, ...node.size] : group?.rect;
+    const shape = shapeById(doc, drag.id);
+    const cells = cellsById(doc, drag.id);
+    const current = node
+      ? [...node.pos, ...node.size]
+      : shape
+        ? [...shape.pos, ...shape.size]
+        : cells
+          ? [...cells.pos, cells.cols * cells.slot[0], cells.rows * cells.slot[1]]
+          : group?.rect;
     if (!current || current.every((v, i) => v === rect[i])) return;
 
     openGesture(drag, 'Resize');
@@ -677,6 +772,27 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       if (n) {
         n.pos = [rect[0], rect[1]];
         n.size = [rect[2], rect[3]];
+        return;
+      }
+      const sh = shapeById(d, drag.id);
+      if (sh) {
+        sh.pos = [rect[0], rect[1]];
+        sh.size = [rect[2], rect[3]];
+        return;
+      }
+      /*
+       * A structure is resized in whole slots.
+       *
+       * Dragging its end is "make the array longer", not "make the boxes
+       * wider" — the slot keeps the size it was given and the count follows the
+       * footprint, which is what a run of numbered boxes has to do to stay a
+       * run of numbered boxes.
+       */
+      const c = cellsById(d, drag.id);
+      if (c) {
+        c.pos = [rect[0], rect[1]];
+        c.cols = Math.max(1, Math.round(rect[2] / c.slot[0]));
+        c.rows = Math.max(1, Math.round(rect[3] / c.slot[1]));
         return;
       }
       const g = groupById(d, drag.id);
@@ -717,7 +833,7 @@ export function attachPointer({ canvas, store, scene, overlay, toaster, onEditTe
       // Pictures and notes share the planar placement model, so they move
       // through the same lookup.
       for (const t of targets.planar) {
-        const el = planarById(doc, t.id);
+        const el = positionedById(doc, t.id);
         if (el) el.pos = [t.pos[0] + dx, t.pos[1] + dy];
       }
     });
@@ -752,13 +868,13 @@ function captureMoveTargets(doc, selection) {
       continue;
     }
     if (nodeById(doc, id)) nodeIds.add(id);
-    else if (planarById(doc, id)) planarIds.add(id);
+    else if (positionedById(doc, id)) planarIds.add(id);
   }
 
   return {
     nodes: [...nodeIds].map((id) => ({ id, pos: [...nodeById(doc, id).pos] })),
     groups: [...groupIds].map((id) => ({ id, rect: [...groupById(doc, id).rect] })),
-    planar: [...planarIds].map((id) => ({ id, pos: [...planarById(doc, id).pos] })),
+    planar: [...planarIds].map((id) => ({ id, pos: [...positionedById(doc, id).pos] })),
   };
 }
 

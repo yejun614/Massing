@@ -17,6 +17,7 @@ import { endpointBox } from '../core/doc.js';
 import { round2 } from '../util/num.js';
 import { planeTransform, effectivePlane } from '../geom/plane.js';
 import { textAnchorFor } from '../util/text.js';
+import { shapeContains } from '../data/shapes.js';
 
 /** Lift off the ground plane to avoid z-fighting with the grid. */
 export const EDGE_Z = 0.14;
@@ -28,11 +29,29 @@ const EDGE_LABEL_GAP = 6; // px of daylight between the line and its caption
 export function createEdgeView() {
   const hit = svg('polyline', { class: 'edge-hit' });
   const line = svg('polyline', { class: 'edge-line' });
+  /*
+   * Which way the connection runs, said by something moving rather than by a
+   * second arrowhead.
+   *
+   * Two strokes of the same polyline, both dashed with one long gap so a single
+   * soft band travels the line: a wide one in the connection's own colour,
+   * which reads as the line glowing as it passes, and a narrow one in the
+   * canvas ink, which is the part that is actually visible *on* the line —
+   * painting the line its own colour again would change nothing. Together they
+   * are a gradient in effect without a gradient's per-edge machinery: no ids,
+   * no defs, nothing to keep in step with the camera. See `edge-flow` in
+   * `canvas.css` for the motion, which is one CSS animation for every edge on
+   * screen rather than one per edge.
+   */
+  const flowHalo = svg('polyline', { class: 'edge-flow edge-flow-halo' });
+  const flowCore = svg('polyline', { class: 'edge-flow edge-flow-core' });
   const arrowStart = svg('polygon', { class: 'edge-arrow' });
   const arrowEnd = svg('polygon', { class: 'edge-arrow' });
   const label = svg('text', { class: 'edge-label', 'text-anchor': 'middle' });
-  const el = svg('g', { class: 'edge' }, [hit, line, arrowStart, arrowEnd, label]);
-  return { el, hit, line, arrowStart, arrowEnd, label };
+  const el = svg('g', { class: 'edge' }, [
+    hit, line, flowHalo, flowCore, arrowStart, arrowEnd, label,
+  ]);
+  return { el, hit, line, flowHalo, flowCore, arrowStart, arrowEnd, label };
 }
 
 /**
@@ -64,6 +83,27 @@ export function updateEdgeView(view, edge, ctx) {
   const showStart = edge.arrow === 'start' || edge.arrow === 'both';
   arrowhead(view.arrowEnd, screen.at(-2), screen.at(-1), showEnd, edge.color);
   arrowhead(view.arrowStart, screen[1], screen[0], showStart, edge.color);
+
+  /*
+   * The pulse follows the arrowhead, and only where there is exactly one.
+   *
+   * A connection drawn with no arrows, or with one at each end, is an author
+   * saying that direction is not the point — "these two talk to each other".
+   * Animating one anyway would add a claim they declined to make. It also keeps
+   * the diagram calm: only the connections that actually assert a direction
+   * move, and the rest are still lines.
+   *
+   * The polyline is ordered from `from` to `to`, so an arrow at the start is
+   * the same band run backwards rather than a second, reversed polyline.
+   */
+  const directed = showEnd !== showStart;
+  setClass(view.el, 'is-flowing', directed);
+  setClass(view.el, 'flows-back', directed && showStart);
+  setAttr(view.flowHalo, 'points', points);
+  setAttr(view.flowCore, 'points', points);
+  // The only part of the band that is not the same for every edge. Its widths,
+  // its dashes and its motion are all in the stylesheet.
+  setAttr(view.flowHalo, 'stroke', edge.color);
 
   setText(view.label, edge.label || '');
   setAttr(view.label, 'font-size', edge.labelSize);
@@ -269,7 +309,10 @@ function centreOf(box) {
 }
 
 function inflate(rect, by) {
-  return { x: rect.x - by, y: rect.y - by, w: rect.w + by * 2, h: rect.h + by * 2 };
+  // Spread, so an endpoint's `shape` survives the daylight being added around
+  // it -- without it the trim below falls back to the bounding box and the
+  // arrow into a diamond stops half a shape short.
+  return { ...rect, x: rect.x - by, y: rect.y - by, w: rect.w + by * 2, h: rect.h + by * 2 };
 }
 
 /** Drop leading points inside `rect` and start exactly on its boundary. */
@@ -280,8 +323,21 @@ function trimStart(points, rect) {
   return [boundaryPoint(points[i - 1], points[i], rect), ...points.slice(i)];
 }
 
+/**
+ * Whether a point is inside an endpoint, silhouette and all.
+ *
+ * The box test is first because it is cheap and because everything that is not
+ * a flowchart shape *is* a box. A shape then asks its own outline, which is
+ * what makes a connection stop on the slope of a diamond or the curve of a
+ * connector rather than on the invisible rectangle around it. `boundaryPoint`
+ * bisects against this predicate, so curves cost nothing extra here.
+ */
 function inside(rect, p) {
-  return p.x > rect.x && p.x < rect.x + rect.w && p.y > rect.y && p.y < rect.y + rect.h;
+  if (!(p.x > rect.x && p.x < rect.x + rect.w && p.y > rect.y && p.y < rect.y + rect.h)) {
+    return false;
+  }
+  if (!rect.shape) return true;
+  return shapeContains(rect.shape, (p.x - rect.x) / rect.w, (p.y - rect.y) / rect.h, rect.w, rect.h);
 }
 
 /**

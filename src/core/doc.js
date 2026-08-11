@@ -8,6 +8,7 @@
 
 import { rotateRect } from '../geom/iso.js';
 import { componentFor, groupKindFor } from '../data/components.js';
+import { shapeKindFor } from '../data/shapes.js';
 import {
   uniqueId,
   TEXT_DEFAULTS,
@@ -17,6 +18,8 @@ import {
   DEFAULT_LABEL_SIZE,
   DEFAULT_LABEL_ALIGN,
   DEFAULT_EDGE_ROUTE,
+  SHAPE_DEFAULTS,
+  CELLS_DEFAULTS,
 } from './schema.js';
 
 export function nodeById(doc, id) {
@@ -39,9 +42,29 @@ export function imageById(doc, id) {
   return doc.images.find((i) => i.id === id) || null;
 }
 
+export function shapeById(doc, id) {
+  return doc.shapes.find((sh) => sh.id === id) || null;
+}
+
+export function cellsById(doc, id) {
+  return doc.cells.find((c) => c.id === id) || null;
+}
+
 /** Anything flat that shares the plane/spin placement model. */
 export function planarById(doc, id) {
   return textById(doc, id) || imageById(doc, id);
+}
+
+/**
+ * Anything moved by writing a new `pos`.
+ *
+ * Wider than `planarById`, and deliberately a second name rather than an
+ * extension of it: the inspector uses that one to decide who gets plane, spin
+ * and depth controls, and a flowchart shape lies on the ground by definition
+ * and has none of those. What it does share is how it moves.
+ */
+export function positionedById(doc, id) {
+  return planarById(doc, id) || shapeById(doc, id) || cellsById(doc, id);
 }
 
 /** Any selectable entity, tagged with what it is. */
@@ -56,6 +79,10 @@ export function entityById(doc, id) {
   if (text) return { kind: 'text', entity: text };
   const image = imageById(doc, id);
   if (image) return { kind: 'image', entity: image };
+  const shape = shapeById(doc, id);
+  if (shape) return { kind: 'shape', entity: shape };
+  const cells = cellsById(doc, id);
+  if (cells) return { kind: 'cells', entity: cells };
   return null;
 }
 
@@ -66,6 +93,8 @@ export function allIds(doc) {
     ...doc.edges.map((e) => e.id),
     ...doc.texts.map((t) => t.id),
     ...doc.images.map((i) => i.id),
+    ...doc.shapes.map((sh) => sh.id),
+    ...doc.cells.map((c) => c.id),
   ]);
 }
 
@@ -92,6 +121,40 @@ export function groupBox(group) {
 }
 
 /**
+ * A flowchart shape's footprint: the cells its bounding box covers.
+ *
+ * Flat on the ground and with no height of its own, which is what lets a
+ * connection route to it exactly as it routes to a zone.
+ */
+export function shapeBox(shape) {
+  return {
+    x: shape.pos[0],
+    y: shape.pos[1],
+    w: shape.size[0],
+    h: shape.size[1],
+    z: 0,
+    ht: shape.height,
+  };
+}
+
+/**
+ * A structure's footprint: however many slots it holds, at whatever size.
+ *
+ * Derived rather than stored, so a column added in the inspector cannot leave a
+ * stale rectangle behind for the camera to fit or a connection to aim at.
+ */
+export function cellsBox(cells) {
+  return {
+    x: cells.pos[0],
+    y: cells.pos[1],
+    w: cells.cols * cells.slot[0],
+    h: cells.rows * cells.slot[1],
+    z: 0,
+    ht: cells.height,
+  };
+}
+
+/**
  * Anything a connection can attach to, as a ground box, or null.
  *
  * A block and a zone are both rectangles on the grid, so routing a connection
@@ -103,6 +166,19 @@ export function endpointBox(doc, id) {
   if (node) return { ...nodeBox(node) };
   const group = groupById(doc, id);
   if (group) return { ...groupBox(group) };
+  /*
+   * A shape carries its `kind` into the route.
+   *
+   * Every other endpoint is a rectangle, and trimming a line back to a
+   * rectangle is what the router does. A diamond is not one: stopping at its
+   * bounding box leaves the arrow floating half a shape short of the point it
+   * is aiming at. The kind travels with the box so the trim can ask the real
+   * silhouette instead — see `shapeContains` and `inside` in `render/edge.js`.
+   */
+  const shape = shapeById(doc, id);
+  if (shape) return { ...shapeBox(shape), shape: shape.kind };
+  const cells = cellsById(doc, id);
+  if (cells) return { ...cellsBox(cells) };
   return null;
 }
 
@@ -137,6 +213,8 @@ export function docBounds(doc) {
   doc.images.forEach((i) =>
     consider({ x: i.pos[0], y: i.pos[1], w: i.size[0], h: i.size[1], z: 0, ht: 0 })
   );
+  doc.shapes.forEach((sh) => consider(shapeBox(sh)));
+  doc.cells.forEach((c) => consider(cellsBox(c)));
 
   if (!Number.isFinite(x0)) return { x0: 0, y0: 0, x1: 12, y1: 12, zmax: 3 };
   return { x0, y0, x1, y1, zmax };
@@ -277,6 +355,48 @@ export function makeText(doc, x, y, overrides = {}) {
   };
 }
 
+export function makeCells(doc, x, y, overrides = {}) {
+  return {
+    id: uniqueId(overrides.id ?? 'cells', allIds(doc)),
+    label: overrides.label ?? '',
+    pos: [x, y],
+    cols: CELLS_DEFAULTS.cols,
+    rows: CELLS_DEFAULTS.rows,
+    slot: [...CELLS_DEFAULTS.slot],
+    items: [],
+    indices: false,
+    description: '',
+    ends: ['', ''],
+    flow: null,
+    marks: [],
+    height: CELLS_DEFAULTS.height,
+    color: CELLS_DEFAULTS.color,
+    labelSize: CELLS_DEFAULTS.labelSize,
+    labelPlane: CELLS_DEFAULTS.labelPlane,
+    ...stripIdentity(overrides),
+  };
+}
+
+export function makeShape(doc, kind, x, y, overrides = {}) {
+  const def = shapeKindFor(kind);
+  return {
+    id: uniqueId(overrides.id ?? def.kind, allIds(doc)),
+    kind: def.kind,
+    label: overrides.label ?? '',
+    pos: [x, y],
+    size: [...def.size],
+    height: SHAPE_DEFAULTS.height,
+    color: SHAPE_DEFAULTS.color,
+    labelSize: SHAPE_DEFAULTS.labelSize,
+    labelPlane: SHAPE_DEFAULTS.labelPlane,
+    yes: '',
+    no: '',
+    yesAt: SHAPE_DEFAULTS.yesAt,
+    noAt: SHAPE_DEFAULTS.noAt,
+    ...stripIdentity(overrides),
+  };
+}
+
 export function makeImage(doc, x, y, overrides = {}) {
   return {
     id: uniqueId(overrides.id ?? overrides.label ?? 'image', allIds(doc)),
@@ -318,6 +438,8 @@ export function removeEntities(doc, ids) {
   doc.groups = doc.groups.filter((g) => !dead.has(g.id));
   doc.texts = doc.texts.filter((t) => !dead.has(t.id));
   doc.images = doc.images.filter((i) => !dead.has(i.id));
+  doc.shapes = doc.shapes.filter((sh) => !dead.has(sh.id));
+  doc.cells = doc.cells.filter((c) => !dead.has(c.id));
   doc.edges = doc.edges.filter(
     (e) => !dead.has(e.id) && !dead.has(e.from) && !dead.has(e.to)
   );

@@ -7,7 +7,13 @@
  * order is touched when the sort changes.
  *
  * Layer order is the painter's order for the whole diagram:
- *   grid -> zones -> edges -> blocks -> texts -> overlay
+ *   grid -> behind -> zones -> edges -> solids -> overlay
+ *
+ * "Solids" is one layer holding everything that stands on the ground — blocks,
+ * flowchart shapes, data structures, and any note or picture not marked
+ * `behind` — because "what is in front of what" among them is one question with
+ * one answer, and a separate layer per kind answers it by document order
+ * instead.
  *
  * Resize grips are the exception. They hang outside the camera transform, so
  * they keep their size on screen at any zoom, and are drawn above everything.
@@ -22,8 +28,10 @@ import { createEdgeView, updateEdgeView } from './edge.js';
 import { createBlockView, updateBlockView } from './block.js';
 import { createTextView, updateTextView } from './text.js';
 import { createImageView, updateImageView } from './image.js';
+import { createShapeView, updateShapeView } from './shape.js';
+import { createCellsView, updateCellsView } from './cells.js';
 import { sortForPaint } from '../geom/depth.js';
-import { nodeBox, rotatedBox, groupsInPaintOrder, endpointBox } from '../core/doc.js';
+import { nodeBox, shapeBox, cellsBox, rotatedBox, groupsInPaintOrder, endpointBox } from '../core/doc.js';
 import { canvasBackground } from '../core/schema.js';
 import { luminance } from '../util/color.js';
 
@@ -34,20 +42,32 @@ export function createScene(container, { onResize } = {}) {
   const behind = svg('g', { class: 'layer layer-behind' });
   const zones = svg('g', { class: 'layer layer-zones' });
   const edges = svg('g', { class: 'layer layer-edges' });
-  const blocks = svg('g', { class: 'layer layer-blocks' });
+  /*
+   * Blocks and flowchart shapes share one layer, and that is the whole of how
+   * they sort against each other.
+   *
+   * Both stand on the same ground and both have a footprint and a height, so
+   * "which is in front" is one question with one answer — the painter's order
+   * below. Two layers made it two questions, and the second was answered by
+   * whichever layer happened to be later in the document: a step placed in
+   * front of a server still drew behind it, at every camera angle, with no way
+   * to fix it from the drawing.
+   */
+  const solids = svg('g', { class: 'layer layer-blocks' });
   // Annotations sit above the blocks: an explanation hidden behind a cube is
   // no explanation at all.
-  const texts = svg('g', { class: 'layer layer-texts' });
   const overlay = svg('g', { class: 'layer layer-overlay' });
 
   const handles = createHandlesView();
 
-  const root = svg('g', { class: 'scene-root' }, [grid.el, behind, zones, edges, blocks, texts, overlay]);
+  const root = svg('g', { class: 'scene-root' }, [grid.el, behind, zones, edges, solids, overlay]);
   const el = svg('svg', { class: 'scene', xmlns: 'http://www.w3.org/2000/svg' }, [root, handles.el]);
   container.append(el);
 
   const zoneViews = new Map();
   const edgeViews = new Map();
+  const shapeViews = new Map();
+  const cellsViews = new Map();
   const blockViews = new Map();
   const textViews = new Map();
   const imageViews = new Map();
@@ -108,7 +128,9 @@ export function createScene(container, { onResize } = {}) {
     updateGridView(grid, { cam: camera, proj, viewport: cover ?? viewport, hover: state.hover });
 
     const touched = new Set(state.aiTouched ?? []);
-    const ctxBase = { proj, rot, doc, touched };
+    // `zoom` is here for one thing: an effect measured in screen pixels — see
+    // the groove between a structure's slots — has to divide by it.
+    const ctxBase = { proj, rot, doc, touched, zoom: camera.zoom };
 
     // --- zones -------------------------------------------------------------
     const orderedGroups = groupsInPaintOrder(doc);
@@ -135,40 +157,84 @@ export function createScene(container, { onResize } = {}) {
       })
     );
 
-    // --- blocks ------------------------------------------------------------
-    const boxes = doc.nodes.map((node) => ({
-      ...rotatedBox(nodeBox(node), rot),
-      node,
-    }));
-    const ordered = sortForPaint(boxes, !proj.showsSides).map((b) => b.node);
-    diff(blocks, ordered, blockViews, createBlockView, (view, node) =>
-      updateBlockView(view, node, {
+    // --- blocks and flowchart shapes, in one painter's order ---------------
+    const boxes = [
+      ...doc.nodes.map((node) => ({ ...rotatedBox(nodeBox(node), rot), entity: node, kind: 'block' })),
+      ...doc.shapes.map((sh) => ({ ...rotatedBox(shapeBox(sh), rot), entity: sh, kind: 'shape' })),
+      ...doc.cells.map((c) => ({ ...rotatedBox(cellsBox(c), rot), entity: c, kind: 'cells' })),
+      /*
+       * Flat content sorts with the solids too, unless it asked to be behind.
+       *
+       * A note or a picture standing among the blocks is *in* the scene, so a
+       * block in front of it has to cover it — which it could not do while the
+       * captions lived in a layer of their own painted after everything else.
+       * `behind: true` is the one case that keeps a layer to itself, because
+       * that is exactly what it asks for: under the whole drawing.
+       */
+      ...doc.texts
+        .filter((t) => !t.behind)
+        .map((t) => ({
+          // A note hangs from a point rather than covering a footprint, so that
+          // point is what decides whether it is in front of a block or behind.
+          ...rotatedBox({ x: t.pos[0], y: t.pos[1], w: 0, h: 0, z: t.z, ht: 0 }, rot),
+          entity: t,
+          kind: 'text',
+        })),
+      ...doc.images
+        .filter((im) => !im.behind)
+        .map((im) => ({
+          ...rotatedBox(
+            { x: im.pos[0], y: im.pos[1], w: im.size[0], h: im.size[1], z: im.z, ht: 0 },
+            rot
+          ),
+          entity: im,
+          kind: 'image',
+        })),
+    ];
+    const ordered = sortForPaint(boxes, !proj.showsSides)
+      .map(({ entity, kind }) => ({ entity, kind }));
+    const solidViews = {
+      block: blockViews,
+      shape: shapeViews,
+      cells: cellsViews,
+      text: textViews,
+      image: imageViews,
+    };
+    diffMixed(
+      solids,
+      ordered,
+      solidViews,
+      {
+        block: [createBlockView, updateBlockView],
+        shape: [createShapeView, updateShapeView],
+        cells: [createCellsView, updateCellsView],
+        text: [createTextView, updateTextView],
+        image: [createImageView, updateImageView],
+      },
+      (entity) => ({
         ...ctxBase,
-        selected: selected.has(node.id),
-        hovered: hoverId === node.id,
-        touched: touched.has(node.id),
+        selected: selected.has(entity.id),
+        hovered: hoverId === entity.id,
+        touched: touched.has(entity.id),
       })
     );
-    reorder(blocks, ordered, blockViews);
+    reorderMixed(solids, ordered, solidViews);
 
     // --- flat content ------------------------------------------------------
     // Pictures and text share one placement model, so they also share the
     // choice of which side of the blocks to land on.
-    const planar = [
-      ...doc.images.map((entity) => ({ entity, kind: 'image' })),
-      ...doc.texts.map((entity) => ({ entity, kind: 'text' })),
+    const underneath = [
+      ...doc.images.filter((im) => im.behind).map((entity) => ({ entity, kind: 'image' })),
+      ...doc.texts.filter((t) => t.behind).map((entity) => ({ entity, kind: 'text' })),
     ];
-    for (const [layer, wantBehind] of [[behind, true], [texts, false]]) {
-      const here = planar.filter((p) => !!p.entity.behind === wantBehind);
-      diffMixed(layer, here, { image: imageViews, text: textViews }, {
-        image: [createImageView, updateImageView],
-        text: [createTextView, updateTextView],
-      }, (entity) => ({
-        ...ctxBase,
-        selected: selected.has(entity.id),
-        hovered: hoverId === entity.id,
-      }));
-    }
+    diffMixed(behind, underneath, { image: imageViews, text: textViews }, {
+      image: [createImageView, updateImageView],
+      text: [createTextView, updateTextView],
+    }, (entity) => ({
+      ...ctxBase,
+      selected: selected.has(entity.id),
+      hovered: hoverId === entity.id,
+    }));
 
     // --- resize grips ------------------------------------------------------
     updateHandlesView(handles, state);
@@ -181,7 +247,7 @@ export function createScene(container, { onResize } = {}) {
    * a block's own footprint.
    */
   function contentBox(padding = 0) {
-    const boxes = [behind, zones, edges, blocks, texts]
+    const boxes = [behind, zones, edges, solids]
       .filter((layer) => layer.childElementCount)
       .map((layer) => layer.getBBox())
       .filter((b) => b.width || b.height);
@@ -198,7 +264,7 @@ export function createScene(container, { onResize } = {}) {
     el,
     root,
     overlay,
-    layers: { behind, zones, edges, blocks, texts, overlay, handles: handles.el },
+    layers: { behind, zones, edges, solids, overlay, handles: handles.el },
     render,
     contentBox,
     /**
@@ -246,7 +312,7 @@ function diff(layer, items, cache, create, update) {
  * view pool.
  */
 function diffMixed(layer, items, caches, builders, contextFor) {
-  const seen = { image: new Set(), text: new Set() };
+  const seen = Object.fromEntries(Object.keys(caches).map((kind) => [kind, new Set()]));
   for (const { entity, kind } of items) {
     const cache = caches[kind];
     let view = cache.get(entity.id);
@@ -267,6 +333,18 @@ function diffMixed(layer, items, caches, builders, contextFor) {
       view.el.remove();
       caches[kind].delete(id);
     }
+  }
+}
+
+/** `reorder`, for a layer whose entries live in more than one view cache. */
+function reorderMixed(layer, items, caches) {
+  let prev = null;
+  for (const { entity, kind } of items) {
+    const el = caches[kind].get(entity.id)?.el;
+    if (!el) continue;
+    const expected = prev ? prev.nextSibling : layer.firstChild;
+    if (el !== expected) layer.insertBefore(el, expected);
+    prev = el;
   }
 }
 

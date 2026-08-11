@@ -129,6 +129,10 @@ export function createExporter({ store, scene, toaster }) {
     clone.querySelector('.grid-cursor')?.remove();
     clone.querySelector('.layer-overlay')?.remove();
     clone.querySelector('.layer-handles')?.remove();
+    // The band that travels a connection is motion, and an export is a moment.
+    // Frozen wherever the animation happened to be, it is a bright smear on one
+    // line and nothing on the next -- a mark the picture cannot explain.
+    for (const flow of clone.querySelectorAll('.edge-flow')) flow.remove();
     for (const marker of clone.querySelectorAll('.is-selected, .is-hovered')) {
       marker.classList.remove('is-selected', 'is-hovered');
     }

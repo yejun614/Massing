@@ -8,10 +8,12 @@
 import { h, clear, setClass } from '../util/dom.js';
 import { componentsByCategory, GROUP_KINDS } from '../data/components.js';
 import { iconMarkup } from '../data/icons.js';
+import { SHAPE_KINDS, outlinePath, segmentsToPath } from '../data/shapes.js';
 
 export function createPalette({ root, store, commands, onArm }) {
   const buttons = new Map();
   const zoneButtons = new Map();
+  const shapeButtons = new Map();
   /** Every filterable entry: [button, haystack]. */
   const searchable = [];
   const sections = [];
@@ -94,6 +96,74 @@ export function createPalette({ root, store, commands, onArm }) {
   sections.push(zoneSection);
   root.append(zoneSection);
 
+  /*
+   * --- flowchart ------------------------------------------------------------
+   *
+   * The icons are the shapes themselves, drawn by the same geometry the canvas
+   * uses. A palette that draws its own approximation of a diamond is a palette
+   * that eventually disagrees with what gets placed.
+   */
+  const shapeGrid = h('div', { class: 'palette-grid' });
+  for (const kind of SHAPE_KINDS) {
+    const button = h(
+      'button',
+      {
+        class: 'palette-item',
+        title: `${kind.label} — ${kind.hint}`,
+        onClick: () => armShape(kind.kind),
+      },
+      [
+        h('span', {
+          class: 'palette-icon',
+          style: 'background:#64748b',
+          html: `<svg viewBox="0 0 24 24"><g transform="translate(2,6)">` +
+            `<path d="${outlinePath(kind.points(20, 12))}"/>` +
+            (kind.inner ? `<path d="${segmentsToPath(kind.inner(20, 12))}"/>` : '') +
+            `</g></svg>`,
+        }),
+        h('span', { class: 'palette-label', text: kind.label }),
+      ]
+    );
+    shapeButtons.set(kind.kind, button);
+    searchable.push([
+      button,
+      `${kind.label} ${kind.kind} flowchart algorithm step ${kind.hint}`.toLowerCase(),
+    ]);
+    shapeGrid.append(button);
+  }
+  /*
+   * The one entry that is not a flowchart shape but is armed like one: a run of
+   * slots. It sits here because "the algorithm" and "what the algorithm is
+   * working on" are drawn in the same sitting.
+   */
+  const cellsButton = h(
+    'button',
+    {
+      class: 'palette-item',
+      title: 'Array — a run of slots: array, stack, queue or matrix',
+      onClick: () => armShape('cells'),
+    },
+    [
+      h('span', {
+        class: 'palette-icon',
+        style: 'background:#64748b',
+        html: '<svg viewBox="0 0 24 24"><rect x="2" y="8" width="20" height="8"/>' +
+          '<path d="M7 8v8M12 8v8M17 8v8"/></svg>',
+      }),
+      h('span', { class: 'palette-label', text: 'Array' }),
+    ]
+  );
+  shapeButtons.set('cells', cellsButton);
+  searchable.push([cellsButton, 'array stack queue matrix cells slots data structure list buffer']);
+  shapeGrid.append(cellsButton);
+
+  const shapeSection = h('section', { class: 'section' }, [
+    h('h2', { class: 'section-title', text: 'Flowchart' }),
+    shapeGrid,
+  ]);
+  sections.push(shapeSection);
+  root.append(shapeSection);
+
   // --- annotations ---------------------------------------------------------
   const textButton = h(
     'button',
@@ -151,6 +221,16 @@ export function createPalette({ root, store, commands, onArm }) {
     if (!already) onArm?.();
   }
 
+  function armShape(kind) {
+    const already = store.state.pendingShape === kind && store.state.tool === 'shape';
+    store.setUI({
+      pendingShape: already ? null : kind,
+      tool: already ? 'select' : 'shape',
+      pendingType: null,
+    });
+    if (!already) onArm?.();
+  }
+
   function armZone(kind) {
     const already = store.state.pendingGroupKind === kind && store.state.tool === 'group';
     store.setUI({
@@ -167,6 +247,9 @@ export function createPalette({ root, store, commands, onArm }) {
     }
     for (const [kind, button] of zoneButtons) {
       setClass(button, 'is-active', state.tool === 'group' && state.pendingGroupKind === kind);
+    }
+    for (const [kind, button] of shapeButtons) {
+      setClass(button, 'is-active', state.tool === 'shape' && state.pendingShape === kind);
     }
     setClass(textButton, 'is-active', state.tool === 'text');
   }

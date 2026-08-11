@@ -262,7 +262,18 @@ const palette = createPalette({
   // On a phone the palette is a drawer over the canvas, so picking a component
   // and then being unable to reach the canvas to place it is the whole
   // interaction failing on its last step.
-  onArm: () => panels.armed(),
+  onArm: () => {
+    panels.armed();
+    /*
+     * Show the hint at once, rather than at the next cell boundary.
+     *
+     * The ghost is refreshed when the pointer moves to a *different* cell, so
+     * arming something while the pointer is already sitting still left the
+     * canvas with no hint at all until you happened to cross a line — and the
+     * hint is how you decide where to press.
+     */
+    pointer.refreshOverlay();
+  },
 });
 const inspector = createInspector({ root: region('inspector'), store, commands });
 // Inside the canvas, so it sits over the drawing rather than taking a strip of
