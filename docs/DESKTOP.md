@@ -306,10 +306,11 @@ To cut a release:
 npm run release -- 0.1.2 --push
 ```
 
-That sets the version in all three places it lives — `tauri.conf.json` for the
-app and the updater, `Cargo.toml` for the version the MCP server reports, and
-`package.json` — then commits, tags and pushes. It refuses on a dirty tree, on
-a tag that exists, and off `main`, because a release is public the moment it
+That sets the version in all four places it lives — `tauri.conf.json` for the
+app and the updater, `Cargo.toml` for the version the MCP server reports,
+`package.json`, and `Cargo.lock`, which holds Cargo's own copy of the crate's
+version — then commits, tags and pushes. It refuses on a dirty tree, on a tag
+that exists, and off `main`, because a release is public the moment it
 happens.
 
 Without `--push` it stops after the tag and prints the two commands.

@@ -5,12 +5,12 @@
  *   node scripts/release.mjs 0.1.2 [--push]
  *   npm run release -- 0.1.2 [--push]
  *
- * There are three, which is two too many and not something this script can
+ * There are four, which is three too many and not something this script can
  * fix: `tauri.conf.json` is what Tauri bakes into the app and what the updater
- * compares against, `Cargo.toml` is what the MCP server reports itself as, and
- * `package.json` is what Vercel and npm read. They drifted once already, the
- * crate sitting a patch behind the other two, which is the whole reason this
- * exists.
+ * compares against, `Cargo.toml` is what the MCP server reports itself as,
+ * `package.json` is what Vercel and npm read, and `Cargo.lock` holds Cargo's
+ * own copy of the crate's version. They drifted once already, the crate
+ * sitting a patch behind the other two, which is the whole reason this exists.
  *
  * It refuses more than it does. A release goes out once and is then in other
  * people's hands, so every check here is cheaper than the alternative.
@@ -93,6 +93,20 @@ const FILES = [
     read: (t) => t.match(/^version = "([^"]+)"/m)?.[1],
     write: (t, v) => t.replace(/^version = "[^"]+"/m, `version = "${v}"`),
   },
+  {
+    // Cargo writes this one, not a person, and it was left out for exactly
+    // that reason — which meant every release shipped a lock a version behind
+    // the crate beside it, until the next `cargo build` rewrote it into a
+    // dirty tree nobody had asked for and this script then refused to cut the
+    // following release from. v0.1.5 needed a commit of its own to catch up.
+    //
+    // Matched through the package's own name rather than by position: the lock
+    // holds several hundred `version =` lines and the crate's is only
+    // identifiable by the `name` above it.
+    path: 'desktop/src-tauri/Cargo.lock',
+    read: (t) => t.match(/^name = "massing"\r?\nversion = "([^"]+)"/m)?.[1],
+    write: (t, v) => t.replace(/^(name = "massing"\r?\nversion = )"[^"]+"/m, `$1"${v}"`),
+  },
 ];
 
 const before = [];
@@ -110,7 +124,7 @@ for (const file of FILES) {
 
 console.log('was:');
 for (const line of before) console.log(`  ${line}`);
-console.log(`now: ${version} in all three`);
+console.log(`now: ${version} in all ${FILES.length}`);
 
 // --- the commit and the tag -------------------------------------------------
 
