@@ -1,6 +1,6 @@
 [package]
 name = "massing"
-version = "0.1.6"
+version = "0.2.0"
 description = "Isometric architecture diagram editor"
 authors = ["YeJun Jung"]
 edition = "2021"
